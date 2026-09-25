@@ -5,16 +5,12 @@ import {
   Plus, 
   RefreshCw, 
   LogOut, 
-  ExternalLink,
+  LogIn,
   CheckCircle2,
-  AlertCircle,
-  MessageSquare,
   HelpCircle,
   Settings as SettingsIcon,
   User as UserIcon,
   ChevronDown,
-  Tag,
-  LogIn,
   ShieldCheck
 } from 'lucide-react';
 import { GoogleSheetMeta } from '../types/finance';
@@ -41,7 +37,7 @@ export const Header: React.FC<HeaderProps> = ({
   onSignOut,
   onOpenSyncModal,
   onOpenNewTransaction,
-  onOpenSmsModal,
+  onOpenSmsModal: _onOpenSmsModal,
   onQuickSync,
   onOpenAuthHelp,
   onOpenSettings,
@@ -49,7 +45,7 @@ export const Header: React.FC<HeaderProps> = ({
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Close profile dropdown when clicking outside
+  // Close dropdown on click outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
@@ -156,13 +152,35 @@ export const Header: React.FC<HeaderProps> = ({
               <span>+ Log Spend</span>
             </button>
 
-            {/* Profile Avatar / Dropdown Trigger (Beside Sign in / Header actions) */}
+            {/* Settings Quick Button */}
+            <button
+              type="button"
+              onClick={() => onOpenSettings('categories')}
+              className="p-1.5 sm:p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl border border-slate-200 transition-colors cursor-pointer"
+              title="Settings & Categories"
+            >
+              <SettingsIcon className="w-4 h-4" />
+            </button>
+
+            {/* Sign Out Button (When user is signed in) */}
+            {user && (
+              <button
+                type="button"
+                onClick={onSignOut}
+                className="p-1.5 sm:p-2 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl border border-slate-200 transition-colors cursor-pointer"
+                title="Sign Out"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            )}
+
+            {/* Profile Avatar Button with Dropdown Menu */}
             <div className="relative" ref={dropdownRef}>
               <button
                 type="button"
                 onClick={() => setIsProfileOpen(!isProfileOpen)}
-                className="flex items-center gap-1 p-1 rounded-full sm:rounded-2xl border border-slate-200 hover:border-slate-300 hover:bg-slate-50 transition-all cursor-pointer shadow-2xs"
-                title="Account, Settings & Help"
+                className="flex items-center gap-1 p-1 rounded-full border border-slate-200 hover:border-slate-300 hover:bg-slate-50 transition-all cursor-pointer shadow-2xs"
+                title="Account, Sign In & Help"
                 aria-expanded={isProfileOpen}
               >
                 {user?.photoURL ? (
@@ -180,190 +198,107 @@ export const Header: React.FC<HeaderProps> = ({
                     <UserIcon className="w-4 h-4" />
                   </div>
                 )}
-                <ChevronDown className={`w-3.5 h-3.5 text-slate-400 mr-1 hidden sm:block transition-transform ${isProfileOpen ? 'rotate-180' : ''}`} />
+                <ChevronDown className={`w-3 h-3 text-slate-400 mr-0.5 transition-transform ${isProfileOpen ? 'rotate-180' : ''}`} />
               </button>
 
               {/* Profile Dropdown Menu */}
               {isProfileOpen && (
-                <div className="absolute right-0 mt-2 w-64 bg-white rounded-3xl shadow-2xl border border-slate-200 py-2 z-50 animate-in fade-in duration-100 text-xs">
-                  {/* User Profile Header Card */}
-                  <div className="px-4 py-3 border-b border-slate-100">
-                    <div className="flex items-center gap-2.5">
-                      {user?.photoURL ? (
-                        <img
-                          src={user.photoURL}
-                          alt={user.displayName || 'User'}
-                          className="w-9 h-9 rounded-full object-cover"
-                        />
-                      ) : user ? (
-                        <div className="w-9 h-9 rounded-full bg-emerald-600 text-white font-bold text-sm flex items-center justify-center">
-                          {userInitial}
+                <div className="absolute right-0 mt-2 w-56 bg-white rounded-2xl shadow-xl border border-slate-200 py-1 z-50 animate-in fade-in duration-100 text-xs">
+                  {user ? (
+                    // Signed In State
+                    <>
+                      <div className="px-3 py-2.5 border-b border-slate-100 bg-slate-50/50">
+                        <div className="flex items-center gap-2">
+                          {user.photoURL ? (
+                            <img
+                              src={user.photoURL}
+                              alt={user.displayName || 'User'}
+                              className="w-8 h-8 rounded-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-8 h-8 rounded-full bg-emerald-600 text-white font-bold text-xs flex items-center justify-center">
+                              {userInitial}
+                            </div>
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <h4 className="font-bold text-slate-900 text-xs truncate">
+                              {user.displayName || 'Google Account'}
+                            </h4>
+                            <p className="text-[10px] text-slate-500 truncate">
+                              {user.email}
+                            </p>
+                          </div>
                         </div>
-                      ) : (
-                        <div className="w-9 h-9 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center">
-                          <UserIcon className="w-5 h-5" />
+
+                        <div className="mt-2 flex items-center gap-1.5 text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md font-semibold">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                          <span>Signed in with Google</span>
                         </div>
-                      )}
+                      </div>
 
-                      <div className="min-w-0 flex-1">
-                        <h4 className="font-bold text-slate-900 text-xs truncate">
-                          {user?.displayName || (user ? 'Google User' : 'Guest Mode')}
-                        </h4>
-                        <p className="text-[11px] text-slate-500 truncate">
-                          {user?.email || 'Local offline storage'}
-                        </p>
-                      </div>
-                    </div>
+                      <div className="py-1">
+                        {/* Help & FAQs Option */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsProfileOpen(false);
+                            onOpenAuthHelp();
+                          }}
+                          className="w-full text-left px-3.5 py-2 hover:bg-slate-50 flex items-center gap-2 text-slate-700 hover:text-slate-900 cursor-pointer transition-colors font-medium text-xs"
+                        >
+                          <HelpCircle className="w-4 h-4 text-slate-400 shrink-0" />
+                          <span>Help &amp; FAQs</span>
+                        </button>
 
-                    <div className="mt-2 flex items-center gap-1.5">
-                      <span className={`w-2 h-2 rounded-full ${user ? 'bg-emerald-500' : 'bg-slate-400'}`} />
-                      <span className="text-[10px] font-semibold text-slate-600">
-                        {user ? 'Google Account Connected' : 'Saved in this Browser'}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Dropdown Menu Items */}
-                  <div className="py-1.5">
-                    {/* Settings & Categories */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsProfileOpen(false);
-                        onOpenSettings('categories');
-                      }}
-                      className="w-full text-left px-4 py-2.5 hover:bg-slate-50 flex items-center gap-3 text-slate-700 hover:text-slate-900 cursor-pointer transition-colors"
-                    >
-                      <div className="p-1.5 rounded-lg bg-emerald-50 text-emerald-700">
-                        <Tag className="w-4 h-4" />
+                        {/* Sign Out Button */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsProfileOpen(false);
+                            onSignOut();
+                          }}
+                          className="w-full text-left px-3.5 py-2 hover:bg-rose-50 flex items-center gap-2 text-rose-600 hover:text-rose-700 cursor-pointer transition-colors font-semibold text-xs border-t border-slate-100 mt-1"
+                        >
+                          <LogOut className="w-4 h-4 text-rose-500 shrink-0" />
+                          <span>Sign Out</span>
+                        </button>
                       </div>
-                      <div>
-                        <span className="font-bold text-xs block text-slate-900">
-                          Manage Categories
-                        </span>
-                        <span className="text-[10px] text-slate-400">
-                          Create, edit and manage 80+ icons
-                        </span>
-                      </div>
-                    </button>
-
-                    {/* General Settings */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsProfileOpen(false);
-                        onOpenSettings('preferences');
-                      }}
-                      className="w-full text-left px-4 py-2.5 hover:bg-slate-50 flex items-center gap-3 text-slate-700 hover:text-slate-900 cursor-pointer transition-colors"
-                    >
-                      <div className="p-1.5 rounded-lg bg-slate-100 text-slate-700">
-                        <SettingsIcon className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <span className="font-bold text-xs block text-slate-900">
-                          Settings &amp; Preferences
-                        </span>
-                        <span className="text-[10px] text-slate-400">
-                          Currency, phone alerts, backups
-                        </span>
-                      </div>
-                    </button>
-
-                    {/* Google Sheets Sync */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsProfileOpen(false);
-                        onOpenSyncModal();
-                      }}
-                      className="w-full text-left px-4 py-2.5 hover:bg-slate-50 flex items-center gap-3 text-slate-700 hover:text-slate-900 cursor-pointer transition-colors"
-                    >
-                      <div className="p-1.5 rounded-lg bg-blue-50 text-blue-700">
-                        <FileSpreadsheet className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <span className="font-bold text-xs block text-slate-900">
-                          Google Sheets Manager
-                        </span>
-                        <span className="text-[10px] text-slate-400">
-                          {activeSheet ? 'Connected to Drive' : 'Sync your spreadsheets'}
-                        </span>
-                      </div>
-                    </button>
-
-                    {/* Bank SMS Alert Reader */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsProfileOpen(false);
-                        onOpenSmsModal();
-                      }}
-                      className="w-full text-left px-4 py-2.5 hover:bg-slate-50 flex items-center gap-3 text-slate-700 hover:text-slate-900 cursor-pointer transition-colors"
-                    >
-                      <div className="p-1.5 rounded-lg bg-indigo-50 text-indigo-700">
-                        <MessageSquare className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <span className="font-bold text-xs block text-slate-900">
-                          Bank SMS &amp; Alert Reader
-                        </span>
-                        <span className="text-[10px] text-slate-400">
-                          Auto-extract transactions from SMS
-                        </span>
-                      </div>
-                    </button>
-
-                    {/* Help & Support */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsProfileOpen(false);
-                        onOpenAuthHelp();
-                      }}
-                      className="w-full text-left px-4 py-2.5 hover:bg-slate-50 flex items-center gap-3 text-slate-700 hover:text-slate-900 cursor-pointer transition-colors"
-                    >
-                      <div className="p-1.5 rounded-lg bg-slate-100 text-slate-700">
-                        <HelpCircle className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <span className="font-bold text-xs block text-slate-900">
-                          Help &amp; FAQs
-                        </span>
-                        <span className="text-[10px] text-slate-400">
-                          Sign-in troubleshooting &amp; info
-                        </span>
-                      </div>
-                    </button>
-                  </div>
-
-                  {/* Divider & Sign in / Sign out action */}
-                  <div className="pt-1.5 border-t border-slate-100 px-2">
-                    {user ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsProfileOpen(false);
-                          onSignOut();
-                        }}
-                        className="w-full text-left px-3 py-2 text-rose-700 hover:bg-rose-50 rounded-xl font-bold text-xs flex items-center gap-2 cursor-pointer transition-colors"
-                      >
-                        <LogOut className="w-4 h-4" />
-                        <span>Sign Out</span>
-                      </button>
-                    ) : (
+                    </>
+                  ) : (
+                    // Not Signed In State
+                    <div className="py-1">
+                      {/* 1. Sign In Option with Official Google Logo */}
                       <button
                         type="button"
                         onClick={() => {
                           setIsProfileOpen(false);
                           onSignIn();
                         }}
-                        className="w-full text-left px-3 py-2 text-emerald-700 hover:bg-emerald-50 rounded-xl font-bold text-xs flex items-center gap-2 cursor-pointer transition-colors"
+                        className="w-full text-left px-3.5 py-2.5 hover:bg-emerald-50/80 flex items-center gap-2.5 text-slate-800 hover:text-emerald-900 cursor-pointer transition-colors group font-semibold text-xs"
                       >
-                        <LogIn className="w-4 h-4" />
+                        <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                          <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"/>
+                          <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.34 24 12 24z"/>
+                          <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.99 0 12s.45 3.82 1.25 5.42l4.03-3.15z"/>
+                          <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.34 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
+                        </svg>
                         <span>Sign In with Google</span>
                       </button>
-                    )}
-                  </div>
+
+                      {/* 2. Help & FAQs Option */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsProfileOpen(false);
+                          onOpenAuthHelp();
+                        }}
+                        className="w-full text-left px-3.5 py-2.5 hover:bg-slate-50 flex items-center gap-2.5 text-slate-700 hover:text-slate-900 cursor-pointer transition-colors font-medium text-xs border-t border-slate-100"
+                      >
+                        <HelpCircle className="w-4 h-4 text-slate-400 shrink-0" />
+                        <span>Help &amp; FAQs</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

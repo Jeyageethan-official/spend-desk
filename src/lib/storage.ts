@@ -7,6 +7,87 @@ const WEBHOOK_URL_KEY = 'money_tracker_webhook_url_v2';
 const LEND_STORAGE_KEY = 'money_tracker_lend_items_v2';
 const ALERT_PHONE_KEY = 'money_tracker_alert_phone_v2';
 const CUSTOM_CATEGORIES_KEY = 'money_tracker_custom_categories_v2';
+const UNIFIED_CATEGORIES_KEY = 'money_tracker_unified_categories_v3';
+
+export interface CategoryDef {
+  id: string;
+  name: string;
+  iconName: string;
+  color?: string;
+}
+
+export const DEFAULT_INITIAL_CATEGORIES: CategoryDef[] = [
+  { id: 'cat-food', name: 'Food', iconName: 'Utensils', color: '#ef4444' },
+  { id: 'cat-transport', name: 'Transport', iconName: 'Car', color: '#3b82f6' },
+  { id: 'cat-shopping', name: 'Shopping', iconName: 'ShoppingBag', color: '#8b5cf6' },
+  { id: 'cat-bills', name: 'Bills', iconName: 'Zap', color: '#f59e0b' },
+  { id: 'cat-entertainment', name: 'Entertainment', iconName: 'Film', color: '#ec4899' },
+  { id: 'cat-education', name: 'Education', iconName: 'GraduationCap', color: '#10b981' },
+  { id: 'cat-health', name: 'Healthcare', iconName: 'HeartPulse', color: '#06b6d4' },
+  { id: 'cat-groceries', name: 'Groceries', iconName: 'Apple', color: '#84cc16' },
+  { id: 'cat-other', name: 'Other', iconName: 'MoreHorizontal', color: '#6b7280' },
+];
+
+export const loadStoredCategoryDefs = (): CategoryDef[] => {
+  try {
+    const raw = localStorage.getItem(UNIFIED_CATEGORIES_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+
+    // Migration from legacy custom categories if exists
+    const legacyRaw = localStorage.getItem(CUSTOM_CATEGORIES_KEY);
+    const legacyDefs: CategoryDef[] = [];
+    if (legacyRaw) {
+      const parsedLegacy = JSON.parse(legacyRaw);
+      if (Array.isArray(parsedLegacy)) {
+        parsedLegacy.forEach((item, idx) => {
+          if (typeof item === 'string') {
+            legacyDefs.push({ id: `legacy-${idx}`, name: item, iconName: 'Tag' });
+          } else if (item && item.name) {
+            legacyDefs.push({ id: `legacy-${idx}`, name: item.name, iconName: item.iconName || 'Tag' });
+          }
+        });
+      }
+    }
+
+    // Merge default categories + legacy custom
+    const initial = [...DEFAULT_INITIAL_CATEGORIES];
+    legacyDefs.forEach((leg) => {
+      if (!initial.some((c) => c.name.toLowerCase() === leg.name.toLowerCase())) {
+        initial.push(leg);
+      }
+    });
+
+    localStorage.setItem(UNIFIED_CATEGORIES_KEY, JSON.stringify(initial));
+    return initial;
+  } catch (e) {
+    console.error('Failed to load category definitions:', e);
+    return DEFAULT_INITIAL_CATEGORIES;
+  }
+};
+
+export const saveStoredCategoryDefs = (categories: CategoryDef[]) => {
+  try {
+    localStorage.setItem(UNIFIED_CATEGORIES_KEY, JSON.stringify(categories));
+    // Keep custom categories in sync for backwards compatibility
+    localStorage.setItem(CUSTOM_CATEGORIES_KEY, JSON.stringify(categories));
+  } catch (e) {
+    console.error('Failed to save category definitions:', e);
+  }
+};
+
+export const resetToDefaultCategoryDefs = (): CategoryDef[] => {
+  try {
+    localStorage.setItem(UNIFIED_CATEGORIES_KEY, JSON.stringify(DEFAULT_INITIAL_CATEGORIES));
+  } catch (e) {
+    console.error('Failed to reset categories:', e);
+  }
+  return DEFAULT_INITIAL_CATEGORIES;
+};
 
 export const DEFAULT_BUDGET_CONFIG: BudgetConfig = {
   monthlyBudget: 0,
@@ -146,43 +227,94 @@ export interface CustomCategoryDef {
 }
 
 export const loadStoredCustomCategoryDefs = (): CustomCategoryDef[] => {
-  try {
-    const raw = localStorage.getItem(CUSTOM_CATEGORIES_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        return parsed.map((item) => {
-          if (typeof item === 'string') {
-            return { name: item, iconName: 'Tag' };
-          }
-          return { name: item.name || 'Custom', iconName: item.iconName || 'Tag' };
-        });
-      }
-    }
-  } catch (e) {
-    console.error('Failed to parse custom categories:', e);
-  }
-  return [];
+  return loadStoredCategoryDefs().map((c) => ({
+    name: c.name,
+    iconName: c.iconName,
+  }));
 };
 
 export const saveStoredCustomCategoryDefs = (categories: CustomCategoryDef[]) => {
-  try {
-    localStorage.setItem(CUSTOM_CATEGORIES_KEY, JSON.stringify(categories));
-  } catch (e) {
-    console.error('Failed to save custom categories:', e);
-  }
+  const current = loadStoredCategoryDefs();
+  const currentMap = new Map(current.map(c => [c.name.toLowerCase(), c]));
+  const updated: CategoryDef[] = categories.map((cat, idx) => {
+    const existing = currentMap.get(cat.name.toLowerCase());
+    return {
+      id: existing?.id || `cat-custom-${Date.now()}-${idx}`,
+      name: cat.name,
+      iconName: cat.iconName || 'Tag',
+      color: existing?.color || '#0ea5e9'
+    };
+  });
+  saveStoredCategoryDefs(updated);
 };
 
 export const loadStoredCustomCategories = (): string[] => {
-  return loadStoredCustomCategoryDefs().map((c) => c.name);
+  return loadStoredCategoryDefs().map((c) => c.name);
 };
 
-export const saveStoredCustomCategories = (categories: string[]) => {
-  const currentDefs = loadStoredCustomCategoryDefs();
-  const defMap = new Map(currentDefs.map(d => [d.name.toLowerCase(), d.iconName]));
-  const updatedDefs: CustomCategoryDef[] = categories.map(name => ({
-    name,
-    iconName: defMap.get(name.toLowerCase()) || 'Tag'
-  }));
-  saveStoredCustomCategoryDefs(updatedDefs);
+export const saveStoredCustomCategories = (categoryNames: string[]) => {
+  const current = loadStoredCategoryDefs();
+  const defMap = new Map(current.map(d => [d.name.toLowerCase(), d]));
+  const updated: CategoryDef[] = categoryNames.map((name, idx) => {
+    const existing = defMap.get(name.toLowerCase());
+    return {
+      id: existing?.id || `cat-${Date.now()}-${idx}`,
+      name,
+      iconName: existing?.iconName || 'Tag',
+      color: existing?.color || '#0ea5e9'
+    };
+  });
+  saveStoredCategoryDefs(updated);
+};
+
+// Full Application JSON Backup & Restore Helpers
+export interface FullAppDataBackup {
+  version: string;
+  exportedAt: string;
+  transactions: Transaction[];
+  lendItems: LendItem[];
+  categories: CategoryDef[];
+  budgetConfig: BudgetConfig;
+  alertPhone: string;
+}
+
+export const exportFullBackupJson = (): string => {
+  const data: FullAppDataBackup = {
+    version: '3.0.0',
+    exportedAt: new Date().toISOString(),
+    transactions: loadStoredTransactions(),
+    lendItems: loadStoredLendItems(),
+    categories: loadStoredCategoryDefs(),
+    budgetConfig: loadStoredBudgetConfig(),
+    alertPhone: loadStoredAlertPhone(),
+  };
+  return JSON.stringify(data, null, 2);
+};
+
+export const importFullBackupJson = (jsonString: string): { success: boolean; message: string; count?: number } => {
+  try {
+    const data = JSON.parse(jsonString);
+    if (!data || typeof data !== 'object') {
+      return { success: false, message: 'Invalid JSON format.' };
+    }
+    if (Array.isArray(data.transactions)) {
+      saveStoredTransactions(data.transactions);
+    }
+    if (Array.isArray(data.lendItems)) {
+      saveStoredLendItems(data.lendItems);
+    }
+    if (Array.isArray(data.categories) && data.categories.length > 0) {
+      saveStoredCategoryDefs(data.categories);
+    }
+    if (data.budgetConfig && typeof data.budgetConfig === 'object') {
+      saveStoredBudgetConfig(data.budgetConfig);
+    }
+    if (typeof data.alertPhone === 'string') {
+      saveStoredAlertPhone(data.alertPhone);
+    }
+    const txCount = Array.isArray(data.transactions) ? data.transactions.length : 0;
+    return { success: true, message: `Successfully restored ${txCount} transactions and system settings.`, count: txCount };
+  } catch (err: any) {
+    return { success: false, message: err?.message || 'Failed to parse backup JSON.' };
+  }
 };

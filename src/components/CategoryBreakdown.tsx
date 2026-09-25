@@ -1,16 +1,10 @@
 import React from 'react';
 import { 
-  Utensils, 
-  Car, 
-  ShoppingBag, 
-  Zap, 
-  Film, 
-  GraduationCap, 
-  MoreHorizontal,
   PieChart
 } from 'lucide-react';
 import { CategorySummary, Category } from '../types/finance';
 import { formatCurrency } from '../lib/calculations';
+import { getCategoryIcon } from '../lib/icons';
 
 interface CategoryBreakdownProps {
   categories: CategorySummary[];
@@ -18,25 +12,6 @@ interface CategoryBreakdownProps {
   currency?: string;
   onSelectCategory?: (category: Category) => void;
 }
-
-const getCategoryIcon = (category: Category) => {
-  switch (category) {
-    case 'Food':
-      return <Utensils className="w-4 h-4 text-red-500" />;
-    case 'Transport':
-      return <Car className="w-4 h-4 text-blue-500" />;
-    case 'Shopping':
-      return <ShoppingBag className="w-4 h-4 text-purple-500" />;
-    case 'Bills':
-      return <Zap className="w-4 h-4 text-amber-500" />;
-    case 'Entertainment':
-      return <Film className="w-4 h-4 text-pink-500" />;
-    case 'Education':
-      return <GraduationCap className="w-4 h-4 text-emerald-500" />;
-    default:
-      return <MoreHorizontal className="w-4 h-4 text-gray-500" />;
-  }
-};
 
 export const CategoryBreakdown: React.FC<CategoryBreakdownProps> = ({
   categories,
@@ -67,6 +42,7 @@ export const CategoryBreakdown: React.FC<CategoryBreakdownProps> = ({
       <div className="space-y-3.5 flex-1">
         {categories.map((cat) => {
           const percent = totalSpend > 0 ? (cat.amount / totalSpend) * 100 : 0;
+          const IconComp = getCategoryIcon(cat.iconName);
           return (
             <div 
               key={cat.category}
@@ -76,7 +52,7 @@ export const CategoryBreakdown: React.FC<CategoryBreakdownProps> = ({
               <div className="flex items-center justify-between text-xs sm:text-sm font-medium mb-1.5">
                 <div className="flex items-center gap-2.5">
                   <div className="p-1.5 rounded-lg bg-slate-100 group-hover:bg-white border border-transparent group-hover:border-slate-200 transition-colors">
-                    {getCategoryIcon(cat.category)}
+                    <IconComp className="w-4 h-4 text-emerald-600" />
                   </div>
                   <span className="text-slate-800 font-semibold group-hover:text-emerald-700 transition-colors">
                     {cat.category}

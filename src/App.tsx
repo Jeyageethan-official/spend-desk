@@ -55,7 +55,7 @@ import { AuthHelpModal } from './components/AuthHelpModal';
 import { BottomNav } from './components/BottomNav';
 import { LendBorrowView } from './components/LendBorrowView';
 import { AnalyticsView } from './components/AnalyticsView';
-import { SettingsModal } from './components/SettingsModal';
+import { SettingsView } from './components/SettingsView';
 import { 
   CheckCircle2, 
   AlertCircle, 
@@ -68,7 +68,7 @@ export default function App() {
   const [user, setUser] = useState<any>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
 
-  // App Navigation Tab (Mobile-first)
+  // App Navigation Tab (Mobile-first & Full-screen SPA)
   const [activeTab, setActiveTab] = useState<AppTab>('dashboard');
 
   // Transactions, Debt & Config State
@@ -89,7 +89,7 @@ export default function App() {
     searchQuery: '',
   });
 
-  // Modal States
+  // Modal & View States
   const [isTxModalOpen, setIsTxModalOpen] = useState(false);
   const [isLendModalOpen, setIsLendModalOpen] = useState(false);
   const [modalDefaultType, setModalDefaultType] = useState<TransactionType>('cash_expense');
@@ -98,8 +98,7 @@ export default function App() {
   const [isSmsModalOpen, setIsSmsModalOpen] = useState(false);
   const [isAuthHelpOpen, setIsAuthHelpOpen] = useState(false);
   const [isSignOutConfirmOpen, setIsSignOutConfirmOpen] = useState(false);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<'categories' | 'preferences' | 'data' | 'about'>('categories');
+  const [settingsSection, setSettingsSection] = useState<'main' | 'categories' | 'preferences' | 'budget' | 'cloud' | 'data' | 'about'>('main');
   const [deleteCandidate, setDeleteCandidate] = useState<Transaction | null>(null);
 
   // Status & Syncing
@@ -445,8 +444,8 @@ export default function App() {
         onQuickSync={handlePushToSheet}
         onOpenAuthHelp={() => setIsAuthHelpOpen(true)}
         onOpenSettings={(tab) => {
-          setSettingsTab(tab || 'categories');
-          setIsSettingsOpen(true);
+          setSettingsSection((tab as any) || 'main');
+          setActiveTab('settings');
         }}
       />
 
@@ -472,32 +471,63 @@ export default function App() {
         </div>
       )}
 
-      {/* Main Content Dashboard */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4 sm:space-y-6">
-        
-        {/* Desktop Tab Selector Bar */}
-        <div className="hidden md:flex items-center justify-between bg-white p-1.5 rounded-2xl border border-slate-200 shadow-xs">
-          <div className="flex items-center gap-1">
-            {[
-              { id: 'dashboard', label: 'Overview & Wallet' },
-              { id: 'transactions', label: 'Transaction Ledger' },
-              { id: 'lend', label: `Lend & Borrow${pendingLendCount > 0 ? ` (${pendingLendCount})` : ''}` },
-              { id: 'analytics', label: 'Category & Trends' },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id as AppTab)}
-                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  activeTab === tab.id
-                    ? 'bg-slate-900 text-white shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+      {/* Main Content Dashboard or Full-screen Settings View */}
+      {activeTab === 'settings' ? (
+        <SettingsView
+          onBack={() => setActiveTab('dashboard')}
+          currency={currency}
+          onUpdateCurrency={(c) => {
+            setCurrency(c);
+            showNotification(`Currency updated to ${c}`, 'success');
+          }}
+          budgetConfig={budgetConfig}
+          onUpdateBudgetConfig={handleUpdateBudgetConfig}
+          alertPhone={alertPhone}
+          onUpdateAlertPhone={handleUpdateAlertPhone}
+          activeSheet={activeSheet}
+          onOpenSyncModal={() => setIsSyncModalOpen(true)}
+          onExportCSV={handleExportCSV}
+          transactions={transactions}
+          lendItems={lendItems}
+          onResetAllData={() => {
+            setTransactions([]);
+            setLendItems([]);
+            showNotification('All local transaction records cleared.', 'info');
+          }}
+          onRestoreTransactions={() => {
+            setTransactions(loadStoredTransactions());
+            setLendItems(loadStoredLendItems());
+            showNotification('Data restored successfully.', 'success');
+          }}
+          initialSection={settingsSection}
+          onNotification={showNotification}
+        />
+      ) : (
+        <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4 sm:space-y-6">
+          {/* Desktop Tab Selector Bar */}
+          <div className="hidden md:flex items-center justify-between bg-white p-1.5 rounded-2xl border border-slate-200 shadow-xs">
+            <div className="flex items-center gap-1">
+              {[
+                { id: 'dashboard', label: 'Overview & Wallet' },
+                { id: 'transactions', label: 'Transaction Ledger' },
+                { id: 'lend', label: `Lend & Borrow${pendingLendCount > 0 ? ` (${pendingLendCount})` : ''}` },
+                { id: 'analytics', label: 'Category & Trends' },
+                { id: 'settings', label: 'Settings & Categories' },
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id as AppTab)}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    activeTab === tab.id
+                      ? 'bg-slate-900 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
 
           <div className="flex items-center gap-2 pr-2">
             <button
@@ -648,6 +678,7 @@ export default function App() {
           />
         )}
       </main>
+      )}
 
       {/* Native Mobile Bottom Navigation Bar */}
       <BottomNav
@@ -678,33 +709,9 @@ export default function App() {
         defaultAlertPhone={alertPhone}
         onOpenSmsReader={() => setIsSmsModalOpen(true)}
         onOpenSettingsCategories={() => {
-          setSettingsTab('categories');
-          setIsSettingsOpen(true);
-        }}
-      />
-
-      {/* Settings & Category Management Modal */}
-      <SettingsModal
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-        currency={currency}
-        onUpdateCurrency={(c) => {
-          setCurrency(c);
-          showNotification(`Currency updated to ${c}`, 'success');
-        }}
-        alertPhone={alertPhone}
-        onUpdateAlertPhone={handleUpdateAlertPhone}
-        activeSheet={activeSheet}
-        onOpenSyncModal={() => setIsSyncModalOpen(true)}
-        onExportCSV={handleExportCSV}
-        onResetAllData={() => {
-          setTransactions([]);
-          setLendItems([]);
-          showNotification('All local transaction records cleared.', 'info');
-        }}
-        initialTab={settingsTab}
-        onCategoriesUpdated={() => {
-          showNotification('Categories updated.', 'success');
+          setIsTxModalOpen(false);
+          setSettingsSection('categories');
+          setActiveTab('settings');
         }}
       />
 

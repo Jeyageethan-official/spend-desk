@@ -18,8 +18,8 @@ import {
 } from 'lucide-react';
 import { Transaction, TransactionType, Category, PaymentMethod } from '../types/finance';
 import { 
-  loadStoredCustomCategoryDefs, 
-  CustomCategoryDef 
+  loadStoredCategoryDefs, 
+  CategoryDef 
 } from '../lib/storage';
 import { getCategoryIcon } from '../lib/icons';
 
@@ -33,16 +33,6 @@ interface TransactionModalProps {
   onOpenSmsReader?: () => void;
   onOpenSettingsCategories?: () => void;
 }
-
-const DEFAULT_CATEGORIES: { label: string; iconName: string }[] = [
-  { label: 'Food', iconName: 'Utensils' },
-  { label: 'Transport', iconName: 'Car' },
-  { label: 'Shopping', iconName: 'ShoppingBag' },
-  { label: 'Bills', iconName: 'Zap' },
-  { label: 'Entertainment', iconName: 'Film' },
-  { label: 'Education', iconName: 'GraduationCap' },
-  { label: 'Other', iconName: 'MoreHorizontal' },
-];
 
 export const TransactionModal: React.FC<TransactionModalProps> = ({
   isOpen,
@@ -60,15 +50,19 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   const [date, setDate] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
   
-  // Custom categories state loaded from storage
-  const [customCategoryDefs, setCustomCategoryDefs] = useState<CustomCategoryDef[]>(() => loadStoredCustomCategoryDefs());
+  // Unified categories state loaded from storage
+  const [categoryDefs, setCategoryDefs] = useState<CategoryDef[]>(() => loadStoredCategoryDefs());
 
   const amountInputRef = useRef<HTMLInputElement>(null);
 
-  // Reload custom categories when modal opens
+  // Reload categories when modal opens
   useEffect(() => {
     if (isOpen) {
-      setCustomCategoryDefs(loadStoredCustomCategoryDefs());
+      const stored = loadStoredCategoryDefs();
+      setCategoryDefs(stored);
+      if (!editingTransaction && stored.length > 0 && !stored.some(c => c.name === category)) {
+        setCategory(stored[0].name);
+      }
     }
   }, [isOpen]);
 
@@ -157,14 +151,11 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
 
   const currentAmountNum = parseFloat(amountStr) || 0;
 
-  // Build combined categories
-  const allCategories = [
-    ...DEFAULT_CATEGORIES.map(c => ({ label: c.label, iconName: c.iconName })),
-    ...customCategoryDefs.map(c => ({
-      label: c.name,
-      iconName: c.iconName || 'Tag'
-    }))
-  ];
+  // Build combined categories from unified list
+  const allCategories = categoryDefs.map(c => ({
+    label: c.name,
+    iconName: c.iconName || 'Tag'
+  }));
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-150">
@@ -235,7 +226,6 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
               Amount
             </label>
             <div className="flex items-center justify-center relative max-w-xs mx-auto">
-              <span className="text-xl font-bold text-slate-400 mr-2">Rs</span>
               <input
                 ref={amountInputRef}
                 type="number"
@@ -244,7 +234,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                 placeholder="0.00"
                 value={amountStr}
                 onChange={(e) => setAmountStr(e.target.value)}
-                className={`w-44 text-3xl sm:text-4xl font-black bg-transparent text-center focus:outline-hidden ${
+                className={`w-48 text-3xl sm:text-4xl font-black bg-transparent text-center focus:outline-hidden [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
                   type === 'cash_added' 
                     ? 'text-emerald-600' 
                     : type === 'card_expense' 
@@ -252,6 +242,22 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                     : 'text-rose-600'
                 }`}
               />
+
+              {/* Unique Sleek Instant Clear Button */}
+              {amountStr && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAmountStr('');
+                    amountInputRef.current?.focus();
+                  }}
+                  className="absolute right-4 w-7 h-7 rounded-full bg-slate-200/80 hover:bg-slate-300 text-slate-600 flex items-center justify-center transition-all cursor-pointer shadow-2xs hover:scale-105 active:scale-95"
+                  title="Clear amount"
+                  aria-label="Clear amount"
+                >
+                  <X className="w-3.5 h-3.5 stroke-[2.5]" />
+                </button>
+              )}
             </div>
 
             {/* Quick Add Increment Chips */}
@@ -261,18 +267,11 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                   key={chip}
                   type="button"
                   onClick={() => handleQuickAdd(chip)}
-                  className="px-2.5 py-1 text-xs font-bold bg-white hover:bg-slate-100 active:bg-slate-200 border border-slate-200 text-slate-700 rounded-xl transition-all shadow-2xs cursor-pointer"
+                  className="px-3 py-1 text-xs font-bold bg-white hover:bg-slate-100 active:bg-slate-200 border border-slate-200 text-slate-700 rounded-xl transition-all shadow-2xs cursor-pointer"
                 >
                   +{chip.toLocaleString()}
                 </button>
               ))}
-              <button
-                type="button"
-                onClick={() => setAmountStr('')}
-                className="px-2.5 py-1 text-xs font-semibold bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 rounded-xl cursor-pointer"
-              >
-                Clear
-              </button>
             </div>
           </div>
 

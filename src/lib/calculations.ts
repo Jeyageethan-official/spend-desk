@@ -3,9 +3,10 @@ import {
   SpendingSummary, 
   CategorySummary, 
   Category, 
-  DailyTrendItem,
+  DailyTrendItem, 
   FilterState 
 } from '../types/finance';
+import { loadStoredCategoryDefs } from './storage';
 
 export const STANDARD_CATEGORIES: { category: Category; color: string; iconName: string; bgClass: string; textClass: string }[] = [
   { category: 'Food', color: '#EF4444', iconName: 'Utensils', bgClass: 'bg-red-50 text-red-700 border-red-200', textClass: 'text-red-600' },
@@ -109,9 +110,11 @@ export const calculateCategoryBreakdown = (
 
   const map = new Map<Category, { amount: number; count: number }>();
   
-  // Seed with standard categories
-  STANDARD_CATEGORIES.forEach(({ category }) => {
-    map.set(category, { amount: 0, count: 0 });
+  // Seed with all configured categories
+  const currentDefs = loadStoredCategoryDefs();
+  const defMap = new Map(currentDefs.map(d => [d.name, d]));
+  currentDefs.forEach(({ name }) => {
+    map.set(name, { amount: 0, count: 0 });
   });
 
   expenseTxs.forEach((tx) => {
@@ -123,10 +126,7 @@ export const calculateCategoryBreakdown = (
   });
 
   return Array.from(map.entries()).map(([cat, data]) => {
-    const std = STANDARD_CATEGORIES.find((c) => c.category === cat) || {
-      color: '#6B7280',
-      iconName: 'MoreHorizontal',
-    };
+    const def = defMap.get(cat) || STANDARD_CATEGORIES.find((c) => c.category === cat);
     const percentage = totalExpense > 0 ? (data.amount / totalExpense) * 100 : 0;
 
     return {
@@ -134,8 +134,8 @@ export const calculateCategoryBreakdown = (
       amount: data.amount,
       percentage,
       count: data.count,
-      color: std.color,
-      iconName: std.iconName,
+      color: def?.color || '#0ea5e9',
+      iconName: def?.iconName || 'Tag',
     };
   });
 };
