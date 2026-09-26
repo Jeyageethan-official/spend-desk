@@ -5,24 +5,30 @@ import {
   CreditCard, 
   Edit3, 
   Trash2, 
-  Wallet,
-  Clock,
-  Layers,
-  ArrowUpDown,
-  Plus,
-  Utensils,
-  Car,
-  ShoppingBag,
-  Zap,
-  Film,
-  GraduationCap,
-  MoreHorizontal,
-  ChevronDown,
-  Check,
-  SlidersHorizontal
+  Wallet, 
+  Clock, 
+  Layers, 
+  ArrowUpDown, 
+  Plus, 
+  Utensils, 
+  Car, 
+  ShoppingBag, 
+  Zap, 
+  Film, 
+  GraduationCap, 
+  MoreHorizontal, 
+  ChevronDown, 
+  Check, 
+  SlidersHorizontal,
+  Calendar,
+  CalendarDays,
+  Paperclip,
+  X,
+  ExternalLink
 } from 'lucide-react';
-import { Transaction, Category } from '../types/finance';
+import { Transaction, Category, FilterState } from '../types/finance';
 import { formatCurrency, STANDARD_CATEGORIES } from '../lib/calculations';
+import { triggerFeedback } from '../lib/haptics';
 
 interface TransactionTableProps {
   transactions: Transaction[];
@@ -30,6 +36,8 @@ interface TransactionTableProps {
   onDelete: (tx: Transaction) => void;
   onAddNew?: () => void;
   currency?: string;
+  filter?: FilterState;
+  onFilterChange?: (newFilter: FilterState) => void;
 }
 
 const getCategoryIcon = (cat: Category) => {
@@ -50,11 +58,75 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
   onDelete,
   onAddNew,
   currency = 'Rs',
+  filter,
+  onFilterChange,
 }) => {
   const [sortField, setSortField] = useState<'date' | 'amount'>('date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [isSortOpen, setIsSortOpen] = useState(false);
+  const [viewReceipt, setViewReceipt] = useState<string | null>(null);
   const sortDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Quick Filter active states
+  const isWeekActive = filter?.type === 'week';
+  const isMonthActive = filter?.type === 'month';
+  const isCashOnlyActive = filter?.paymentMethod === 'Cash';
+  const isCardOnlyActive = filter?.paymentMethod === 'Card';
+
+  const getPresetDates = (type: 'week' | 'month'): { startDate: string; endDate: string } => {
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+
+    if (type === 'week') {
+      const curr = new Date(now);
+      const day = curr.getDay(); // 0 is Sun
+      const diffToMon = curr.getDate() - day + (day === 0 ? -6 : 1);
+      const monday = new Date(curr.setDate(diffToMon));
+      const monStr = monday.toISOString().split('T')[0];
+      return { startDate: monStr, endDate: todayStr };
+    } else {
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      return { startDate: `${year}-${month}-01`, endDate: todayStr };
+    }
+  };
+
+  const handleToggleDatePreset = (preset: 'week' | 'month') => {
+    triggerFeedback('tap');
+    if (!filter || !onFilterChange) return;
+    if (filter.type === preset) {
+      onFilterChange({
+        ...filter,
+        type: 'all',
+        startDate: '',
+        endDate: '',
+      });
+    } else {
+      const dates = getPresetDates(preset);
+      onFilterChange({
+        ...filter,
+        type: preset,
+        startDate: dates.startDate,
+        endDate: dates.endDate,
+      });
+    }
+  };
+
+  const handleTogglePayment = (method: 'Cash' | 'Card') => {
+    triggerFeedback('tap');
+    if (!filter || !onFilterChange) return;
+    if (filter.paymentMethod === method) {
+      onFilterChange({
+        ...filter,
+        paymentMethod: 'All',
+      });
+    } else {
+      onFilterChange({
+        ...filter,
+        paymentMethod: method,
+      });
+    }
+  };
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -183,6 +255,75 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
         </div>
       </div>
 
+      {/* Quick Filters directly above transaction list */}
+      {onFilterChange && (
+        <div className="px-4 py-2.5 bg-slate-50/80 border-b border-slate-100 flex items-center gap-1.5 overflow-x-auto scrollbar-none text-xs">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-1 shrink-0">
+            Quick:
+          </span>
+
+          {/* This Week */}
+          <button
+            type="button"
+            onClick={() => handleToggleDatePreset('week')}
+            className={`px-2.5 py-1 rounded-xl text-xs flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
+              isWeekActive
+                ? 'bg-slate-900 text-white font-bold shadow-2xs'
+                : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200/80 font-medium'
+            }`}
+          >
+            <Calendar className="w-3 h-3 text-emerald-500" />
+            <span>This Week</span>
+            {isWeekActive && <Check className="w-3 h-3 text-emerald-400" />}
+          </button>
+
+          {/* This Month */}
+          <button
+            type="button"
+            onClick={() => handleToggleDatePreset('month')}
+            className={`px-2.5 py-1 rounded-xl text-xs flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
+              isMonthActive
+                ? 'bg-slate-900 text-white font-bold shadow-2xs'
+                : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200/80 font-medium'
+            }`}
+          >
+            <CalendarDays className="w-3 h-3 text-blue-500" />
+            <span>This Month</span>
+            {isMonthActive && <Check className="w-3 h-3 text-emerald-400" />}
+          </button>
+
+          {/* Cash Only */}
+          <button
+            type="button"
+            onClick={() => handleTogglePayment('Cash')}
+            className={`px-2.5 py-1 rounded-xl text-xs flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
+              isCashOnlyActive
+                ? 'bg-slate-900 text-white font-bold shadow-2xs'
+                : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200/80 font-medium'
+            }`}
+          >
+            <Wallet className="w-3 h-3 text-emerald-600" />
+            <span>Cash Only</span>
+            {isCashOnlyActive && <Check className="w-3 h-3 text-emerald-400" />}
+          </button>
+
+          {/* Card Only */}
+          <button
+            type="button"
+            onClick={() => handleTogglePayment('Card')}
+            className={`px-2.5 py-1 rounded-xl text-xs flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
+              isCardOnlyActive
+                ? 'bg-slate-900 text-white font-bold shadow-2xs'
+                : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200/80 font-medium'
+            }`}
+          >
+            <CreditCard className="w-3 h-3 text-blue-600" />
+            <span>Card Only</span>
+            {isCardOnlyActive && <Check className="w-3 h-3 text-emerald-400" />}
+          </button>
+        </div>
+      )}
+
       {/* Empty State */}
       {transactions.length === 0 ? (
         <div className="py-12 px-4 text-center">
@@ -241,13 +382,28 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
                     </div>
 
                     <div className="truncate flex-1">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="font-bold text-xs text-slate-900 truncate">
                           {tx.notes || tx.category}
                         </span>
                         <span className="text-[10px] px-1.5 py-0.2 rounded-md font-semibold bg-slate-100 text-slate-600">
                           {tx.paymentMethod}
                         </span>
+                        {tx.receiptImage && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              triggerFeedback('tap');
+                              setViewReceipt(tx.receiptImage!);
+                            }}
+                            className="inline-flex items-center gap-1 text-[10px] font-bold text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200/80 px-1.5 py-0.5 rounded-md cursor-pointer transition-colors shadow-2xs"
+                            title="View paper receipt"
+                          >
+                            <Paperclip className="w-2.5 h-2.5 text-teal-600" />
+                            <span>Receipt</span>
+                          </button>
+                        )}
                       </div>
 
                       <div className="flex items-center gap-1 text-[11px] text-slate-400 mt-0.5">
@@ -345,7 +501,23 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
                       </td>
 
                       <td className="py-3 px-4 text-slate-700 font-medium max-w-[200px] truncate">
-                        {tx.notes || '—'}
+                        <div className="flex items-center gap-1.5">
+                          <span className="truncate">{tx.notes || '—'}</span>
+                          {tx.receiptImage && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                triggerFeedback('tap');
+                                setViewReceipt(tx.receiptImage!);
+                              }}
+                              className="inline-flex items-center gap-1 text-[10px] font-bold text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200/80 px-1.5 py-0.5 rounded-md cursor-pointer transition-colors shadow-2xs shrink-0"
+                              title="View paper receipt"
+                            >
+                              <Paperclip className="w-2.5 h-2.5 text-teal-600" />
+                              <span>Receipt</span>
+                            </button>
+                          )}
+                        </div>
                       </td>
 
                       <td className="py-3 px-4 text-slate-500 whitespace-nowrap">
@@ -406,6 +578,57 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
             </table>
           </div>
         </>
+      )}
+
+      {/* Full Paper Receipt Image Viewer Modal */}
+      {viewReceipt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/80 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl border border-slate-200 flex flex-col max-h-[92vh]">
+            <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+              <div className="flex items-center gap-2">
+                <Paperclip className="w-4 h-4 text-emerald-600" />
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-900">
+                  Paper Receipt Photo
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  href={viewReceipt}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="p-1 text-slate-500 hover:text-slate-800 rounded-lg cursor-pointer"
+                  title="Open full resolution in new tab"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setViewReceipt(null)}
+                  className="p-1 text-slate-400 hover:text-slate-700 rounded-lg cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+            <div className="p-4 overflow-auto flex items-center justify-center bg-slate-900/5 min-h-[220px]">
+              <img
+                src={viewReceipt}
+                alt="Receipt Full View"
+                className="max-h-[65vh] w-auto object-contain rounded-2xl shadow-md border border-slate-200 bg-white"
+              />
+            </div>
+            <div className="p-3 border-t border-slate-100 bg-white flex justify-between items-center text-xs">
+              <span className="text-slate-400 text-[11px]">Business Expense Attachment</span>
+              <button
+                type="button"
+                onClick={() => setViewReceipt(null)}
+                className="px-4 py-1.5 rounded-xl bg-slate-900 text-white font-bold cursor-pointer hover:bg-slate-800 transition-colors shadow-2xs"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

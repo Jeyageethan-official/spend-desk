@@ -14,6 +14,9 @@ import {
   GraduationCap, 
   MoreHorizontal, 
   Tag,
+  Camera,
+  Paperclip,
+  CheckCircle2,
   Settings as SettingsIcon
 } from 'lucide-react';
 import { Transaction, TransactionType, Category, PaymentMethod } from '../types/finance';
@@ -22,11 +25,12 @@ import {
   CategoryDef 
 } from '../lib/storage';
 import { getCategoryIcon } from '../lib/icons';
+import { triggerFeedback } from '../lib/haptics';
 
 interface TransactionModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (tx: Omit<Transaction, 'id' | 'createdAt'> & { id?: string; sendSmsTo?: string }) => void;
+  onSave: (tx: Omit<Transaction, 'id' | 'createdAt'> & { id?: string; sendSmsTo?: string; receiptImage?: string }) => void;
   editingTransaction?: Transaction | null;
   defaultType?: TransactionType;
   defaultAlertPhone?: string;
@@ -49,11 +53,48 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Cash');
   const [date, setDate] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
+  const [receiptImage, setReceiptImage] = useState<string | undefined>(undefined);
   
   // Unified categories state loaded from storage
   const [categoryDefs, setCategoryDefs] = useState<CategoryDef[]>(() => loadStoredCategoryDefs());
 
   const amountInputRef = useRef<HTMLInputElement>(null);
+  const receiptFileRef = useRef<HTMLInputElement>(null);
+
+  const handleReceiptUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        const maxDim = 900;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressed = canvas.toDataURL('image/jpeg', 0.72);
+          setReceiptImage(compressed);
+        }
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Reload categories when modal opens
   useEffect(() => {
@@ -74,12 +115,14 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       setPaymentMethod(editingTransaction.paymentMethod);
       setDate(editingTransaction.date);
       setNotes(editingTransaction.notes);
+      setReceiptImage(editingTransaction.receiptImage);
     } else {
       setType(defaultType);
       setAmountStr('');
       const now = new Date();
       setDate(now.toISOString().split('T')[0]);
       setNotes('');
+      setReceiptImage(undefined);
 
       if (defaultType === 'cash_added') {
         setCategory('Income / Top-up');
@@ -132,6 +175,8 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
     const txDate = date || new Date().toISOString().split('T')[0];
     const nowTime = new Date().toTimeString().substring(0, 5);
 
+    triggerFeedback('success');
+
     onSave({
       id: editingTransaction ? editingTransaction.id : undefined,
       type,
@@ -141,6 +186,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       date: txDate,
       time: nowTime,
       notes: notes.trim(),
+      receiptImage: receiptImage || undefined,
       sendSmsTo: defaultAlertPhone ? defaultAlertPhone : undefined,
     });
 
@@ -389,6 +435,70 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                 className="w-full pl-8 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-hidden focus:bg-white"
               />
             </div>
+          </div>
+
+          {/* 6. Receipt / Bill Photo Attachment */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-[10px] font-bold uppercase text-slate-500 flex items-center gap-1.5">
+                <Paperclip className="w-3 h-3 text-slate-400" />
+                <span>Receipt / Bill Photo (Optional)</span>
+              </label>
+              {receiptImage && (
+                <button
+                  type="button"
+                  onClick={() => setReceiptImage(undefined)}
+                  className="text-[10px] text-rose-600 hover:text-rose-700 font-semibold cursor-pointer"
+                >
+                  Remove Receipt
+                </button>
+              )}
+            </div>
+
+            <input
+              type="file"
+              ref={receiptFileRef}
+              onChange={handleReceiptUpload}
+              accept="image/*"
+              className="hidden"
+            />
+
+            {receiptImage ? (
+              <div className="rounded-2xl overflow-hidden border border-emerald-300 bg-emerald-50/50 p-2.5 flex items-center gap-3">
+                <img
+                  src={receiptImage}
+                  alt="Receipt Preview"
+                  className="w-14 h-14 object-cover rounded-xl border border-emerald-300 shadow-2xs shrink-0 cursor-pointer"
+                  onClick={() => window.open(receiptImage, '_blank')}
+                  title="Click to view full image"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1 text-emerald-800 font-bold text-xs">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Receipt Attached</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Paper receipt photo saved with this transaction record.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => receiptFileRef.current?.click()}
+                  className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 shrink-0 cursor-pointer shadow-2xs"
+                >
+                  Change
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => receiptFileRef.current?.click()}
+                className="w-full py-2.5 px-3 rounded-2xl border border-dashed border-slate-300 hover:border-emerald-500 hover:bg-emerald-50/30 flex items-center justify-center gap-2 text-slate-600 hover:text-emerald-700 text-xs font-semibold transition-all cursor-pointer group"
+              >
+                <Camera className="w-4 h-4 text-slate-400 group-hover:text-emerald-600 transition-colors" />
+                <span>Snap or Attach Paper Receipt Photo</span>
+              </button>
+            )}
           </div>
 
           {/* Footer Submit */}

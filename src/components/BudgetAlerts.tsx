@@ -59,20 +59,23 @@ export const BudgetAlerts: React.FC<BudgetAlertsProps> = ({
 
   return (
     <div className="space-y-3">
-      {/* Alert Banners (if cash is ending or limits exceeded) */}
+      {/* Sleek, Compact Low Cash Warning Banner */}
       {isCashLow && (
-        <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-3.5 flex items-start gap-3 text-amber-900 animate-in fade-in">
-          <div className="p-2 bg-amber-500 text-white rounded-xl shrink-0 mt-0.5 shadow-xs">
-            <ShieldAlert className="w-4 h-4" />
+        <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border border-amber-500/25 rounded-2xl px-3.5 py-2.5 flex items-center justify-between gap-3 text-amber-900 animate-in fade-in shadow-2xs">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-7 h-7 rounded-xl bg-amber-500/20 text-amber-700 flex items-center justify-center shrink-0">
+              <ShieldAlert className="w-4 h-4" />
+            </div>
+            <div className="text-xs truncate">
+              <span className="font-bold text-amber-950 mr-1.5">Low Cash Alert:</span>
+              <span className="text-amber-800 font-medium">
+                Wallet cash is down to <strong className="text-amber-950 font-bold">{formatCurrency(summary.currentCashBalance, currency)}</strong> (Limit: {formatCurrency(budgetConfig.lowCashThreshold, currency)})
+              </span>
+            </div>
           </div>
-          <div className="flex-1 text-xs">
-            <p className="font-bold text-amber-950 text-sm">
-              Low Cash Warning (End of Cash)
-            </p>
-            <p className="text-amber-800 mt-0.5">
-              Wallet cash is down to <strong>{formatCurrency(summary.currentCashBalance, currency)}</strong> (below alert limit {formatCurrency(budgetConfig.lowCashThreshold, currency)}). Consider withdrawing ATM cash or using card.
-            </p>
-          </div>
+          <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold shrink-0 hidden sm:inline-block">
+            Low Wallet
+          </span>
         </div>
       )}
 

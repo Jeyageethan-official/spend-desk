@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   ArrowLeft,
   Tag, 
@@ -37,6 +38,7 @@ import {
 } from '../lib/storage';
 import { GoogleSheetMeta, BudgetConfig, Transaction, LendItem } from '../types/finance';
 import { formatCurrency } from '../lib/calculations';
+import { UserProfile } from '../lib/storage';
 
 interface SettingsViewProps {
   onBack: () => void;
@@ -51,9 +53,11 @@ interface SettingsViewProps {
   onExportCSV: () => void;
   transactions: Transaction[];
   lendItems: LendItem[];
+  userProfile?: UserProfile;
+  onUpdateProfile?: (updated: Partial<UserProfile>) => void;
   onResetAllData?: () => void;
   onRestoreTransactions?: (txs: Transaction[], lends?: LendItem[]) => void;
-  initialSection?: 'main' | 'categories' | 'preferences' | 'budget' | 'cloud' | 'data' | 'about';
+  initialSection?: 'main' | 'categories' | 'preferences' | 'budget' | 'cloud' | 'data' | 'about' | 'profile';
   onNotification?: (msg: string, type?: 'success' | 'info' | 'error') => void;
 }
 
@@ -83,45 +87,125 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onExportCSV,
   transactions,
   lendItems,
+  userProfile,
+  onUpdateProfile,
   onResetAllData,
   onRestoreTransactions,
   initialSection = 'main',
   onNotification,
 }) => {
   // Navigation: 'main' is the WhatsApp-style Profile + options menu; clicking an option opens its sub-page
-  const [currentSubPage, setCurrentSubPage] = useState<'main' | 'categories' | 'preferences' | 'budget' | 'cloud' | 'data' | 'about'>(
+  const [currentSubPage, setCurrentSubPage] = useState<'main' | 'profile' | 'categories' | 'preferences' | 'budget' | 'cloud' | 'data' | 'about'>(
     initialSection || 'main'
   );
 
-  // If initialSection changes (e.g. opened from Record Transaction modal to categories), update subpage
+  // If initialSection changes, update subpage
   useEffect(() => {
     if (initialSection) {
       setCurrentSubPage(initialSection);
     }
   }, [initialSection]);
 
-  // Custom Profile Avatar state (stored in localStorage)
+  // Scroll to top whenever subpage opens or switches so user never starts mid-scroll
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    document.documentElement.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    document.body.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  }, [currentSubPage]);
+
+  // Custom Profile Avatar state (synced with userProfile or localStorage)
   const [customAvatar, setCustomAvatar] = useState<string | null>(() => {
-    try {
-      return localStorage.getItem('money_tracker_custom_avatar') || null;
-    } catch {
-      return null;
-    }
+    return userProfile?.avatar || localStorage.getItem('money_tracker_custom_avatar') || null;
   });
 
   // Custom User Profile Name state
   const [profileName, setProfileName] = useState<string>(() => {
-    try {
-      return localStorage.getItem('money_tracker_profile_name') || 'Money Tracker User';
-    } catch {
-      return 'Money Tracker User';
-    }
+    return userProfile?.name || localStorage.getItem('money_tracker_profile_name') || 'Jeyaram Tech';
   });
-  const [isEditingName, setIsEditingName] = useState(false);
-  const [nameInput, setNameInput] = useState(profileName);
 
-  // Avatar file input ref
-  const avatarInputRef = useRef<HTMLInputElement>(null);
+  // Profile Email state
+  const [profileEmail, setProfileEmail] = useState<string>(() => {
+    return userProfile?.email || localStorage.getItem('money_tracker_profile_email') || 'jeyaramantech05@gmail.com';
+  });
+
+  // Edit Form State (for full dedicated profile page)
+  const [editModalName, setEditModalName] = useState(profileName);
+  const [editModalEmail, setEditModalEmail] = useState(profileEmail);
+  const [editModalAvatar, setEditModalAvatar] = useState<string | null>(customAvatar);
+
+  // Keep in sync with userProfile prop changes
+  useEffect(() => {
+    if (userProfile?.name && userProfile.name !== profileName) {
+      setProfileName(userProfile.name);
+      setEditModalName(userProfile.name);
+    }
+    if (userProfile?.avatar !== undefined && userProfile.avatar !== customAvatar) {
+      setCustomAvatar(userProfile.avatar);
+      setEditModalAvatar(userProfile.avatar);
+    }
+    if (userProfile?.email && userProfile.email !== profileEmail) {
+      setProfileEmail(userProfile.email);
+      setEditModalEmail(userProfile.email);
+    }
+  }, [userProfile]);
+
+  // Profile avatar file input ref
+  const modalAvatarInputRef = useRef<HTMLInputElement>(null);
+
+  // Handle Full Profile Save
+  const handleSaveFullProfile = (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmedName = editModalName.trim();
+    if (!trimmedName) {
+      onNotification?.('Please enter your name.', 'error');
+      return;
+    }
+    const trimmedEmail = editModalEmail.trim();
+
+    setProfileName(trimmedName);
+    setProfileEmail(trimmedEmail);
+    setCustomAvatar(editModalAvatar);
+
+    onUpdateProfile?.({
+      name: trimmedName,
+      email: trimmedEmail,
+      avatar: editModalAvatar,
+    });
+
+    try {
+      localStorage.setItem('money_tracker_profile_name', trimmedName);
+      localStorage.setItem('money_tracker_profile_email', trimmedEmail);
+      if (editModalAvatar) {
+        localStorage.setItem('money_tracker_custom_avatar', editModalAvatar);
+      } else {
+        localStorage.removeItem('money_tracker_custom_avatar');
+      }
+      onNotification?.('Profile updated successfully.', 'success');
+    } catch (e) {
+      console.error(e);
+    }
+
+    setCurrentSubPage('main');
+  };
+
+  const handleModalAvatarFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 2 * 1024 * 1024) {
+      onNotification?.('Image size should be less than 2MB', 'error');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string;
+      if (dataUrl) {
+        setEditModalAvatar(dataUrl);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Unified Categories State (All categories are fully editable and removable!)
   const [categories, setCategories] = useState<CategoryDef[]>(() => loadStoredCategoryDefs());
@@ -192,57 +276,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       return true;
     });
   }, [iconPickerFilter, iconPickerSearch]);
-
-  // Handle Avatar Image File Upload
-  const handleAvatarFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (file.size > 2 * 1024 * 1024) {
-      onNotification?.('Image size should be less than 2MB', 'error');
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const dataUrl = event.target?.result as string;
-      if (dataUrl) {
-        setCustomAvatar(dataUrl);
-        try {
-          localStorage.setItem('money_tracker_custom_avatar', dataUrl);
-          onNotification?.('Profile image updated successfully.', 'success');
-        } catch (err) {
-          console.error(err);
-        }
-      }
-    };
-    reader.readAsDataURL(file);
-  };
-
-  // Remove Avatar
-  const handleRemoveAvatar = () => {
-    setCustomAvatar(null);
-    try {
-      localStorage.removeItem('money_tracker_custom_avatar');
-      onNotification?.('Profile image removed.', 'info');
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  // Save Profile Name
-  const handleSaveProfileName = () => {
-    const trimmed = nameInput.trim();
-    if (!trimmed) return;
-    setProfileName(trimmed);
-    setIsEditingName(false);
-    try {
-      localStorage.setItem('money_tracker_profile_name', trimmed);
-      onNotification?.('Name updated.', 'success');
-    } catch (err) {
-      console.error(err);
-    }
-  };
 
   // Save new category
   const handleSaveNewCategory = (e: React.FormEvent) => {
@@ -411,59 +444,67 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       {/* ============================================================== */}
       {/* 1. TOP MINIMALIST APP BAR (WhatsApp / iOS Style)               */}
       {/* ============================================================== */}
-      <div className="bg-white/95 backdrop-blur-md border-b border-slate-200 sticky top-0 z-30">
+      <div className="bg-white/95 backdrop-blur-md border-b border-slate-200 sticky top-0 z-30 shadow-xs">
         <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
-          {currentSubPage === 'main' ? (
-            <button
-              type="button"
-              onClick={onBack}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 transition-colors cursor-pointer py-1.5 px-2 rounded-xl hover:bg-slate-100"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              <span>Dashboard</span>
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setCurrentSubPage('main')}
-              className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 hover:text-emerald-800 transition-colors cursor-pointer py-1.5 px-2 rounded-xl hover:bg-emerald-50"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              <span>Settings</span>
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={currentSubPage === 'main' ? onBack : () => setCurrentSubPage('main')}
+            className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-700 hover:text-slate-900 hover:bg-slate-100 active:scale-95 transition-all cursor-pointer border border-slate-200/90 shadow-2xs"
+            title="Back"
+            aria-label="Back"
+          >
+            <ArrowLeft className="w-5 h-5 stroke-[2.2]" />
+          </button>
 
           <h1 className="text-sm font-bold text-slate-900 capitalize">
             {currentSubPage === 'main' && 'Settings'}
+            {currentSubPage === 'profile' && 'Edit Profile'}
             {currentSubPage === 'categories' && 'Manage Categories'}
             {currentSubPage === 'preferences' && 'Currency & Format'}
             {currentSubPage === 'budget' && 'Budget & Limits'}
-            {currentSubPage === 'cloud' && 'Google Sheets Sync'}
+            {currentSubPage === 'cloud' && 'Google Sheets Manager'}
             {currentSubPage === 'data' && 'Data & Backups'}
             {currentSubPage === 'about' && 'About & Privacy'}
           </h1>
 
-          <div className="w-14" />
+          <div className="w-9" />
         </div>
       </div>
 
       <div className="max-w-2xl mx-auto px-4 pt-6 space-y-6">
-        {/* ============================================================== */}
-        {/* VIEW 0: MAIN SETTINGS PAGE (WhatsApp-style Hero Profile Card)  */}
-        {/* ============================================================== */}
-        {currentSubPage === 'main' && (
-          <div className="space-y-6 animate-in fade-in duration-150">
-            {/* WhatsApp Centered Profile Hero Card */}
-            <div className="bg-white rounded-3xl border border-slate-200/90 p-6 shadow-xs text-center relative overflow-hidden">
-              <input
-                type="file"
-                ref={avatarInputRef}
-                onChange={handleAvatarFileChange}
-                accept="image/*"
-                className="hidden"
-              />
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={currentSubPage}
+            initial={{ opacity: 0, y: 8, scale: 0.995 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -6, scale: 0.995 }}
+            transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+            className="space-y-6"
+          >
+            {/* ============================================================== */}
+            {/* VIEW 0: MAIN SETTINGS PAGE (WhatsApp-style Hero Profile Card)  */}
+            {/* ============================================================== */}
+            {currentSubPage === 'main' && (
+              <div className="space-y-6">
+                {/* WhatsApp Centered Profile Hero Card */}
+                <div className="bg-white rounded-3xl border border-slate-200/90 p-6 shadow-xs text-center relative overflow-hidden">
+                  {/* Single Clean Profile Edit Pencil Icon */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditModalName(profileName);
+                      setEditModalEmail(profileEmail);
+                      setEditModalAvatar(customAvatar);
+                      setCurrentSubPage('profile');
+                    }}
+                    className="absolute top-4 right-4 p-2 sm:p-2.5 rounded-2xl bg-slate-100 hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 transition-all cursor-pointer border border-slate-200/90 shadow-2xs group"
+                    title="Edit Profile"
+                    aria-label="Edit Profile"
+                  >
+                    <Edit3 className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                  </button>
 
-              {/* Centered Circular Avatar with Camera Edit Icon */}
+              {/* Centered Circular Avatar */}
               <div className="relative inline-block mx-auto mb-3">
                 <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full overflow-hidden border-2 border-emerald-500/80 p-0.5 shadow-sm bg-slate-100 flex items-center justify-center">
                   {customAvatar ? (
@@ -478,60 +519,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     </div>
                   )}
                 </div>
-
-                {/* Camera / Edit Badge Button */}
-                <button
-                  type="button"
-                  onClick={() => avatarInputRef.current?.click()}
-                  className="absolute bottom-0 right-0 w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center shadow-md border-2 border-white transition-transform hover:scale-105 active:scale-95 cursor-pointer"
-                  title="Upload Custom Profile Photo"
-                  aria-label="Upload Custom Profile Photo"
-                >
-                  <Camera className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.2]" />
-                </button>
               </div>
 
-              {/* Profile Name & Edit */}
+              {/* Profile Name & Email */}
               <div>
-                {isEditingName ? (
-                  <div className="flex items-center justify-center gap-1.5 max-w-xs mx-auto mb-1">
-                    <input
-                      type="text"
-                      value={nameInput}
-                      onChange={(e) => setNameInput(e.target.value)}
-                      placeholder="Enter your name"
-                      className="px-3 py-1 text-xs font-bold text-slate-900 border border-emerald-500 rounded-xl focus:outline-hidden text-center bg-white"
-                      autoFocus
-                    />
-                    <button
-                      type="button"
-                      onClick={handleSaveProfileName}
-                      className="px-2.5 py-1 bg-emerald-600 text-white text-xs font-bold rounded-xl cursor-pointer"
-                    >
-                      Save
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-center gap-1.5">
-                    <h2 className="text-base sm:text-lg font-bold text-slate-900">
-                      {profileName}
-                    </h2>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setNameInput(profileName);
-                        setIsEditingName(true);
-                      }}
-                      className="text-slate-400 hover:text-slate-600 p-1 rounded-md cursor-pointer"
-                      title="Edit name"
-                    >
-                      <Edit3 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                )}
+                <h2 className="text-base sm:text-lg font-bold text-slate-900">
+                  {profileName}
+                </h2>
 
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Personal Cash &amp; Spend Tracker
+                  {profileEmail}
                 </p>
 
                 {/* Status indicator */}
@@ -539,18 +536,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                   <span>{activeSheet ? 'Google Sheets Synced' : 'Offline Local Storage'}</span>
                 </div>
-
-                {customAvatar && (
-                  <div className="mt-2">
-                    <button
-                      type="button"
-                      onClick={handleRemoveAvatar}
-                      className="text-[10px] text-rose-500 hover:text-rose-700 underline cursor-pointer"
-                    >
-                      Remove custom photo
-                    </button>
-                  </div>
-                )}
               </div>
             </div>
 
@@ -621,7 +606,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <ChevronRight className="w-4 h-4 text-slate-400" />
                 </button>
 
-                {/* 4. Google Sheets Sync */}
+                {/* 4. Google Sheets Manager */}
                 <button
                   type="button"
                   onClick={() => setCurrentSubPage('cloud')}
@@ -632,7 +617,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       <FileSpreadsheet className="w-4 h-4" />
                     </div>
                     <div>
-                      <h4 className="font-bold text-xs text-slate-900">Google Sheets Sync</h4>
+                      <h4 className="font-bold text-xs text-slate-900">Google Sheets Manager</h4>
                       <p className="text-[11px] text-slate-400">
                         {activeSheet ? `Connected: ${activeSheet.name}` : 'Connect spreadsheet'}
                       </p>
@@ -681,6 +666,128 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <ChevronRight className="w-4 h-4 text-slate-400" />
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================== */}
+        {/* SUB-PAGE: EDIT PROFILE (Full Dedicated Page, NOT a popup)       */}
+        {/* ============================================================== */}
+        {currentSubPage === 'profile' && (
+          <div className="space-y-6">
+            <div className="bg-white rounded-3xl border border-slate-200/90 p-6 shadow-xs space-y-6">
+              <div className="border-b border-slate-100 pb-4">
+                <h3 className="text-base font-bold text-slate-900">Personal Profile</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Update your public name, profile photo, and alert contact details.
+                </p>
+              </div>
+
+              <form onSubmit={handleSaveFullProfile} className="space-y-5">
+                {/* Photo Upload & Preview */}
+                <div className="flex flex-col sm:flex-row items-center gap-5 p-4 rounded-2xl bg-slate-50/70 border border-slate-200/80">
+                  <div className="relative">
+                    <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full overflow-hidden border-2 border-emerald-500/80 p-0.5 shadow-sm bg-white flex items-center justify-center shrink-0">
+                      {editModalAvatar ? (
+                        <img
+                          src={editModalAvatar}
+                          alt="Avatar Preview"
+                          className="w-full h-full rounded-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full rounded-full bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center font-bold text-2xl sm:text-3xl">
+                          {editModalName.charAt(0).toUpperCase() || 'J'}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 text-center sm:text-left flex-1">
+                    <h4 className="font-bold text-xs text-slate-800">Profile Picture</h4>
+                    <p className="text-[11px] text-slate-400">
+                      Supports JPG, PNG or WebP under 2MB.
+                    </p>
+                    <div className="flex items-center justify-center sm:justify-start gap-2 pt-1">
+                      <input
+                        type="file"
+                        ref={modalAvatarInputRef}
+                        onChange={handleModalAvatarFileChange}
+                        accept="image/*"
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => modalAvatarInputRef.current?.click()}
+                        className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-2xs transition-colors cursor-pointer flex items-center gap-1.5"
+                      >
+                        <Camera className="w-3.5 h-3.5" />
+                        <span>Upload Photo</span>
+                      </button>
+
+                      {editModalAvatar && (
+                        <button
+                          type="button"
+                          onClick={() => setEditModalAvatar(null)}
+                          className="px-3 py-1.5 text-rose-600 hover:bg-rose-50 text-xs font-semibold rounded-xl transition-colors cursor-pointer border border-rose-200"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Full Name */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    Display Name *
+                  </label>
+                  <div className="relative">
+                    <UserIcon className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                    <input
+                      type="text"
+                      required
+                      value={editModalName}
+                      onChange={(e) => setEditModalName(e.target.value)}
+                      placeholder="e.g. Jeyaram Tech"
+                      className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-900 focus:outline-hidden focus:border-emerald-600 bg-slate-50 focus:bg-white transition-all"
+                    />
+                  </div>
+                </div>
+
+                {/* Gmail / Email */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    Gmail / Email Address *
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={editModalEmail}
+                    onChange={(e) => setEditModalEmail(e.target.value)}
+                    placeholder="e.g. jeyaramantech05@gmail.com"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-medium text-slate-900 focus:outline-hidden focus:border-emerald-600 bg-slate-50 focus:bg-white transition-all"
+                  />
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setCurrentSubPage('main')}
+                    className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-50 cursor-pointer transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-bold cursor-pointer shadow-xs transition-colors flex items-center gap-2"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Save Changes</span>
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         )}
@@ -1050,36 +1157,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </button>
               </div>
             </form>
-
-            {/* Alert Phone */}
-            <form onSubmit={handleSavePhone} className="bg-white rounded-3xl border border-slate-200/90 p-5 shadow-xs space-y-3">
-              <h3 className="text-sm font-bold text-slate-900">SMS Alert Phone Number</h3>
-              <input
-                type="tel"
-                value={phoneInput}
-                onChange={(e) => setPhoneInput(e.target.value)}
-                placeholder="+94 77 123 4567 or +91 98765 43210"
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-medium text-slate-900 focus:outline-hidden bg-slate-50"
-              />
-              <div className="flex justify-end">
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold cursor-pointer"
-                >
-                  Save Phone
-                </button>
-              </div>
-            </form>
           </div>
         )}
 
         {/* ============================================================== */}
-        {/* SUB-PAGE 4: GOOGLE SHEETS SYNC                                 */}
+        {/* SUB-PAGE 4: GOOGLE SHEETS MANAGER                              */}
         {/* ============================================================== */}
         {currentSubPage === 'cloud' && (
           <div className="space-y-4 animate-in fade-in duration-150">
             <div className="bg-white rounded-3xl border border-slate-200/90 p-5 shadow-xs space-y-4">
-              <h3 className="text-sm font-bold text-slate-900">Google Drive &amp; Sheets</h3>
+              <h3 className="text-sm font-bold text-slate-900">Google Sheets Manager</h3>
               <p className="text-xs text-slate-500">Live backup of transactions, debt logs, and KPI summary.</p>
 
               {activeSheet ? (
@@ -1214,6 +1301,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
           </div>
         )}
+          </motion.div>
+        </AnimatePresence>
       </div>
 
       {/* Delete Category Confirm Modal */}

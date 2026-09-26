@@ -8,6 +8,42 @@ const LEND_STORAGE_KEY = 'money_tracker_lend_items_v2';
 const ALERT_PHONE_KEY = 'money_tracker_alert_phone_v2';
 const CUSTOM_CATEGORIES_KEY = 'money_tracker_custom_categories_v2';
 const UNIFIED_CATEGORIES_KEY = 'money_tracker_unified_categories_v3';
+const PROFILE_NAME_KEY = 'money_tracker_profile_name';
+const CUSTOM_AVATAR_KEY = 'money_tracker_custom_avatar';
+const PROFILE_EMAIL_KEY = 'money_tracker_profile_email';
+
+export interface UserProfile {
+  name: string;
+  email: string;
+  avatar: string | null;
+}
+
+export const loadStoredProfile = (): UserProfile => {
+  try {
+    const name = localStorage.getItem(PROFILE_NAME_KEY) || 'Jeyaram Tech';
+    const avatar = localStorage.getItem(CUSTOM_AVATAR_KEY) || null;
+    const email = localStorage.getItem(PROFILE_EMAIL_KEY) || 'jeyaramantech05@gmail.com';
+    return { name, avatar, email };
+  } catch {
+    return { name: 'Jeyaram Tech', avatar: null, email: 'jeyaramantech05@gmail.com' };
+  }
+};
+
+export const saveStoredProfile = (profile: Partial<UserProfile>) => {
+  try {
+    if (profile.name !== undefined) localStorage.setItem(PROFILE_NAME_KEY, profile.name);
+    if (profile.avatar !== undefined) {
+      if (profile.avatar) {
+        localStorage.setItem(CUSTOM_AVATAR_KEY, profile.avatar);
+      } else {
+        localStorage.removeItem(CUSTOM_AVATAR_KEY);
+      }
+    }
+    if (profile.email !== undefined) localStorage.setItem(PROFILE_EMAIL_KEY, profile.email);
+  } catch (e) {
+    console.error('Failed to save profile to storage', e);
+  }
+};
 
 export interface CategoryDef {
   id: string;

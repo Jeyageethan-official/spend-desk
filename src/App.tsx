@@ -26,7 +26,10 @@ import {
   loadStoredLendItems,
   saveStoredLendItems,
   loadStoredAlertPhone,
-  saveStoredAlertPhone
+  saveStoredAlertPhone,
+  loadStoredProfile,
+  saveStoredProfile,
+  UserProfile
 } from './lib/storage';
 import { 
   calculateSummary, 
@@ -48,7 +51,7 @@ import { BudgetAlerts } from './components/BudgetAlerts';
 import { FilterBar } from './components/FilterBar';
 import { TransactionTable } from './components/TransactionTable';
 import { TransactionModal } from './components/TransactionModal';
-import { SheetSyncModal } from './components/SheetSyncModal';
+import { SheetManagerView } from './components/SheetManagerView';
 import { ConfirmModal } from './components/ConfirmModal';
 import { SmsParserModal } from './components/SmsParserModal';
 import { AuthHelpModal } from './components/AuthHelpModal';
@@ -56,6 +59,7 @@ import { BottomNav } from './components/BottomNav';
 import { LendBorrowView } from './components/LendBorrowView';
 import { AnalyticsView } from './components/AnalyticsView';
 import { SettingsView } from './components/SettingsView';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
   CheckCircle2, 
   AlertCircle, 
@@ -65,8 +69,21 @@ import {
 } from 'lucide-react';
 
 export default function App() {
-  const [user, setUser] = useState<any>(null);
-  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [user, setUser] = useState<any>(() => {
+    try {
+      const saved = localStorage.getItem('money_tracker_user_info');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [accessToken, setAccessToken] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('money_tracker_access_token');
+    } catch {
+      return null;
+    }
+  });
 
   // App Navigation Tab (Mobile-first & Full-screen SPA)
   const [activeTab, setActiveTab] = useState<AppTab>('dashboard');
@@ -78,6 +95,15 @@ export default function App() {
   const [activeSheet, setActiveSheet] = useState<GoogleSheetMeta | null>(() => loadStoredSheetMeta());
   const [budgetConfig, setBudgetConfig] = useState<BudgetConfig>(() => loadStoredBudgetConfig());
   const [currency, setCurrency] = useState<string>('Rs');
+  const [userProfile, setUserProfile] = useState<UserProfile>(() => loadStoredProfile());
+
+  const handleUpdateProfile = (updated: Partial<UserProfile>) => {
+    const nextProfile = { ...userProfile, ...updated };
+    setUserProfile(nextProfile);
+    saveStoredProfile(nextProfile);
+  };
+
+  const overallSummary = useMemo(() => calculateSummary(transactions, transactions), [transactions]);
 
   // Filter State
   const [filter, setFilter] = useState<FilterState>({
@@ -94,11 +120,10 @@ export default function App() {
   const [isLendModalOpen, setIsLendModalOpen] = useState(false);
   const [modalDefaultType, setModalDefaultType] = useState<TransactionType>('cash_expense');
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
-  const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const [isSmsModalOpen, setIsSmsModalOpen] = useState(false);
   const [isAuthHelpOpen, setIsAuthHelpOpen] = useState(false);
   const [isSignOutConfirmOpen, setIsSignOutConfirmOpen] = useState(false);
-  const [settingsSection, setSettingsSection] = useState<'main' | 'categories' | 'preferences' | 'budget' | 'cloud' | 'data' | 'about'>('main');
+  const [settingsSection, setSettingsSection] = useState<'main' | 'categories' | 'preferences' | 'budget' | 'cloud' | 'data' | 'about' | 'profile'>('main');
   const [deleteCandidate, setDeleteCandidate] = useState<Transaction | null>(null);
 
   // Status & Syncing
@@ -137,6 +162,12 @@ export default function App() {
     saveStoredLendItems(lendItems);
   }, [lendItems]);
 
+  // Scroll to top whenever activeTab changes
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    document.documentElement.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  }, [activeTab]);
+
   // Save budget configuration
   const handleUpdateBudgetConfig = (config: BudgetConfig) => {
     setBudgetConfig(config);
@@ -165,7 +196,7 @@ export default function App() {
         setUser(res.user);
         setAccessToken(res.accessToken);
         showNotification('Signed in! Google Sheets is connected.', 'success');
-        setIsSyncModalOpen(true);
+        setActiveTab('sheets');
       } else if (res.errorType === 'access_denied_test_user') {
         setIsAuthHelpOpen(true);
       } else if (res.errorType !== 'popup_closed') {
@@ -427,27 +458,37 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans flex flex-col antialiased pb-20 md:pb-8">
-      {/* App Header */}
-      <Header
-        user={user}
-        activeSheet={activeSheet}
-        isSyncing={isSyncing}
-        onSignIn={handleSignIn}
-        onSignOut={() => setIsSignOutConfirmOpen(true)}
-        onOpenSyncModal={() => setIsSyncModalOpen(true)}
-        onOpenNewTransaction={() => {
-          setEditingTransaction(null);
-          setModalDefaultType('cash_expense');
-          setIsTxModalOpen(true);
-        }}
-        onOpenSmsModal={() => setIsSmsModalOpen(true)}
-        onQuickSync={handlePushToSheet}
-        onOpenAuthHelp={() => setIsAuthHelpOpen(true)}
-        onOpenSettings={(tab) => {
-          setSettingsSection((tab as any) || 'main');
-          setActiveTab('settings');
-        }}
-      />
+      {/* App Header - Hidden when on Settings page or Google Sheets manager page */}
+      {activeTab !== 'settings' && activeTab !== 'sheets' && (
+        <Header
+          user={user}
+          userProfile={userProfile}
+          activeSheet={activeSheet}
+          isSyncing={isSyncing}
+          totalCashBalance={overallSummary.currentCashBalance}
+          totalSpend={overallSummary.totalSpend}
+          currency={currency}
+          onSignIn={handleSignIn}
+          onSignOut={() => setIsSignOutConfirmOpen(true)}
+          onOpenSyncModal={() => setActiveTab('sheets')}
+          onOpenNewTransaction={() => {
+            setEditingTransaction(null);
+            setModalDefaultType('cash_expense');
+            setIsTxModalOpen(true);
+          }}
+          onOpenSmsModal={() => setIsSmsModalOpen(true)}
+          onQuickSync={handlePushToSheet}
+          onOpenAuthHelp={() => setIsAuthHelpOpen(true)}
+          onOpenSettings={(tab) => {
+            setSettingsSection((tab as any) || 'main');
+            setActiveTab('settings');
+          }}
+          onOpenProfileEdit={() => {
+            setSettingsSection('profile');
+            setActiveTab('settings');
+          }}
+        />
+      )}
 
       {/* Floating Notification */}
       {notification && (
@@ -471,8 +512,23 @@ export default function App() {
         </div>
       )}
 
-      {/* Main Content Dashboard or Full-screen Settings View */}
-      {activeTab === 'settings' ? (
+      {/* Main Content Dashboard, Full-screen Google Sheets Manager, or Settings View */}
+      {activeTab === 'sheets' ? (
+        <SheetManagerView
+          onBack={() => setActiveTab('dashboard')}
+          accessToken={accessToken}
+          activeSheet={activeSheet}
+          onSetActiveSheet={handleSetActiveSheet}
+          onPushToSheet={handlePushToSheet}
+          onPullFromSheet={handlePullFromSheet}
+          onSignInDirect={handleSignIn}
+          onExportCSV={handleExportCSV}
+          isSyncing={isSyncing}
+          totalTransactionsCount={transactions.length}
+          totalLendCount={lendItems.length}
+          onNotification={showNotification}
+        />
+      ) : activeTab === 'settings' ? (
         <SettingsView
           onBack={() => setActiveTab('dashboard')}
           currency={currency}
@@ -485,10 +541,12 @@ export default function App() {
           alertPhone={alertPhone}
           onUpdateAlertPhone={handleUpdateAlertPhone}
           activeSheet={activeSheet}
-          onOpenSyncModal={() => setIsSyncModalOpen(true)}
+          onOpenSyncModal={() => setActiveTab('sheets')}
           onExportCSV={handleExportCSV}
           transactions={transactions}
           lendItems={lendItems}
+          userProfile={userProfile}
+          onUpdateProfile={handleUpdateProfile}
           onResetAllData={() => {
             setTransactions([]);
             setLendItems([]);
@@ -512,12 +570,17 @@ export default function App() {
                 { id: 'transactions', label: 'Transaction Ledger' },
                 { id: 'lend', label: `Lend & Borrow${pendingLendCount > 0 ? ` (${pendingLendCount})` : ''}` },
                 { id: 'analytics', label: 'Category & Trends' },
-                { id: 'settings', label: 'Settings & Categories' },
+                { id: 'settings', label: 'Settings & Profile' },
               ].map((tab) => (
                 <button
                   key={tab.id}
                   type="button"
-                  onClick={() => setActiveTab(tab.id as AppTab)}
+                  onClick={() => {
+                    if (tab.id === 'settings') {
+                      setSettingsSection('main');
+                    }
+                    setActiveTab(tab.id as AppTab);
+                  }}
                   className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                     activeTab === tab.id
                       ? 'bg-slate-900 text-white shadow-xs'
@@ -721,22 +784,6 @@ export default function App() {
         onClose={() => setIsSmsModalOpen(false)}
         onAddTransaction={handleSaveTransaction}
         currency="Rs"
-      />
-
-      {/* Google Sheets Sync Modal */}
-      <SheetSyncModal
-        isOpen={isSyncModalOpen}
-        onClose={() => setIsSyncModalOpen(false)}
-        accessToken={accessToken}
-        activeSheet={activeSheet}
-        onSetActiveSheet={handleSetActiveSheet}
-        onPushToSheet={handlePushToSheet}
-        onPullFromSheet={handlePullFromSheet}
-        onSignInDirect={handleSignIn}
-        onExportCSV={handleExportCSV}
-        isSyncing={isSyncing}
-        totalTransactionsCount={transactions.length}
-        totalLendCount={lendItems.length}
       />
 
       {/* Google Sign-in Help & Local Mode Modal */}

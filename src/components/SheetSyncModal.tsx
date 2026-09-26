@@ -155,12 +155,12 @@ export const SheetSyncModal: React.FC<SheetSyncModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-150">
       <div 
-        className="w-full max-w-md sm:max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden max-h-[92vh] flex flex-col"
+        className="w-full max-w-md sm:max-w-lg h-[580px] max-h-[90vh] bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col"
         role="dialog"
         aria-modal="true"
       >
         {/* Header */}
-        <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
+        <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50/70 shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="p-2 rounded-xl bg-emerald-100 text-emerald-800">
               <FileSpreadsheet className="w-5 h-5" />
@@ -190,8 +190,8 @@ export const SheetSyncModal: React.FC<SheetSyncModalProps> = ({
           </button>
         </div>
 
-        {/* 3 Main Menu Tabs (Classic 3 Menus with Better UI) */}
-        <div className="px-5 pt-3.5 pb-1 bg-white">
+        {/* 3 Short Menu Tabs with Fixed Layout */}
+        <div className="px-5 pt-3.5 pb-1 bg-white shrink-0">
           <div className="grid grid-cols-3 gap-1 p-1 bg-slate-100 rounded-2xl">
             <button
               type="button"
@@ -203,7 +203,7 @@ export const SheetSyncModal: React.FC<SheetSyncModalProps> = ({
               }`}
             >
               <UploadCloud className="w-3.5 h-3.5 shrink-0 text-emerald-600" />
-              <span className="truncate">Google Sync</span>
+              <span>Sync</span>
             </button>
 
             <button
@@ -221,7 +221,7 @@ export const SheetSyncModal: React.FC<SheetSyncModalProps> = ({
               }`}
             >
               <FolderOpen className="w-3.5 h-3.5 shrink-0 text-blue-600" />
-              <span className="truncate">Drive Sheets</span>
+              <span>Sheets</span>
             </button>
 
             <button
@@ -234,7 +234,7 @@ export const SheetSyncModal: React.FC<SheetSyncModalProps> = ({
               }`}
             >
               <Link className="w-3.5 h-3.5 shrink-0 text-purple-600" />
-              <span className="truncate">Webhook & CSV</span>
+              <span>Webhook</span>
             </button>
           </div>
         </div>

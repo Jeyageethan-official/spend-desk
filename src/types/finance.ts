@@ -23,6 +23,7 @@ export interface Transaction {
   amount: number;
   paymentMethod: PaymentMethod;
   notes: string;
+  receiptImage?: string;
   createdAt: number;
 }
 
@@ -105,4 +106,4 @@ export interface LendItem {
   createdAt: number;
 }
 
-export type AppTab = 'dashboard' | 'transactions' | 'lend' | 'analytics' | 'settings';
+export type AppTab = 'dashboard' | 'transactions' | 'lend' | 'analytics' | 'settings' | 'sheets';

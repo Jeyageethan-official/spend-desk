@@ -19,14 +19,36 @@ export const SCOPES = [
   'https://www.googleapis.com/auth/drive.file'
 ];
 
-let cachedAccessToken: string | null = null;
-let cachedUserInfo: { name: string; email: string; picture?: string } | null = null;
+const TOKEN_STORAGE_KEY = 'money_tracker_access_token';
+const USER_STORAGE_KEY = 'money_tracker_user_info';
+
+let cachedAccessToken: string | null = (() => {
+  try {
+    return localStorage.getItem(TOKEN_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+})();
+
+let cachedUserInfo: { name: string; email: string; picture?: string } | null = (() => {
+  try {
+    const raw = localStorage.getItem(USER_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+})();
 
 // Initialize auth state listener.
 export const initAuth = (
   onAuthSuccess?: (user: User | { displayName: string; email: string; photoURL?: string }, token: string) => void,
   onAuthFailure?: () => void
 ) => {
+  // If we already have stored GIS token & user info, trigger success immediately!
+  if (cachedUserInfo && cachedAccessToken) {
+    if (onAuthSuccess) onAuthSuccess(cachedUserInfo as any, cachedAccessToken);
+  }
+
   return onAuthStateChanged(auth, async (user: User | null) => {
     if (user && cachedAccessToken) {
       if (onAuthSuccess) onAuthSuccess(user, cachedAccessToken);
@@ -107,6 +129,13 @@ export const signInWithGoogleIdentityServices = (): Promise<SignInResult> => {
               displayName: 'Google User',
               email: 'connected@google.com',
             };
+
+            try {
+              localStorage.setItem(TOKEN_STORAGE_KEY, response.access_token);
+              localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(activeUser));
+            } catch (e) {
+              console.warn('Could not persist auth to localStorage', e);
+            }
 
             resolve({
               success: true,
@@ -204,6 +233,10 @@ export const logout = async () => {
   } catch (e) {
     // Ignore
   }
+  try {
+    localStorage.removeItem(TOKEN_STORAGE_KEY);
+    localStorage.removeItem(USER_STORAGE_KEY);
+  } catch (e) {}
   cachedAccessToken = null;
   cachedUserInfo = null;
 };
