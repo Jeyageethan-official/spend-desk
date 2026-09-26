@@ -81,15 +81,14 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
   }, [accessToken, activeTab]);
 
   const loadDriveSheets = async () => {
-    if (!accessToken) return;
+    if (!accessToken || accessToken === 'local_token') return;
     setLoadingList(true);
     setErrorMsg('');
     try {
       const items = await listUserSpreadsheets(accessToken);
       setSpreadsheets(items);
     } catch (err: any) {
-      console.warn(err);
-      setErrorMsg('Could not list Google Drive spreadsheets.');
+      console.warn('Google Drive list error:', err);
     } finally {
       setLoadingList(false);
     }
@@ -100,40 +99,38 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
     setErrorMsg('');
     setSuccessMsg('');
     const title = newTitle.trim() || 'SpendDesk - Cash & Card';
+
+    if (!accessToken || accessToken === 'local_token') {
+      setIsCreating(false);
+      onNotification?.('Please Sign in with Google to create a spreadsheet in your Google Drive.', 'info');
+      onSignInDirect();
+      return;
+    }
     
     try {
-      if (accessToken) {
-        const created = await createMoneyTrackerSpreadsheet(accessToken, title);
-        const newMeta: GoogleSheetMeta = {
-          id: created.id,
-          name: created.name,
-          url: created.url,
-          lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        };
-        onSetActiveSheet(newMeta);
-        setSuccessMsg(`Created and connected "${created.name}"!`);
-        onNotification?.(`Created and connected "${created.name}"!`, 'success');
-        try { await onPushToSheet(); } catch {}
-        setActiveTab('sync');
-        setIsCreating(false);
-        return;
+      const created = await createMoneyTrackerSpreadsheet(accessToken, title);
+      const newMeta: GoogleSheetMeta = {
+        id: created.id,
+        name: created.name,
+        url: created.url,
+        lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+      onSetActiveSheet(newMeta);
+      setSuccessMsg(`Created and connected "${created.name}" in Google Drive!`);
+      onNotification?.(`Created and connected "${created.name}" in Google Drive!`, 'success');
+      try { await onPushToSheet(); } catch {}
+      setActiveTab('sync');
+    } catch (err: any) {
+      console.error(err);
+      if (err?.message?.includes('401') || err?.message?.includes('UNAUTHENTICATED')) {
+        onNotification?.('Google session expired. Please sign in with Google.', 'info');
+        onSignInDirect();
+      } else {
+        onNotification?.('Could not create Google Sheet. Please re-connect Google account.', 'error');
       }
-    } catch (err) {
-      console.warn('Google Drive API unavailable, creating local sheet connection:', err);
+    } finally {
+      setIsCreating(false);
     }
-
-    // Local / Supabase connected sheet fallback (Always succeeds cleanly!)
-    const localMeta: GoogleSheetMeta = {
-      id: 'sheet-' + Date.now(),
-      name: title,
-      url: '',
-      lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    };
-    onSetActiveSheet(localMeta);
-    setSuccessMsg(`Created and connected "${title}"!`);
-    onNotification?.(`Created and connected "${title}"!`, 'success');
-    setActiveTab('sync');
-    setIsCreating(false);
   };
 
   const handleSelectExisting = async (item: DriveSpreadsheetItem) => {

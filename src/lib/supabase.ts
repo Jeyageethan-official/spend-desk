@@ -59,6 +59,7 @@ export const signInWithGoogleSupabase = async (): Promise<AuthResult> => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
+        scopes: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file',
         redirectTo: redirectUrl,
         queryParams: {
           access_type: 'offline',
@@ -170,15 +171,20 @@ export const initSupabaseAuth = (
         email: u.email || '',
         photoURL: u.user_metadata?.avatar_url || undefined,
       };
-      if (onAuthSuccess) onAuthSuccess(userInfo, session.access_token);
+      if (session.provider_token) {
+        try { localStorage.setItem(TOKEN_STORAGE_KEY, session.provider_token); } catch {}
+      }
+      const tokenToUse = session.provider_token || localStorage.getItem(TOKEN_STORAGE_KEY) || session.access_token;
+      if (onAuthSuccess) onAuthSuccess(userInfo, tokenToUse);
     } else {
       // Check stored user
       const rawUser = localStorage.getItem(USER_STORAGE_KEY);
+      const storedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
       if (rawUser) {
         try {
           const parsed = JSON.parse(rawUser);
           if (parsed?.email) {
-            if (onAuthSuccess) onAuthSuccess({ displayName: parsed.name, email: parsed.email, photoURL: parsed.picture }, 'local_token');
+            if (onAuthSuccess) onAuthSuccess({ displayName: parsed.name, email: parsed.email, photoURL: parsed.picture }, storedToken || 'local_token');
             return;
           }
         } catch {}
@@ -195,7 +201,11 @@ export const initSupabaseAuth = (
         email: u.email || '',
         photoURL: u.user_metadata?.avatar_url || undefined,
       };
-      if (onAuthSuccess) onAuthSuccess(userInfo, session.access_token);
+      if (session.provider_token) {
+        try { localStorage.setItem(TOKEN_STORAGE_KEY, session.provider_token); } catch {}
+      }
+      const tokenToUse = session.provider_token || localStorage.getItem(TOKEN_STORAGE_KEY) || session.access_token;
+      if (onAuthSuccess) onAuthSuccess(userInfo, tokenToUse);
     } else if (event === 'SIGNED_OUT') {
       if (onAuthFailure) onAuthFailure();
     }
