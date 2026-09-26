@@ -1,11 +1,9 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { User } from 'firebase/auth';
 import { 
-  initAuth, 
-  googleSignIn, 
-  logout, 
-  getAccessToken 
-} from './lib/firebase';
+  initSupabaseAuth as initAuth, 
+  signInWithGoogleSupabase as googleSignIn, 
+  signOutSupabase as logout 
+} from './lib/supabase';
 import { 
   Transaction, 
   FilterState, 
@@ -189,24 +187,23 @@ export default function App() {
     saveStoredSheetMeta(meta);
   };
 
-  // Google Login handler with helpful fallback for Error 403 (Test user mode)
+  // Google Login handler via Supabase OAuth
   const handleSignIn = async () => {
     try {
       const res = await googleSignIn();
-      if (res.success && res.user && res.accessToken) {
-        setUser(res.user);
-        setAccessToken(res.accessToken);
-        showNotification('Signed in! Google Sheets is connected.', 'success');
-        setSheetsSourceTab(activeTab === 'sheets' ? sheetsSourceTab : activeTab);
-        setActiveTab('sheets');
-      } else if (res.errorType === 'access_denied_test_user') {
-        setIsAuthHelpOpen(true);
-      } else if (res.errorType !== 'popup_closed') {
-        showNotification(res.errorMessage || 'Sign-in failed. Local mode active.', 'error');
+      if (res.success) {
+        if (res.user) {
+          setUser(res.user);
+          showNotification('Signed in with Supabase!', 'success');
+        } else {
+          showNotification('Redirecting to Google Sign-In...', 'info');
+        }
+      } else {
+        showNotification(res.errorMessage || 'Sign-in failed.', 'error');
       }
     } catch (err: any) {
       console.error(err);
-      setIsAuthHelpOpen(true);
+      showNotification('Sign-in failed. Please check Supabase settings.', 'error');
     }
   };
 

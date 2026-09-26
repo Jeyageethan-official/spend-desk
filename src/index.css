@@ -1,9 +1,13 @@
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-@theme {
-  --color-spenddesk: #116b4e;
-  --color-spenddesk-hover: #0d5940;
-  --color-spenddesk-dark: #093f2d;
-  --color-spenddesk-light: #188663;
-  --color-spenddesk-bg: #eaf5f0;
+@layer base {
+  :root {
+    --color-spenddesk: #116b4e;
+    --color-spenddesk-hover: #0d5940;
+    --color-spenddesk-dark: #093f2d;
+    --color-spenddesk-light: #188663;
+    --color-spenddesk-bg: #eaf5f0;
+  }
 }
