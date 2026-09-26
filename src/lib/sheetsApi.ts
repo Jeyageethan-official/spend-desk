@@ -1,7 +1,7 @@
 import { Transaction, SpendingSummary, CategorySummary, LendItem } from '../types/finance';
 
-export const PRIMARY_GOOGLE_CLIENT_ID = '377806164433-ftqbldc3ul9jfenp00hcgveeonoifdjs.apps.googleusercontent.com';
-export const SECONDARY_GOOGLE_CLIENT_ID = '403491523597-qdt2hjm4qi2nhggb25u1oihvivklq3lh.apps.googleusercontent.com';
+export const PRIMARY_GOOGLE_CLIENT_ID = '403491523597-qdt2hjm4qi2nhggb25u1oihvivklq3lh.apps.googleusercontent.com';
+export const SECONDARY_GOOGLE_CLIENT_ID = '377806164433-ftqbldc3ul9jfenp00hcgveeonoifdjs.apps.googleusercontent.com';
 
 export const getGoogleClientId = (): string => {
   return localStorage.getItem('money_tracker_google_client_id') || 
