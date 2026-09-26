@@ -114,9 +114,17 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
       try {
         created = await createMoneyTrackerSpreadsheet(token, title);
       } catch (err: any) {
-        // Retry with fresh token if expired (401 / UNAUTHENTICATED)
-        if (err?.message?.includes('401') || err?.message?.includes('UNAUTHENTICATED')) {
-          onNotification?.('Re-authenticating with Google...', 'info');
+        // Retry with fresh token if expired, scope insufficient, or unauthenticated (401 / 403)
+        const errStr = String(err?.message || err);
+        if (
+          errStr.includes('401') || 
+          errStr.includes('403') || 
+          errStr.includes('UNAUTHENTICATED') || 
+          errStr.includes('INSUFFICIENT') ||
+          errStr.includes('PERMISSION_DENIED')
+        ) {
+          onNotification?.('Requesting Google Drive permission popup...', 'info');
+          try { localStorage.removeItem('money_tracker_access_token'); } catch (e) {}
           token = await requestGoogleAccessToken();
           created = await createMoneyTrackerSpreadsheet(token, title);
         } else {
