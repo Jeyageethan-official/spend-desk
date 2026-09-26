@@ -1,6 +1,12 @@
 import { Transaction, SpendingSummary, CategorySummary, LendItem } from '../types/finance';
 
-export const GOOGLE_OAUTH_CLIENT_ID = '377806164433-ftqbldc3ul9jfenp00hcgveeonoifdjs.apps.googleusercontent.com';
+const CANDIDATE_CLIENT_IDS = [
+  '377806164433-ftqbldc3ul9jfenp00hcgveeonoifdjs.apps.googleusercontent.com',
+  '377806164433-ftqbide3ul9jfenp00hcgveeonoifdjs.apps.googleusercontent.com',
+  '403491523597-qdt2hjm4qi2nhggb25u1oihvivklq3lh.apps.googleusercontent.com',
+];
+
+export const GOOGLE_OAUTH_CLIENT_ID = CANDIDATE_CLIENT_IDS[0];
 
 export const getGoogleClientId = (): string => {
   return localStorage.getItem('money_tracker_google_client_id') || 
@@ -12,7 +18,7 @@ export const getGoogleClientId = (): string => {
  * Modern Google Identity Services (GIS) Access Token Request.
  * Obtains a fresh Google OAuth access token with Sheets & Drive scopes.
  */
-export const requestGoogleAccessToken = (): Promise<string> => {
+export const requestGoogleAccessToken = (candidateIndex: number = 0): Promise<string> => {
   return new Promise((resolve, reject) => {
     try {
       const google = (window as any).google;
@@ -20,12 +26,23 @@ export const requestGoogleAccessToken = (): Promise<string> => {
         reject(new Error('Google Identity script loading. Please try again in a moment.'));
         return;
       }
-      const clientId = getGoogleClientId();
+      const customId = localStorage.getItem('money_tracker_google_client_id');
+      const clientId = customId || CANDIDATE_CLIENT_IDS[candidateIndex] || CANDIDATE_CLIENT_IDS[0];
+
       const client = google.accounts.oauth2.initTokenClient({
         client_id: clientId,
         scope: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file',
         callback: (response: any) => {
           if (response.error) {
+            if (
+              (response.error === 'invalid_client' || response.error_description?.includes('invalid_client')) && 
+              !customId && 
+              candidateIndex + 1 < CANDIDATE_CLIENT_IDS.length
+            ) {
+              console.warn(`Client ID candidate ${candidateIndex} returned invalid_client, trying candidate ${candidateIndex + 1}...`);
+              requestGoogleAccessToken(candidateIndex + 1).then(resolve).catch(reject);
+              return;
+            }
             reject(new Error(response.error_description || response.error));
             return;
           }
