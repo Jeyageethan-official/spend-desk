@@ -77,6 +77,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
         onFilterChange={onFilterChange}
         onExportCSV={onExportCSV}
         totalFilteredCount={totalTransactionsCount}
+        showDownload={false}
       />
 
       {/* 2. Top Analytics Metrics Strip */}

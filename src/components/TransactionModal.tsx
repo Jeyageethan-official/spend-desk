@@ -57,6 +57,15 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   
   // Unified categories state loaded from storage
   const [categoryDefs, setCategoryDefs] = useState<CategoryDef[]>(() => loadStoredCategoryDefs());
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+
+  const handleClose = () => {
+    if (amountStr.trim() !== '' || notes.trim() !== '') {
+      setShowDiscardConfirm(true);
+    } else {
+      onClose();
+    }
+  };
 
   const amountInputRef = useRef<HTMLInputElement>(null);
   const receiptFileRef = useRef<HTMLInputElement>(null);
@@ -217,7 +226,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
           </span>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
           >
             <X className="w-5 h-5" />
@@ -514,6 +523,37 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
             <span>{editingTransaction ? 'Save Changes' : 'Save Transaction'}</span>
           </button>
         </div>
+
+        {/* Discard Confirmation Popup */}
+        {showDiscardConfirm && (
+          <div className="absolute inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl p-5 max-w-xs w-full shadow-2xl space-y-3 border border-slate-200 animate-in fade-in zoom-in-95 duration-100">
+              <h4 className="font-bold text-slate-900 text-sm">Discard Transaction?</h4>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                You have entered details. Leaving now will discard this record.
+              </p>
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowDiscardConfirm(false)}
+                  className="px-3 py-1.5 rounded-xl border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-50 cursor-pointer"
+                >
+                  Keep Editing
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowDiscardConfirm(false);
+                    onClose();
+                  }}
+                  className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold cursor-pointer"
+                >
+                  Discard
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

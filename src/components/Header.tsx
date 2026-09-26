@@ -38,6 +38,7 @@ interface HeaderProps {
   onOpenAuthHelp: () => void;
   onOpenSettings: (tab?: 'main' | 'categories' | 'preferences' | 'budget' | 'cloud' | 'data' | 'about' | 'profile') => void;
   onOpenProfileEdit?: () => void;
+  onGoHome?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -57,6 +58,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenAuthHelp,
   onOpenSettings,
   onOpenProfileEdit,
+  onGoHome,
 }) => {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -77,10 +79,14 @@ export const Header: React.FC<HeaderProps> = ({
   }, [isProfileOpen]);
 
   // Determine effective display name, avatar, and email
-  const effectiveName = userProfile?.name || user?.displayName || 'Jeyaram Tech';
-  const effectiveAvatar = userProfile?.avatar || user?.photoURL || null;
-  const effectiveEmail = userProfile?.email || user?.email || 'jeyaramantech05@gmail.com';
-  const effectiveInitial = effectiveName.charAt(0).toUpperCase() || 'J';
+  const effectiveName = user
+    ? (user.displayName || user.email?.split('@')[0] || 'Google User')
+    : (userProfile?.name && userProfile.name !== 'Jeyaram Tech' ? userProfile.name : 'My Wallet');
+  const effectiveAvatar = user ? (user.photoURL || userProfile?.avatar || null) : (userProfile?.avatar || null);
+  const effectiveEmail = user
+    ? user.email
+    : (userProfile?.email && userProfile.email !== 'jeyaramantech05@gmail.com' ? userProfile.email : 'Local Offline Mode');
+  const effectiveInitial = effectiveName.charAt(0).toUpperCase() || 'M';
 
   const handleGoToProfile = () => {
     setIsProfileOpen(false);
@@ -96,10 +102,16 @@ export const Header: React.FC<HeaderProps> = ({
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-14 sm:h-16">
           {/* Logo & App Title */}
-          <div className="flex items-center gap-2.5 sm:gap-3">
+          <div 
+            onClick={onGoHome}
+            className="flex items-center gap-2.5 sm:gap-3 cursor-pointer select-none"
+            role="button"
+            tabIndex={0}
+            title="Go to Home"
+          >
             <SpendDeskLogo size="md" />
             <div className="hidden sm:block">
-              <span className="inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-200/60">
+              <span className="inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold bg-[#eaf5f0] text-[#116b4e] border border-[#116b4e]/25">
                 Cash &amp; Card Spending
               </span>
             </div>

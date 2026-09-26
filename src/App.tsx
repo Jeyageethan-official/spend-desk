@@ -87,6 +87,7 @@ export default function App() {
 
   // App Navigation Tab (Mobile-first & Full-screen SPA)
   const [activeTab, setActiveTab] = useState<AppTab>('dashboard');
+  const [sheetsSourceTab, setSheetsSourceTab] = useState<AppTab>('settings');
 
   // Transactions, Debt & Config State
   const [transactions, setTransactions] = useState<Transaction[]>(() => loadStoredTransactions());
@@ -196,6 +197,7 @@ export default function App() {
         setUser(res.user);
         setAccessToken(res.accessToken);
         showNotification('Signed in! Google Sheets is connected.', 'success');
+        setSheetsSourceTab(activeTab === 'sheets' ? sheetsSourceTab : activeTab);
         setActiveTab('sheets');
       } else if (res.errorType === 'access_denied_test_user') {
         setIsAuthHelpOpen(true);
@@ -468,9 +470,13 @@ export default function App() {
           totalCashBalance={overallSummary.currentCashBalance}
           totalSpend={overallSummary.totalSpend}
           currency={currency}
+          onGoHome={() => setActiveTab('dashboard')}
           onSignIn={handleSignIn}
           onSignOut={() => setIsSignOutConfirmOpen(true)}
-          onOpenSyncModal={() => setActiveTab('sheets')}
+          onOpenSyncModal={() => {
+            setSheetsSourceTab(activeTab);
+            setActiveTab('sheets');
+          }}
           onOpenNewTransaction={() => {
             setEditingTransaction(null);
             setModalDefaultType('cash_expense');
@@ -490,27 +496,105 @@ export default function App() {
         />
       )}
 
-      {/* Floating Notification */}
-      {notification && (
-        <div className="fixed top-18 right-4 left-4 sm:left-auto sm:right-6 z-50 animate-in slide-in-from-top duration-200">
-          <div
-            className={`flex items-center gap-2.5 px-4 py-3 rounded-2xl shadow-xl border text-xs sm:text-sm font-semibold ${
-              notification.type === 'error'
-                ? 'bg-red-50 text-red-800 border-red-200'
-                : notification.type === 'info'
-                ? 'bg-slate-900 text-white border-slate-800'
-                : 'bg-emerald-50 text-emerald-900 border-emerald-200'
-            }`}
-          >
-            {notification.type === 'error' ? (
-              <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
-            ) : (
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            )}
-            <span>{notification.message}</span>
+      {/* Dynamic Island Floating Pill Toast (Matching user reference screenshot) */}
+      <AnimatePresence>
+        {notification && (
+          <div className="fixed bottom-20 sm:bottom-8 left-0 right-0 z-50 flex justify-center pointer-events-none px-4">
+            <motion.div
+              key="toast-pill-notification"
+              initial={{ opacity: 0, y: 24, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 14, scale: 0.94 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 420 }}
+              className="pointer-events-auto"
+            >
+              <div
+                onClick={() => setNotification(null)}
+                className="group flex items-center gap-2.5 px-5 py-2.5 sm:py-3 rounded-full bg-[#090d16]/95 backdrop-blur-md text-white border border-slate-700/60 ring-1 ring-white/10 shadow-[0_16px_36px_-6px_rgba(0,0,0,0.65)] hover:bg-[#0e1524] transition-colors cursor-pointer max-w-sm sm:max-w-md select-none"
+              >
+                {notification.type === 'error' ? (
+                  <svg className="w-5 h-5 shrink-0 drop-shadow-[0_0_8px_rgba(244,63,94,0.35)]" viewBox="0 0 24 24" fill="none">
+                    <motion.circle
+                      cx="12"
+                      cy="12"
+                      r="9.5"
+                      stroke="#f43f5e"
+                      strokeWidth="2.3"
+                      strokeLinecap="round"
+                      style={{ transformOrigin: 'center' }}
+                      initial={{ pathLength: 0, rotate: -90 }}
+                      animate={{ pathLength: 1, rotate: -90 }}
+                      transition={{ duration: 0.2, ease: 'easeOut' }}
+                    />
+                    <motion.path
+                      d="M8.5 8.5l7 7M15.5 8.5l-7 7"
+                      stroke="#f43f5e"
+                      strokeWidth="2.3"
+                      strokeLinecap="round"
+                      initial={{ pathLength: 0 }}
+                      animate={{ pathLength: 1 }}
+                      transition={{ duration: 0.16, ease: 'easeOut', delay: 0.08 }}
+                    />
+                  </svg>
+                ) : notification.type === 'info' ? (
+                  <svg className="w-5 h-5 shrink-0 drop-shadow-[0_0_8px_rgba(56,189,248,0.35)]" viewBox="0 0 24 24" fill="none">
+                    <motion.circle
+                      cx="12"
+                      cy="12"
+                      r="9.5"
+                      stroke="#38bdf8"
+                      strokeWidth="2.3"
+                      strokeLinecap="round"
+                      style={{ transformOrigin: 'center' }}
+                      initial={{ pathLength: 0, rotate: -90 }}
+                      animate={{ pathLength: 1, rotate: -90 }}
+                      transition={{ duration: 0.2, ease: 'easeOut' }}
+                    />
+                    <motion.path
+                      d="M12 8v4m0 4h.01"
+                      stroke="#38bdf8"
+                      strokeWidth="2.3"
+                      strokeLinecap="round"
+                      initial={{ pathLength: 0 }}
+                      animate={{ pathLength: 1 }}
+                      transition={{ duration: 0.16, ease: 'easeOut', delay: 0.08 }}
+                    />
+                  </svg>
+                ) : (
+                  /* Success Animated Draw From Scratch (Exact match to reference pill screenshot) */
+                  <svg className="w-5 h-5 shrink-0 drop-shadow-[0_0_8px_rgba(16,185,129,0.35)]" viewBox="0 0 24 24" fill="none">
+                    <motion.circle
+                      cx="12"
+                      cy="12"
+                      r="9.5"
+                      stroke="#10b981"
+                      strokeWidth="2.4"
+                      strokeLinecap="round"
+                      style={{ transformOrigin: 'center' }}
+                      initial={{ pathLength: 0, rotate: -90 }}
+                      animate={{ pathLength: 1, rotate: -90 }}
+                      transition={{ duration: 0.2, ease: 'easeOut' }}
+                    />
+                    <motion.path
+                      d="M8 12.2l2.8 2.8 5.4-5.4"
+                      stroke="#10b981"
+                      strokeWidth="2.4"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      initial={{ pathLength: 0 }}
+                      animate={{ pathLength: 1 }}
+                      transition={{ duration: 0.16, ease: 'easeOut', delay: 0.08 }}
+                    />
+                  </svg>
+                )}
+                <span className="text-xs sm:text-sm font-bold text-white tracking-wide leading-tight select-none">
+                  {notification.message}
+                </span>
+              </div>
+            </motion.div>
           </div>
-        </div>
-      )}
+        )}
+      </AnimatePresence>
 
       {/* Desktop Navigation Bar (Visible on md+ screens across tabs) */}
       {activeTab !== 'sheets' && (
@@ -578,7 +662,7 @@ export default function App() {
         >
           {activeTab === 'sheets' && (
             <SheetManagerView
-              onBack={() => setActiveTab('dashboard')}
+              onBack={() => setActiveTab(sheetsSourceTab || 'settings')}
               accessToken={accessToken}
               activeSheet={activeSheet}
               onSetActiveSheet={handleSetActiveSheet}
@@ -606,7 +690,10 @@ export default function App() {
               alertPhone={alertPhone}
               onUpdateAlertPhone={handleUpdateAlertPhone}
               activeSheet={activeSheet}
-              onOpenSyncModal={() => setActiveTab('sheets')}
+              onOpenSyncModal={() => {
+                setSheetsSourceTab('settings');
+                setActiveTab('sheets');
+              }}
               onExportCSV={handleExportCSV}
               transactions={transactions}
               lendItems={lendItems}
@@ -666,6 +753,7 @@ export default function App() {
                 transactions={transactions}
                 currency={currency}
                 onNotification={showNotification}
+                showDownload={false}
               />
 
               {/* 4. Recent Transactions Preview (Top 8 on Dashboard) */}
@@ -712,6 +800,7 @@ export default function App() {
                 transactions={transactions}
                 currency={currency}
                 onNotification={showNotification}
+                showDownload={true}
               />
               <TransactionTable
                 transactions={filteredTransactions}
@@ -810,7 +899,7 @@ export default function App() {
         isOpen={isAuthHelpOpen}
         onClose={() => setIsAuthHelpOpen(false)}
         onExportCSV={handleExportCSV}
-        userEmailAttempt={user?.email || 'jeyageethan03@gmail.com'}
+        userEmailAttempt={user?.email || 'your account'}
       />
 
       {/* Sign Out Confirmation Modal */}

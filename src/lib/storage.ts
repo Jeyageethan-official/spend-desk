@@ -20,12 +20,18 @@ export interface UserProfile {
 
 export const loadStoredProfile = (): UserProfile => {
   try {
-    const name = localStorage.getItem(PROFILE_NAME_KEY) || 'Jeyaram Tech';
+    let name = localStorage.getItem(PROFILE_NAME_KEY);
+    if (!name || name === 'Jeyaram Tech') {
+      name = 'My Wallet';
+    }
     const avatar = localStorage.getItem(CUSTOM_AVATAR_KEY) || null;
-    const email = localStorage.getItem(PROFILE_EMAIL_KEY) || 'jeyaramantech05@gmail.com';
+    let email = localStorage.getItem(PROFILE_EMAIL_KEY);
+    if (!email || email === 'jeyaramantech05@gmail.com') {
+      email = '';
+    }
     return { name, avatar, email };
   } catch {
-    return { name: 'Jeyaram Tech', avatar: null, email: 'jeyaramantech05@gmail.com' };
+    return { name: 'My Wallet', avatar: null, email: '' };
   }
 };
 

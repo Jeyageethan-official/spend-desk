@@ -33,7 +33,14 @@ let cachedAccessToken: string | null = (() => {
 let cachedUserInfo: { name: string; email: string; picture?: string } | null = (() => {
   try {
     const raw = localStorage.getItem(USER_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : null;
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed?.email === 'jeyaramantech05@gmail.com') {
+      localStorage.removeItem(USER_STORAGE_KEY);
+      localStorage.removeItem(TOKEN_STORAGE_KEY);
+      return null;
+    }
+    return parsed;
   } catch {
     return null;
   }

@@ -66,7 +66,7 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
   const [spreadsheets, setSpreadsheets] = useState<DriveSpreadsheetItem[]>([]);
   const [driveSearch, setDriveSearch] = useState('');
   const [loadingList, setLoadingList] = useState(false);
-  const [newTitle, setNewTitle] = useState('Money Tracker - Cash & Card');
+  const [newTitle, setNewTitle] = useState('SpendDesk - Cash & Card');
   const [isCreating, setIsCreating] = useState(false);
   const [webhookInput, setWebhookInput] = useState(() => loadStoredWebhookUrl());
   const [copiedScript, setCopiedScript] = useState(false);
@@ -104,7 +104,7 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
     setErrorMsg('');
     setSuccessMsg('');
     try {
-      const title = newTitle.trim() || 'Money Tracker - Cash & Card';
+      const title = newTitle.trim() || 'SpendDesk - Cash & Card';
       const created = await createMoneyTrackerSpreadsheet(accessToken, title);
       const newMeta: GoogleSheetMeta = {
         id: created.id,
@@ -388,7 +388,7 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                           Connect Google Sheets
                         </h4>
                         <p className="text-xs text-slate-500 mt-1">
-                          Select an existing spreadsheet from your Google Drive or create a new dedicated Money Tracker sheet with one click.
+                          Select an existing spreadsheet from your Google Drive or create a new dedicated SpendDesk sheet with one click.
                         </p>
                       </div>
 

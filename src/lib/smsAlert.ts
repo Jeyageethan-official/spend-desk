@@ -10,7 +10,7 @@ export const generateTransactionSmsText = (tx: Transaction, currentCashBalance: 
   const formattedBal = formatCurrency(currentCashBalance, currency);
   const notePart = tx.notes ? ` (${tx.notes})` : '';
 
-  return `[Money Tracker Alert] ${typeText}: ${formattedAmt}${notePart} on ${tx.date}${tx.time ? ' ' + tx.time : ''}. Current Cash Balance: ${formattedBal}.`;
+  return `[SpendDesk Alert] ${typeText}: ${formattedAmt}${notePart} on ${tx.date}${tx.time ? ' ' + tx.time : ''}. Current Cash Balance: ${formattedBal}.`;
 };
 
 export const generateLendReminderText = (item: LendItem, currency: string = 'Rs'): string => {

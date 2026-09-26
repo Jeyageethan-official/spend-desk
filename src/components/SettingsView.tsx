@@ -38,6 +38,7 @@ import {
 } from '../lib/storage';
 import { GoogleSheetMeta, BudgetConfig, Transaction, LendItem } from '../types/finance';
 import { formatCurrency } from '../lib/calculations';
+import { ConfirmModal } from './ConfirmModal';
 import { UserProfile } from '../lib/storage';
 
 interface SettingsViewProps {
@@ -135,18 +136,24 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   // Custom User Profile Name state
   const [profileName, setProfileName] = useState<string>(() => {
-    return userProfile?.name || localStorage.getItem('money_tracker_profile_name') || 'Jeyaram Tech';
+    const stored = userProfile?.name || localStorage.getItem('money_tracker_profile_name');
+    return stored && stored !== 'Jeyaram Tech' ? stored : 'My Wallet';
   });
 
   // Profile Email state
   const [profileEmail, setProfileEmail] = useState<string>(() => {
-    return userProfile?.email || localStorage.getItem('money_tracker_profile_email') || 'jeyaramantech05@gmail.com';
+    const stored = userProfile?.email || localStorage.getItem('money_tracker_profile_email');
+    return stored && stored !== 'jeyaramantech05@gmail.com' ? stored : '';
   });
 
   // Edit Form State (for full dedicated profile page)
   const [editModalName, setEditModalName] = useState(profileName);
   const [editModalEmail, setEditModalEmail] = useState(profileEmail);
   const [editModalAvatar, setEditModalAvatar] = useState<string | null>(customAvatar);
+
+  // Unsaved Changes Confirmation State
+  const [showUnsavedConfirm, setShowUnsavedConfirm] = useState(false);
+  const [pendingLeaveAction, setPendingLeaveAction] = useState<(() => void) | null>(null);
 
   // Keep in sync with userProfile prop changes
   useEffect(() => {
@@ -373,6 +380,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     onUpdateCurrency(newCurr);
     setCustomCurrencyInput(newCurr);
     onNotification?.(`Currency changed to ${newCurr}`, 'success');
+    handleBackToMain();
   };
 
   // Save Budget
@@ -380,6 +388,83 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     e.preventDefault();
     onUpdateBudgetConfig(budgetForm);
     onNotification?.('Budget configuration saved.', 'success');
+    handleBackToMain();
+  };
+
+  // Unsaved Changes Flags and Safe Navigation Logic
+  const hasUnsavedProfile =
+    currentSubPage === 'profile' &&
+    (editModalName.trim() !== profileName.trim() ||
+     editModalEmail.trim() !== profileEmail.trim() ||
+     editModalAvatar !== customAvatar);
+
+  const hasUnsavedBudget =
+    currentSubPage === 'budget' &&
+    (budgetForm.monthlyBudget !== (budgetConfig.monthlyBudget || 0) ||
+     budgetForm.lowCashThreshold !== (budgetConfig.lowCashThreshold || 0) ||
+     budgetForm.notifyOnLimit !== (budgetConfig.notifyOnLimit ?? true));
+
+  const hasUnsavedCategory =
+    currentSubPage === 'categories' &&
+    (isAddingCategory || editingCategory !== null) &&
+    formCatName.trim() !== '';
+
+  const safeNavigateBack = (action: () => void) => {
+    if (hasUnsavedProfile || hasUnsavedBudget || hasUnsavedCategory) {
+      setPendingLeaveAction(() => action);
+      setShowUnsavedConfirm(true);
+    } else {
+      action();
+    }
+  };
+
+  const handleDiscardAndLeave = () => {
+    if (hasUnsavedProfile) {
+      setEditModalName(profileName);
+      setEditModalEmail(profileEmail);
+      setEditModalAvatar(customAvatar);
+    }
+    if (hasUnsavedBudget) {
+      setBudgetForm({
+        ...budgetConfig,
+        monthlyBudget: budgetConfig.monthlyBudget || 0,
+        lowCashThreshold: budgetConfig.lowCashThreshold || 0,
+        notifyOnLimit: budgetConfig.notifyOnLimit ?? true,
+      });
+    }
+    if (hasUnsavedCategory) {
+      setIsAddingCategory(false);
+      setEditingCategory(null);
+      setFormCatName('');
+    }
+    setShowUnsavedConfirm(false);
+    if (pendingLeaveAction) {
+      pendingLeaveAction();
+      setPendingLeaveAction(null);
+    } else {
+      handleBackToMain();
+    }
+  };
+
+  const handleSaveAndLeave = (e: React.FormEvent) => {
+    if (hasUnsavedProfile) {
+      handleSaveFullProfile(e);
+    } else if (hasUnsavedBudget) {
+      handleSaveBudget(e);
+    } else if (hasUnsavedCategory) {
+      if (editingCategory) {
+        handleSaveEditedCategory(e);
+      } else {
+        handleSaveNewCategory(e);
+      }
+    }
+    setShowUnsavedConfirm(false);
+    if (pendingLeaveAction) {
+      pendingLeaveAction();
+      setPendingLeaveAction(null);
+    } else {
+      handleBackToMain();
+    }
   };
 
   // Save Phone
@@ -396,7 +481,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `money_tracker_backup_${new Date().toISOString().split('T')[0]}.json`;
+    a.download = `spenddesk_backup_${new Date().toISOString().split('T')[0]}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -463,7 +548,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
           <button
             type="button"
-            onClick={currentSubPage === 'main' ? onBack : handleBackToMain}
+            onClick={() => safeNavigateBack(currentSubPage === 'main' ? onBack : handleBackToMain)}
             className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-700 hover:text-slate-900 hover:bg-slate-100 active:scale-95 transition-all cursor-pointer border border-slate-200/90 shadow-2xs"
             title="Back"
             aria-label="Back"
@@ -784,7 +869,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       required
                       value={editModalName}
                       onChange={(e) => setEditModalName(e.target.value)}
-                      placeholder="e.g. Jeyaram Tech"
+                      placeholder="e.g. My Wallet"
                       className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-900 focus:outline-hidden focus:border-emerald-600 bg-slate-50 focus:bg-white transition-all"
                     />
                   </div>
@@ -792,14 +877,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                    Gmail / Email Address
+                    Gmail / Email Address (Optional)
                   </label>
                   <input
                     type="email"
-                    required
                     value={editModalEmail}
                     onChange={(e) => setEditModalEmail(e.target.value)}
-                    placeholder="e.g. jeyaramantech05@gmail.com"
+                    placeholder="e.g. your.email@gmail.com"
                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-medium text-slate-900 focus:outline-hidden focus:border-emerald-600 bg-slate-50 focus:bg-white transition-all"
                   />
                 </div>
@@ -807,7 +891,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
                   <button
                     type="button"
-                    onClick={handleBackToMain}
+                    onClick={() => safeNavigateBack(handleBackToMain)}
                     className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-50 cursor-pointer transition-colors"
                   >
                     Cancel
@@ -1265,7 +1349,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <span>100% Local-First Privacy</span>
               </div>
               <p className="text-xs text-slate-600 leading-relaxed">
-                Money Tracker operates offline-first. Your financial data, debts, and categories never leave your browser storage unless you choose to sync with your personal Google Sheets account.
+                SpendDesk operates offline-first. Your financial data, debts, and categories never leave your browser storage unless you choose to sync with your personal Google Sheets account.
               </p>
 
               <div className="grid grid-cols-2 gap-3 pt-2">
@@ -1286,66 +1370,30 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       </div>
 
       {/* Delete Category Confirm Modal */}
-      {deleteCandidate && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
-          <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl border border-slate-200 space-y-3">
-            <div className="flex items-center gap-2 text-rose-600">
-              <Trash2 className="w-5 h-5" />
-              <h3 className="font-bold text-sm text-slate-900">Delete Category?</h3>
-            </div>
-            <p className="text-xs text-slate-600">
-              Remove &quot;{deleteCandidate.name}&quot;? Existing past transactions will keep their label.
-            </p>
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setDeleteCandidate(null)}
-                className="px-3.5 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmDeleteCategory}
-                className="px-4 py-1.5 rounded-xl bg-rose-600 text-white text-xs font-bold cursor-pointer"
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmModal
+        isOpen={Boolean(deleteCandidate)}
+        title="Delete Category?"
+        message={`Remove "${deleteCandidate?.name}"? Existing past transactions will keep their label.`}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        isDestructive={true}
+        icon="trash"
+        onConfirm={handleConfirmDeleteCategory}
+        onCancel={() => setDeleteCandidate(null)}
+      />
 
       {/* Restore Defaults Confirm Modal */}
-      {showResetCatConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
-          <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl border border-slate-200 space-y-3">
-            <div className="flex items-center gap-2 text-slate-900">
-              <RotateCcw className="w-5 h-5 text-emerald-600" />
-              <h3 className="font-bold text-sm text-slate-900">Restore Standard Categories</h3>
-            </div>
-            <p className="text-xs text-slate-600">
-              Reset category catalog back to Food, Transport, Bills, Shopping, Entertainment, etc.?
-            </p>
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setShowResetCatConfirm(false)}
-                className="px-3.5 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleResetCategories}
-                className="px-4 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-bold cursor-pointer"
-              >
-                Restore
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmModal
+        isOpen={showResetCatConfirm}
+        title="Restore Standard Categories"
+        message="Reset category catalog back to Food, Transport, Bills, Shopping, Entertainment, etc.?"
+        confirmLabel="Restore"
+        cancelLabel="Cancel"
+        isDestructive={false}
+        icon="reset"
+        onConfirm={handleResetCategories}
+        onCancel={() => setShowResetCatConfirm(false)}
+      />
 
       {/* Clear All Data Confirm */}
       {showResetDataConfirm && (
@@ -1383,6 +1431,44 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 className="px-4 py-1.5 rounded-xl bg-rose-600 disabled:opacity-50 text-white text-xs font-bold cursor-pointer"
               >
                 Delete All
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Unsaved Changes Confirmation Modal */}
+      {showUnsavedConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-100">
+          <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl border border-slate-200 space-y-3">
+            <div className="flex items-center gap-2 text-amber-600">
+              <AlertTriangle className="w-5 h-5 text-amber-500" />
+              <h3 className="font-bold text-sm text-slate-900">Unsaved Changes</h3>
+            </div>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              You have unsaved changes. Do you want to discard your edits and leave, or save them before leaving?
+            </p>
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowUnsavedConfirm(false)}
+                className="px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-50 cursor-pointer text-center"
+              >
+                Keep Editing
+              </button>
+              <button
+                type="button"
+                onClick={handleDiscardAndLeave}
+                className="px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold cursor-pointer transition-colors text-center"
+              >
+                Discard &amp; Leave
+              </button>
+              <button
+                type="button"
+                onClick={(e) => handleSaveAndLeave(e)}
+                className="px-4 py-2 rounded-xl bg-[#116b4e] hover:bg-[#0d5940] text-white text-xs font-bold cursor-pointer transition-colors shadow-xs text-center"
+              >
+                Save Changes
               </button>
             </div>
           </div>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, ShieldAlert, CheckCircle2, Download, ExternalLink, HardDrive } from 'lucide-react';
+import { X, CheckCircle2, Download, HardDrive, ShieldCheck, HelpCircle, FileSpreadsheet } from 'lucide-react';
 
 interface AuthHelpModalProps {
   isOpen: boolean;
@@ -12,7 +12,6 @@ export const AuthHelpModal: React.FC<AuthHelpModalProps> = ({
   isOpen,
   onClose,
   onExportCSV,
-  userEmailAttempt = 'your account',
 }) => {
   if (!isOpen) return null;
 
@@ -26,15 +25,15 @@ export const AuthHelpModal: React.FC<AuthHelpModalProps> = ({
         {/* Header */}
         <div className="px-5 py-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-amber-100 text-amber-700">
-              <ShieldAlert className="w-5 h-5" />
+            <div className="p-2 rounded-xl bg-[#eaf5f0] text-[#116b4e]">
+              <HelpCircle className="w-5 h-5" />
             </div>
             <div>
               <h2 className="text-base font-bold text-slate-900">
-                Google Sign-In Status
+                Help &amp; Account Guide
               </h2>
               <p className="text-xs text-slate-500">
-                Error 403: Google Cloud Test Mode
+                How SpendDesk keeps your financial records safe
               </p>
             </div>
           </div>
@@ -42,6 +41,7 @@ export const AuthHelpModal: React.FC<AuthHelpModalProps> = ({
             type="button"
             onClick={onClose}
             className="p-1.5 text-slate-400 hover:text-slate-600 rounded-xl cursor-pointer"
+            aria-label="Close"
           >
             <X className="w-5 h-5" />
           </button>
@@ -49,47 +49,74 @@ export const AuthHelpModal: React.FC<AuthHelpModalProps> = ({
 
         {/* Content */}
         <div className="p-5 overflow-y-auto space-y-4 text-xs sm:text-sm">
-          {/* Status Banner */}
-          <div className="p-3.5 bg-amber-50/70 border border-amber-200 rounded-2xl text-amber-900 space-y-1.5">
-            <p className="font-bold text-xs sm:text-sm">
-              Why did Google show &ldquo;Access blocked (Error 403)&rdquo;?
-            </p>
-            <p className="text-xs text-amber-800 leading-relaxed">
-              Because sensitive Google Drive &amp; Sheets permissions were requested, Google automatically puts the consent screen in <strong>Testing Mode</strong>. In this mode, only email addresses listed under &ldquo;Test Users&rdquo; in Google Cloud Console can sign in.
+          {/* 1. Offline First Banner */}
+          <div className="p-4 bg-[#eaf5f0] border border-[#116b4e]/30 rounded-2xl space-y-2">
+            <div className="flex items-center gap-2 text-[#116b4e] font-bold">
+              <ShieldCheck className="w-4 h-4 text-[#116b4e] shrink-0" />
+              <span>100% Free &amp; Private — No Sign-In Required</span>
+            </div>
+            <p className="text-xs text-slate-700 leading-relaxed">
+              SpendDesk is designed to work completely offline on your device. Every transaction, cash balance, category, and lend/borrow record is saved directly to your private browser storage. You can use all features freely without signing in.
             </p>
           </div>
 
-          {/* Solution 1: 100% Functional Local-First Mode */}
-          <div className="p-4 bg-emerald-50/50 border border-emerald-200 rounded-2xl space-y-2">
-            <div className="flex items-center gap-2 text-emerald-800 font-bold">
-              <HardDrive className="w-4 h-4 text-emerald-600" />
-              <span>No Sign-In Required: Local Mobile Mode is Active!</span>
+          {/* 2. Google Sheets Cloud Backup FAQ */}
+          <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3 text-xs text-slate-700">
+            <div className="flex items-center gap-2 text-slate-900 font-bold">
+              <FileSpreadsheet className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>How Google Sheets Sync Works</span>
             </div>
-            <p className="text-xs text-slate-600 leading-relaxed">
-              You do <strong>not</strong> need to sign in to use this app. All your daily cash and card records, SMS alerts, category summaries, and daily trends are safely saved directly in your mobile browser storage.
+            <p className="leading-relaxed">
+              Google Sign-In is an optional feature for users who want automatic cloud backups directly to a personal spreadsheet in their own Google Drive account.
             </p>
-            <div className="pt-2 flex items-center gap-2">
-              <button
-                type="button"
-                onClick={onExportCSV}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-xs cursor-pointer"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Export Google Sheets CSV</span>
-              </button>
+            
+            <div className="pt-1 space-y-2">
+              <div className="p-2.5 rounded-xl bg-white border border-slate-200/80">
+                <span className="font-bold text-slate-900 block mb-0.5">
+                  &bull; Why did Google show an authorization prompt or warning?
+                </span>
+                <span className="text-slate-600 text-[11px] block leading-normal">
+                  Because Google Sheets and Drive permissions allow creating and updating spreadsheets, Google requires authorization. If your account is not authorized or cloud sync is unavailable, you can use SpendDesk fully in offline mode with complete safety.
+                </span>
+              </div>
+
+              <div className="p-2.5 rounded-xl bg-white border border-slate-200/80">
+                <span className="font-bold text-slate-900 block mb-0.5">
+                  &bull; How can I backup or open my data in Excel / Sheets?
+                </span>
+                <span className="text-slate-600 text-[11px] block leading-normal">
+                  You can click &ldquo;Export CSV&rdquo; anytime on the Records page or Settings to download a standard spreadsheet file compatible with Google Sheets, Microsoft Excel, and Apple Numbers.
+                </span>
+              </div>
+
+              <div className="p-2.5 rounded-xl bg-white border border-slate-200/80">
+                <span className="font-bold text-slate-900 block mb-0.5">
+                  &bull; Will I lose my data if I close the app?
+                </span>
+                <span className="text-slate-600 text-[11px] block leading-normal">
+                  No. All data is automatically saved locally. You can also download a full JSON backup from Settings &rarr; Data &amp; Backups anytime.
+                </span>
+              </div>
             </div>
           </div>
 
-          {/* Solution 2: For Google Cloud Developer */}
-          <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-2 text-xs text-slate-600">
-            <p className="font-bold text-slate-800 flex items-center gap-1.5">
-              <span>To enable Google Sign-In for your email:</span>
-            </p>
-            <ol className="list-decimal list-inside space-y-1 text-slate-600 pl-1">
-              <li>Open <strong>Google Cloud Console</strong> &rarr; <strong>APIs &amp; Services</strong> &rarr; <strong>OAuth Consent Screen</strong>.</li>
-              <li>Under <strong>Test users</strong>, click <strong>+ Add Users</strong>.</li>
-              <li>Add your email: <code className="bg-slate-200 px-1 rounded text-slate-800 font-mono text-[11px]">{userEmailAttempt}</code> and save.</li>
-            </ol>
+          {/* Quick Action: Export CSV */}
+          <div className="flex items-center justify-between p-3.5 bg-white border border-slate-200 rounded-2xl">
+            <div className="flex items-center gap-2">
+              <HardDrive className="w-4 h-4 text-slate-600" />
+              <span className="font-semibold text-xs text-slate-800">Export your data right now</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                onExportCSV();
+                onClose();
+              }}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#116b4e] hover:bg-[#0d5940] text-white rounded-xl text-xs font-semibold shadow-xs cursor-pointer transition-colors"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Export CSV</span>
+            </button>
           </div>
         </div>
 
@@ -98,9 +125,9 @@ export const AuthHelpModal: React.FC<AuthHelpModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="px-5 py-2 text-xs font-bold text-slate-900 bg-white border border-slate-200 hover:bg-slate-100 rounded-xl shadow-xs cursor-pointer"
+            className="px-5 py-2 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-xl shadow-xs cursor-pointer transition-colors"
           >
-            Continue with Local Mobile Storage
+            Got It, Continue
           </button>
         </div>
       </div>

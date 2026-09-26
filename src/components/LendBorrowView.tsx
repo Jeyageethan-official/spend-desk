@@ -18,6 +18,7 @@ import {
 import { LendItem, LendType, LendStatus } from '../types/finance';
 import { formatCurrency } from '../lib/calculations';
 import { generateLendReminderText, triggerDeviceSms } from '../lib/smsAlert';
+import { ConfirmModal } from './ConfirmModal';
 
 interface LendBorrowViewProps {
   items: LendItem[];
@@ -45,6 +46,7 @@ export const LendBorrowView: React.FC<LendBorrowViewProps> = ({
   const [filterType, setFilterType] = useState<'all' | 'lent' | 'borrowed'>('all');
   const [search, setSearch] = useState('');
   const [internalModalOpen, setInternalModalOpen] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<LendItem | null>(null);
 
   const isModalOpen = controlledModalOpen !== undefined ? controlledModalOpen : internalModalOpen;
   const setIsModalOpen = (open: boolean) => {
@@ -433,7 +435,7 @@ export const LendBorrowView: React.FC<LendBorrowViewProps> = ({
 
                     <button
                       type="button"
-                      onClick={() => onDeleteItem(item.id)}
+                      onClick={() => setItemToDelete(item)}
                       className="p-1.5 text-slate-300 hover:text-red-700 rounded-lg cursor-pointer transition-colors"
                       title="Delete record"
                     >
@@ -609,6 +611,24 @@ export const LendBorrowView: React.FC<LendBorrowViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Universal Delete Item Confirmation Modal */}
+      <ConfirmModal
+        isOpen={Boolean(itemToDelete)}
+        title="Delete Record?"
+        message={`Delete record of ${itemToDelete ? formatCurrency(itemToDelete.amount, currency) : ''} (${itemToDelete?.type === 'lent' ? 'Lent to' : 'Borrowed from'} ${itemToDelete?.personName})? This action cannot be undone.`}
+        confirmLabel="Delete Record"
+        cancelLabel="Cancel"
+        isDestructive={true}
+        icon="trash"
+        onConfirm={() => {
+          if (itemToDelete) {
+            onDeleteItem(itemToDelete.id);
+            setItemToDelete(null);
+          }
+        }}
+        onCancel={() => setItemToDelete(null)}
+      />
     </div>
   );
 };

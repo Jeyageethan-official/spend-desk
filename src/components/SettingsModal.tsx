@@ -810,7 +810,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div className="flex items-center gap-2">
                   <Sparkles className="w-4 h-4 text-emerald-600" />
                   <h4 className="font-bold text-xs sm:text-sm text-slate-900">
-                    Money Tracker (Cash &amp; Card)
+                    SpendDesk (Cash &amp; Card)
                   </h4>
                 </div>
                 <p className="text-xs text-slate-600 leading-relaxed">

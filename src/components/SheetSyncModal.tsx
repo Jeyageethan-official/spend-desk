@@ -64,7 +64,7 @@ export const SheetSyncModal: React.FC<SheetSyncModalProps> = ({
   const [spreadsheets, setSpreadsheets] = useState<DriveSpreadsheetItem[]>([]);
   const [driveSearch, setDriveSearch] = useState('');
   const [loadingList, setLoadingList] = useState(false);
-  const [newTitle, setNewTitle] = useState('Money Tracker - Cash & Card');
+  const [newTitle, setNewTitle] = useState('SpendDesk - Cash & Card');
   const [isCreating, setIsCreating] = useState(false);
   const [webhookInput, setWebhookInput] = useState(() => loadStoredWebhookUrl());
   const [copiedScript, setCopiedScript] = useState(false);
@@ -102,7 +102,7 @@ export const SheetSyncModal: React.FC<SheetSyncModalProps> = ({
     setErrorMsg('');
     setSuccessMsg('');
     try {
-      const title = newTitle.trim() || 'Money Tracker - Cash & Card';
+      const title = newTitle.trim() || 'SpendDesk - Cash & Card';
       const created = await createMoneyTrackerSpreadsheet(accessToken, title);
       const newMeta: GoogleSheetMeta = {
         id: created.id,

@@ -24,6 +24,7 @@ interface FilterBarProps {
   transactions?: Transaction[];
   currency?: string;
   onNotification?: (msg: string, type?: 'success' | 'info' | 'error') => void;
+  showDownload?: boolean;
 }
 
 export const FilterBar: React.FC<FilterBarProps> = ({
@@ -35,6 +36,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   transactions = [],
   currency = 'Rs',
   onNotification,
+  showDownload = false,
 }) => {
   const [isExpanded, setIsExpanded] = useState<boolean>(!collapsible);
   const [isCalendarModalOpen, setIsCalendarModalOpen] = useState<boolean>(false);
@@ -167,7 +169,24 @@ export const FilterBar: React.FC<FilterBarProps> = ({
               })}
             </div>
 
-            {/* Clean More Filters Toggle */}
+            {/* 1. Calendar Date Trigger Button (Opens Custom Calendar Popup) */}
+            <button
+              type="button"
+              onClick={() => setIsCalendarModalOpen(true)}
+              className={`p-2 sm:px-3 sm:py-2 text-xs font-semibold rounded-xl transition-all cursor-pointer shrink-0 flex items-center gap-1.5 border ${
+                hasCustomDateRange
+                  ? 'bg-[#eaf5f0] text-[#116b4e] border-[#116b4e]/40 font-bold shadow-2xs'
+                  : 'text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-50 border-slate-200/90'
+              }`}
+              title="Pick Custom Calendar Date Range"
+            >
+              <Calendar className="w-3.5 h-3.5 text-[#116b4e]" />
+              <span className="hidden sm:inline font-bold">
+                {hasCustomDateRange ? (filter.startDate === filter.endDate ? filter.startDate : 'Custom') : 'Date'}
+              </span>
+            </button>
+
+            {/* 2. Filters Dropdown Expand Button (Next to Calendar Icon) */}
             {collapsible && (
               <button
                 type="button"
@@ -189,33 +208,18 @@ export const FilterBar: React.FC<FilterBarProps> = ({
               </button>
             )}
 
-            {/* Download Export Button (Placed to the LEFT side of the Calendar Icon) */}
-            <button
-              type="button"
-              onClick={() => setIsDownloadModalOpen(true)}
-              className="p-2 sm:px-3 sm:py-2 text-xs font-semibold rounded-xl transition-all cursor-pointer shrink-0 flex items-center gap-1.5 border text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-50 border-slate-200/90 shadow-2xs"
-              title="Download Records (CSV or PDF)"
-            >
-              <Download className="w-3.5 h-3.5 text-slate-600" />
-              <span className="hidden sm:inline font-bold">Export</span>
-            </button>
-
-            {/* Calendar Date Trigger Button (Opens Custom Calendar Popup) */}
-            <button
-              type="button"
-              onClick={() => setIsCalendarModalOpen(true)}
-              className={`p-2 sm:px-3 sm:py-2 text-xs font-semibold rounded-xl transition-all cursor-pointer shrink-0 flex items-center gap-1.5 border ${
-                hasCustomDateRange
-                  ? 'bg-emerald-50 text-emerald-800 border-emerald-300 font-bold shadow-2xs'
-                  : 'text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-50 border-slate-200/90'
-              }`}
-              title="Pick Custom Calendar Date Range"
-            >
-              <Calendar className="w-3.5 h-3.5 text-emerald-700" />
-              <span className="hidden sm:inline font-bold">
-                {hasCustomDateRange ? (filter.startDate === filter.endDate ? filter.startDate : 'Custom') : 'Date'}
-              </span>
-            </button>
+            {/* 3. Download Export Button (Shown only when showDownload is enabled, e.g., on Records page) */}
+            {showDownload && (
+              <button
+                type="button"
+                onClick={() => setIsDownloadModalOpen(true)}
+                className="p-2 sm:px-3 sm:py-2 text-xs font-semibold rounded-xl transition-all cursor-pointer shrink-0 flex items-center gap-1.5 border text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-50 border-slate-200/90 shadow-2xs"
+                title="Download Records (CSV or PDF)"
+              >
+                <Download className="w-3.5 h-3.5 text-slate-600" />
+                <span className="hidden sm:inline font-bold">Export</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -317,13 +321,15 @@ export const FilterBar: React.FC<FilterBarProps> = ({
       />
 
       {/* Download / Export Records Modal Popup */}
-      <DownloadRecordsModal
-        isOpen={isDownloadModalOpen}
-        onClose={() => setIsDownloadModalOpen(false)}
-        transactions={transactions}
-        currency={currency}
-        onNotification={onNotification}
-      />
+      {showDownload && (
+        <DownloadRecordsModal
+          isOpen={isDownloadModalOpen}
+          onClose={() => setIsDownloadModalOpen(false)}
+          transactions={transactions}
+          currency={currency}
+          onNotification={onNotification}
+        />
+      )}
     </>
   );
 };

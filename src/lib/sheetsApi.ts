@@ -29,7 +29,7 @@ export const listUserSpreadsheets = async (accessToken: string): Promise<DriveSp
 
 export const createMoneyTrackerSpreadsheet = async (
   accessToken: string,
-  customTitle: string = 'Money Tracker - Cash & Card'
+  customTitle: string = 'SpendDesk - Cash & Card'
 ): Promise<{ id: string; name: string; url: string }> => {
   const body = {
     properties: {
@@ -137,7 +137,7 @@ export const initializeSheetLayout = async (accessToken: string, spreadsheetId: 
   // Set up Dashboard matching user layout
   const todayStr = new Date().toISOString().split('T')[0];
   const dashboardValues = [
-    ['MONEY TRACKER', '', '', '', '', '', '', '', '', '', 'Date:', todayStr, '', ''],
+    ['SPENDDESK', '', '', '', '', '', '', '', '', '', 'Date:', todayStr, '', ''],
     ['Cash wallet + Card spend tracker', '', '', '', '', '', '', '', '', '', '', '', '', ''],
     ['', '', '', '', '', '', '', '', '', '', '', '', '', ''],
     ['CURRENT BALANCE (CASH)', '', '', '', '', 'Filter:', 'Overview', '', '', '', 'Food', 0, 'Mon', 0],

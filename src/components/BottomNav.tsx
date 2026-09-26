@@ -33,7 +33,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             onTabChange('dashboard');
           }}
           className={`flex-1 flex flex-col items-center justify-center h-full transition-all cursor-pointer ${
-            activeTab === 'dashboard' ? 'text-emerald-700 font-bold' : 'text-slate-400 hover:text-slate-700'
+            activeTab === 'dashboard' ? 'text-[#116b4e] font-bold' : 'text-slate-400 hover:text-slate-700'
           }`}
         >
           <Home className={`w-5 h-5 ${activeTab === 'dashboard' ? 'stroke-[2.5]' : ''}`} />
@@ -48,7 +48,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             onTabChange('transactions');
           }}
           className={`flex-1 flex flex-col items-center justify-center h-full transition-all cursor-pointer ${
-            activeTab === 'transactions' ? 'text-emerald-700 font-bold' : 'text-slate-400 hover:text-slate-700'
+            activeTab === 'transactions' ? 'text-[#116b4e] font-bold' : 'text-slate-400 hover:text-slate-700'
           }`}
         >
           <Receipt className={`w-5 h-5 ${activeTab === 'transactions' ? 'stroke-[2.5]' : ''}`} />
@@ -63,7 +63,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
               triggerFeedback('tap');
               onQuickAdd();
             }}
-            className="w-12 h-12 -mt-5 rounded-full bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center shadow-lg shadow-emerald-600/35 hover:scale-105 active:scale-95 transition-all cursor-pointer border-2 border-white"
+            className="w-12 h-12 -mt-5 rounded-full bg-gradient-to-tr from-[#116b4e] to-[#188663] text-white flex items-center justify-center shadow-lg shadow-[#116b4e]/35 hover:scale-105 active:scale-95 transition-all cursor-pointer border-2 border-white"
             aria-label="Add transaction"
           >
             <Plus className="w-6 h-6 stroke-[3]" />
@@ -78,7 +78,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             onTabChange('lend');
           }}
           className={`flex-1 relative flex flex-col items-center justify-center h-full transition-all cursor-pointer ${
-            activeTab === 'lend' ? 'text-emerald-700 font-bold' : 'text-slate-400 hover:text-emerald-700'
+            activeTab === 'lend' ? 'text-[#116b4e] font-bold' : 'text-slate-400 hover:text-[#116b4e]'
           }`}
         >
           <div className="relative">
@@ -100,7 +100,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             onTabChange('analytics');
           }}
           className={`flex-1 flex flex-col items-center justify-center h-full transition-all cursor-pointer ${
-            activeTab === 'analytics' ? 'text-emerald-700 font-bold' : 'text-slate-400 hover:text-slate-700'
+            activeTab === 'analytics' ? 'text-[#116b4e] font-bold' : 'text-slate-400 hover:text-slate-700'
           }`}
         >
           <BarChart2 className={`w-5 h-5 ${activeTab === 'analytics' ? 'stroke-[2.5]' : ''}`} />
