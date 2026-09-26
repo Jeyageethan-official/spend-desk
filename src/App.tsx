@@ -512,58 +512,10 @@ export default function App() {
         </div>
       )}
 
-      {/* Main Content Dashboard, Full-screen Google Sheets Manager, or Settings View */}
-      {activeTab === 'sheets' ? (
-        <SheetManagerView
-          onBack={() => setActiveTab('dashboard')}
-          accessToken={accessToken}
-          activeSheet={activeSheet}
-          onSetActiveSheet={handleSetActiveSheet}
-          onPushToSheet={handlePushToSheet}
-          onPullFromSheet={handlePullFromSheet}
-          onSignInDirect={handleSignIn}
-          onExportCSV={handleExportCSV}
-          isSyncing={isSyncing}
-          totalTransactionsCount={transactions.length}
-          totalLendCount={lendItems.length}
-          onNotification={showNotification}
-        />
-      ) : activeTab === 'settings' ? (
-        <SettingsView
-          onBack={() => setActiveTab('dashboard')}
-          currency={currency}
-          onUpdateCurrency={(c) => {
-            setCurrency(c);
-            showNotification(`Currency updated to ${c}`, 'success');
-          }}
-          budgetConfig={budgetConfig}
-          onUpdateBudgetConfig={handleUpdateBudgetConfig}
-          alertPhone={alertPhone}
-          onUpdateAlertPhone={handleUpdateAlertPhone}
-          activeSheet={activeSheet}
-          onOpenSyncModal={() => setActiveTab('sheets')}
-          onExportCSV={handleExportCSV}
-          transactions={transactions}
-          lendItems={lendItems}
-          userProfile={userProfile}
-          onUpdateProfile={handleUpdateProfile}
-          onResetAllData={() => {
-            setTransactions([]);
-            setLendItems([]);
-            showNotification('All local transaction records cleared.', 'info');
-          }}
-          onRestoreTransactions={() => {
-            setTransactions(loadStoredTransactions());
-            setLendItems(loadStoredLendItems());
-            showNotification('Data restored successfully.', 'success');
-          }}
-          initialSection={settingsSection}
-          onNotification={showNotification}
-        />
-      ) : (
-        <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4 sm:space-y-6">
-          {/* Desktop Tab Selector Bar */}
-          <div className="hidden md:flex items-center justify-between bg-white p-1.5 rounded-2xl border border-slate-200 shadow-xs">
+      {/* Desktop Navigation Bar (Visible on md+ screens across tabs) */}
+      {activeTab !== 'sheets' && (
+        <div className="hidden md:block max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 pt-4 sm:pt-6">
+          <div className="flex items-center justify-between bg-white p-1.5 rounded-2xl border border-slate-200/90 shadow-xs">
             <div className="flex items-center gap-1">
               {[
                 { id: 'dashboard', label: 'Overview & Wallet' },
@@ -592,82 +544,177 @@ export default function App() {
               ))}
             </div>
 
-          <div className="flex items-center gap-2 pr-2">
-            <button
-              type="button"
-              onClick={() => setIsSmsModalOpen(true)}
-              className="px-3 py-1.5 text-xs font-bold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 rounded-xl flex items-center gap-1.5 cursor-pointer"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Paste Bank SMS</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleExportCSV}
-              className="px-3 py-1.5 text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl flex items-center gap-1.5 cursor-pointer"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Export CSV</span>
-            </button>
+            <div className="flex items-center gap-2 pr-1">
+              <button
+                type="button"
+                onClick={() => setIsSmsModalOpen(true)}
+                className="px-3 py-1.5 text-xs font-bold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 rounded-xl flex items-center gap-1.5 cursor-pointer transition-colors"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Paste Bank SMS</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleExportCSV}
+                className="px-3 py-1.5 text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl flex items-center gap-1.5 cursor-pointer transition-colors"
+              >
+                <Download className="w-3.5 h-3.5 text-slate-500" />
+                <span>Export CSV</span>
+              </button>
+            </div>
           </div>
         </div>
+      )}
 
-        {/* View 1: DASHBOARD (Home View) */}
-        {activeTab === 'dashboard' && (
-          <div className="space-y-4 sm:space-y-6">
-            {/* 1. Summary Cards (Current Cash Balance + 4 breakdown cards + SMS icon) */}
-            <SummaryCards
-              summary={summary}
+      {/* Main Content with Smooth Page Fade & Slide Transition Animation */}
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={activeTab}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -6 }}
+          transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+          className="flex-1 w-full"
+        >
+          {activeTab === 'sheets' && (
+            <SheetManagerView
+              onBack={() => setActiveTab('dashboard')}
+              accessToken={accessToken}
+              activeSheet={activeSheet}
+              onSetActiveSheet={handleSetActiveSheet}
+              onPushToSheet={handlePushToSheet}
+              onPullFromSheet={handlePullFromSheet}
+              onSignInDirect={handleSignIn}
+              onExportCSV={handleExportCSV}
+              isSyncing={isSyncing}
+              totalTransactionsCount={transactions.length}
+              totalLendCount={lendItems.length}
+              onNotification={showNotification}
+            />
+          )}
+
+          {activeTab === 'settings' && (
+            <SettingsView
+              onBack={() => setActiveTab('dashboard')}
               currency={currency}
-              onAddCash={() => {
-                setEditingTransaction(null);
-                setModalDefaultType('cash_added');
-                setIsTxModalOpen(true);
+              onUpdateCurrency={(c) => {
+                setCurrency(c);
+                showNotification(`Currency updated to ${c}`, 'success');
               }}
-              onAddExpense={() => {
-                setEditingTransaction(null);
-                setModalDefaultType('cash_expense');
-                setIsTxModalOpen(true);
-              }}
-              onOpenSms={() => setIsSmsModalOpen(true)}
+              budgetConfig={budgetConfig}
+              onUpdateBudgetConfig={handleUpdateBudgetConfig}
               alertPhone={alertPhone}
               onUpdateAlertPhone={handleUpdateAlertPhone}
-            />
-
-            {/* 2. End Money & Runway Tracker */}
-            <BudgetAlerts
-              summary={summary}
-              todaySpend={todaySpend}
-              budgetConfig={budgetConfig}
-              onUpdateConfig={handleUpdateBudgetConfig}
-              currency={currency}
-            />
-
-            {/* 3. Filter Bar (With expand/collapse down arrow) */}
-            <FilterBar
-              filter={filter}
-              onFilterChange={setFilter}
+              activeSheet={activeSheet}
+              onOpenSyncModal={() => setActiveTab('sheets')}
               onExportCSV={handleExportCSV}
-              totalFilteredCount={filteredTransactions.length}
+              transactions={transactions}
+              lendItems={lendItems}
+              userProfile={userProfile}
+              onUpdateProfile={handleUpdateProfile}
+              onResetAllData={() => {
+                setTransactions([]);
+                setLendItems([]);
+                showNotification('All local transaction records cleared.', 'info');
+              }}
+              onRestoreTransactions={() => {
+                setTransactions(loadStoredTransactions());
+                setLendItems(loadStoredLendItems());
+                showNotification('Data restored successfully.', 'success');
+              }}
+              initialSection={settingsSection}
+              onNotification={showNotification}
             />
+          )}
 
-            {/* 4. Recent Transactions Preview (Top 8 on Dashboard) */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between px-1">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                  Recent Activity
-                </h3>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('transactions')}
-                  className="text-xs font-bold text-emerald-700 hover:underline cursor-pointer"
-                >
-                  View All ({filteredTransactions.length}) &rarr;
-                </button>
+          {activeTab === 'dashboard' && (
+            <main className="max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4 sm:space-y-6">
+              {/* 1. Summary Cards (Current Cash Balance + 4 breakdown cards + SMS icon) */}
+              <SummaryCards
+                summary={summary}
+                currency={currency}
+                onAddCash={() => {
+                  setEditingTransaction(null);
+                  setModalDefaultType('cash_added');
+                  setIsTxModalOpen(true);
+                }}
+                onAddExpense={() => {
+                  setEditingTransaction(null);
+                  setModalDefaultType('cash_expense');
+                  setIsTxModalOpen(true);
+                }}
+                onOpenSms={() => setIsSmsModalOpen(true)}
+                alertPhone={alertPhone}
+                onUpdateAlertPhone={handleUpdateAlertPhone}
+              />
+
+              {/* 2. End Money & Runway Tracker */}
+              <BudgetAlerts
+                summary={summary}
+                todaySpend={todaySpend}
+                budgetConfig={budgetConfig}
+                onUpdateConfig={handleUpdateBudgetConfig}
+                currency={currency}
+              />
+
+              {/* 3. Filter Bar (With expand/collapse down arrow) */}
+              <FilterBar
+                filter={filter}
+                onFilterChange={setFilter}
+                onExportCSV={handleExportCSV}
+                totalFilteredCount={filteredTransactions.length}
+                transactions={transactions}
+                currency={currency}
+                onNotification={showNotification}
+              />
+
+              {/* 4. Recent Transactions Preview (Top 8 on Dashboard) */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between px-1">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                    Recent Activity
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('transactions')}
+                    className="text-xs font-bold text-emerald-700 hover:underline cursor-pointer"
+                  >
+                    View All ({filteredTransactions.length}) &rarr;
+                  </button>
+                </div>
+
+                <TransactionTable
+                  transactions={filteredTransactions.slice(0, 8)}
+                  currency={currency}
+                  onAddNew={() => {
+                    setEditingTransaction(null);
+                    setModalDefaultType('cash_expense');
+                    setIsTxModalOpen(true);
+                  }}
+                  onEdit={(tx) => {
+                    setEditingTransaction(tx);
+                    setIsTxModalOpen(true);
+                  }}
+                  onDelete={handleDeleteTransaction}
+                />
               </div>
+            </main>
+          )}
 
+          {activeTab === 'transactions' && (
+            <main className="max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4 sm:space-y-6">
+              <FilterBar
+                filter={filter}
+                onFilterChange={setFilter}
+                onExportCSV={handleExportCSV}
+                totalFilteredCount={filteredTransactions.length}
+                collapsible={false}
+                transactions={transactions}
+                currency={currency}
+                onNotification={showNotification}
+              />
               <TransactionTable
-                transactions={filteredTransactions.slice(0, 8)}
+                transactions={filteredTransactions}
                 currency={currency}
                 onAddNew={() => {
                   setEditingTransaction(null);
@@ -680,68 +727,40 @@ export default function App() {
                 }}
                 onDelete={handleDeleteTransaction}
               />
-            </div>
-          </div>
-        )}
+            </main>
+          )}
 
-        {/* View 2: TRANSACTIONS TAB */}
-        {activeTab === 'transactions' && (
-          <div className="space-y-4">
-            <FilterBar
-              filter={filter}
-              onFilterChange={setFilter}
-              onExportCSV={handleExportCSV}
-              totalFilteredCount={filteredTransactions.length}
-              collapsible={false}
-            />
-            <TransactionTable
-              transactions={filteredTransactions}
-              currency={currency}
-              onAddNew={() => {
-                setEditingTransaction(null);
-                setModalDefaultType('cash_expense');
-                setIsTxModalOpen(true);
-              }}
-              onEdit={(tx) => {
-                setEditingTransaction(tx);
-                setIsTxModalOpen(true);
-              }}
-              onDelete={handleDeleteTransaction}
-            />
-          </div>
-        )}
+          {activeTab === 'lend' && (
+            <main className="max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4 sm:space-y-6">
+              <LendBorrowView
+                items={lendItems}
+                onAddItem={handleAddLendItem}
+                onToggleStatus={handleToggleLendStatus}
+                onDeleteItem={handleDeleteLendItem}
+                currency={currency}
+                isAddModalOpen={isLendModalOpen}
+                onCloseAddModal={() => setIsLendModalOpen(false)}
+                onOpenAddModal={() => setIsLendModalOpen(true)}
+              />
+            </main>
+          )}
 
-        {/* View 3: LEND & BORROW (Debt Tracker) */}
-        {activeTab === 'lend' && (
-          <div className="space-y-4">
-            <LendBorrowView
-              items={lendItems}
-              onAddItem={handleAddLendItem}
-              onToggleStatus={handleToggleLendStatus}
-              onDeleteItem={handleDeleteLendItem}
-              currency={currency}
-              isAddModalOpen={isLendModalOpen}
-              onCloseAddModal={() => setIsLendModalOpen(false)}
-              onOpenAddModal={() => setIsLendModalOpen(true)}
-            />
-          </div>
-        )}
-
-        {/* View 4: ANALYTICS & TRENDS TAB (Mobile-Optimized) */}
-        {activeTab === 'analytics' && (
-          <AnalyticsView
-            summary={summary}
-            categories={categoryBreakdown}
-            trendItems={trendItems}
-            filter={filter}
-            onFilterChange={setFilter}
-            onExportCSV={handleExportCSV}
-            totalTransactionsCount={filteredTransactions.length}
-            currency="Rs"
-          />
-        )}
-      </main>
-      )}
+          {activeTab === 'analytics' && (
+            <main className="max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4 sm:space-y-6">
+              <AnalyticsView
+                summary={summary}
+                categories={categoryBreakdown}
+                trendItems={trendItems}
+                filter={filter}
+                onFilterChange={setFilter}
+                onExportCSV={handleExportCSV}
+                totalTransactionsCount={filteredTransactions.length}
+                currency="Rs"
+              />
+            </main>
+          )}
+        </motion.div>
+      </AnimatePresence>
 
       {/* Native Mobile Bottom Navigation Bar */}
       <BottomNav

@@ -1,33 +1,44 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   Calendar, 
   Search, 
-  Download, 
   X, 
   ChevronDown, 
   ChevronUp,
-  SlidersHorizontal
+  SlidersHorizontal,
+  RotateCcw,
+  Download
 } from 'lucide-react';
-import { FilterState, DateFilterType, Category, PaymentMethod } from '../types/finance';
+import { FilterState, DateFilterType, Category, Transaction } from '../types/finance';
 import { STANDARD_CATEGORIES } from '../lib/calculations';
 import { loadStoredCustomCategories } from '../lib/storage';
+import { CalendarDateModal } from './CalendarDateModal';
+import { DownloadRecordsModal } from './DownloadRecordsModal';
 
 interface FilterBarProps {
   filter: FilterState;
   onFilterChange: (newFilter: FilterState) => void;
-  onExportCSV: () => void;
+  onExportCSV?: () => void;
   totalFilteredCount: number;
   collapsible?: boolean;
+  transactions?: Transaction[];
+  currency?: string;
+  onNotification?: (msg: string, type?: 'success' | 'info' | 'error') => void;
 }
 
 export const FilterBar: React.FC<FilterBarProps> = ({
   filter,
   onFilterChange,
-  onExportCSV,
+  onExportCSV: _onExportCSV,
   totalFilteredCount,
   collapsible = true,
+  transactions = [],
+  currency = 'Rs',
+  onNotification,
 }) => {
   const [isExpanded, setIsExpanded] = useState<boolean>(!collapsible);
+  const [isCalendarModalOpen, setIsCalendarModalOpen] = useState<boolean>(false);
+  const [isDownloadModalOpen, setIsDownloadModalOpen] = useState<boolean>(false);
   const customCategories = loadStoredCustomCategories();
 
   const getPresetDates = (type: DateFilterType): { startDate: string; endDate: string } => {
@@ -64,8 +75,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
 
   const handlePresetClick = (type: DateFilterType) => {
     if (type === 'custom') {
-      if (collapsible) setIsExpanded(true);
-      onFilterChange({ ...filter, type: 'custom' });
+      setIsCalendarModalOpen(true);
       return;
     }
     const dates = getPresetDates(type);
@@ -88,184 +98,232 @@ export const FilterBar: React.FC<FilterBarProps> = ({
     });
   };
 
-  const hasAdvancedFilters = 
-    filter.type === 'custom' ||
-    Boolean(filter.startDate) ||
-    Boolean(filter.endDate) ||
-    (filter.category && filter.category !== 'All') || 
-    (filter.paymentMethod && filter.paymentMethod !== 'All') ||
-    Boolean(filter.searchQuery);
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (filter.type !== 'all') count++;
+    if (filter.startDate || filter.endDate) count++;
+    if (filter.category && filter.category !== 'All') count++;
+    if (filter.paymentMethod && filter.paymentMethod !== 'All') count++;
+    if (filter.searchQuery?.trim()) count++;
+    return count;
+  }, [filter]);
 
+  const hasAdvancedFilters = activeFilterCount > 0;
   const shouldShowExpanded = !collapsible || isExpanded;
+  const hasCustomDateRange = Boolean(filter.startDate || filter.endDate);
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200/80 p-3 sm:p-4 shadow-xs space-y-3 transition-all">
-      {/* Top Row: Quick Presets */}
-      <div className="flex items-center justify-between gap-2">
-        {/* Quick Date Presets */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none flex-1 min-w-0">
-          {[
-            { id: 'today', label: 'Today' },
-            { id: 'yesterday', label: 'Yesterday' },
-            { id: 'week', label: 'This Week' },
-            { id: 'month', label: 'This Month' },
-            { id: 'all', label: 'All' },
-          ].map((item) => {
-            const active = filter.type === item.id;
-            return (
+    <>
+      <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-200/90 p-3.5 sm:p-4 shadow-xs space-y-3 transition-all">
+        {/* 1. Primary Filter Bar (Search + Quick Range Segmented Controls + Actions) */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+          {/* Search Input with Inset Icon and Clear Action */}
+          <div className="relative flex-1 min-w-[200px]">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              placeholder="Search transactions, notes, merchant..."
+              value={filter.searchQuery || ''}
+              onChange={(e) => onFilterChange({ ...filter, searchQuery: e.target.value })}
+              className="w-full pl-9.5 pr-8 py-2 text-xs bg-slate-50/80 hover:bg-slate-50 border border-slate-200/90 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-hidden focus:bg-white focus:border-slate-400 focus:ring-2 focus:ring-slate-900/5 transition-all"
+            />
+            {filter.searchQuery && (
               <button
-                key={item.id}
                 type="button"
-                onClick={() => handlePresetClick(item.id as DateFilterType)}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-xl transition-all cursor-pointer whitespace-nowrap ${
-                  active
-                    ? 'bg-slate-900 text-white shadow-2xs font-bold'
-                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
-                }`}
+                onClick={() => onFilterChange({ ...filter, searchQuery: '' })}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 rounded-lg cursor-pointer transition-colors"
+                title="Clear search"
+                aria-label="Clear search"
               >
-                {item.label}
+                <X className="w-3.5 h-3.5" />
               </button>
-            );
-          })}
-        </div>
+            )}
+          </div>
 
-        {/* Expand / Collapse Button with Down Arrow (ONLY on Home when collapsible is true) */}
-        <div className="flex items-center gap-1 shrink-0">
-          {hasAdvancedFilters && (
+          {/* Date Scope Segmented Controls */}
+          <div className="flex items-center gap-1.5 justify-between sm:justify-start">
+            <div className="flex items-center p-1 bg-slate-100 rounded-xl overflow-x-auto scrollbar-none gap-0.5">
+              {[
+                { id: 'all', label: 'All' },
+                { id: 'today', label: 'Today' },
+                { id: 'week', label: 'Week' },
+                { id: 'month', label: 'Month' },
+              ].map((item) => {
+                const active = filter.type === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => handlePresetClick(item.id as DateFilterType)}
+                    className={`px-3 py-1.5 text-xs rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                      active
+                        ? 'bg-emerald-600 text-white font-bold shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900 font-medium hover:bg-slate-200/50'
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Clean More Filters Toggle */}
+            {collapsible && (
+              <button
+                type="button"
+                onClick={() => setIsExpanded(!isExpanded)}
+                className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer border shrink-0 ${
+                  isExpanded || hasAdvancedFilters
+                    ? 'bg-slate-50 border-slate-300 text-slate-900 font-bold'
+                    : 'bg-white hover:bg-slate-50 border-slate-200/90 text-slate-700'
+                }`}
+                title={isExpanded ? 'Collapse filters' : 'Expand more filters'}
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5 text-slate-500" />
+                <span className="hidden sm:inline">Filters</span>
+                {isExpanded ? (
+                  <ChevronUp className="w-3.5 h-3.5 stroke-[2.2] text-slate-500" />
+                ) : (
+                  <ChevronDown className="w-3.5 h-3.5 stroke-[2.2] text-slate-500" />
+                )}
+              </button>
+            )}
+
+            {/* Download Export Button (Placed to the LEFT side of the Calendar Icon) */}
             <button
               type="button"
-              onClick={clearFilters}
-              className="p-1.5 text-xs text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-              title="Reset filters"
+              onClick={() => setIsDownloadModalOpen(true)}
+              className="p-2 sm:px-3 sm:py-2 text-xs font-semibold rounded-xl transition-all cursor-pointer shrink-0 flex items-center gap-1.5 border text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-50 border-slate-200/90 shadow-2xs"
+              title="Download Records (CSV or PDF)"
             >
-              <X className="w-3.5 h-3.5" />
+              <Download className="w-3.5 h-3.5 text-slate-600" />
+              <span className="hidden sm:inline font-bold">Export</span>
             </button>
-          )}
 
-          {collapsible && (
+            {/* Calendar Date Trigger Button (Opens Custom Calendar Popup) */}
             <button
               type="button"
-              onClick={() => setIsExpanded(!isExpanded)}
-              className={`px-2.5 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
-                isExpanded || hasAdvancedFilters
-                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                  : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+              onClick={() => setIsCalendarModalOpen(true)}
+              className={`p-2 sm:px-3 sm:py-2 text-xs font-semibold rounded-xl transition-all cursor-pointer shrink-0 flex items-center gap-1.5 border ${
+                hasCustomDateRange
+                  ? 'bg-emerald-50 text-emerald-800 border-emerald-300 font-bold shadow-2xs'
+                  : 'text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-50 border-slate-200/90'
               }`}
-              title={isExpanded ? 'Collapse filters' : 'Expand more filters'}
+              title="Pick Custom Calendar Date Range"
             >
-              <SlidersHorizontal className="w-3.5 h-3.5 text-slate-500" />
-              <span className="hidden sm:inline">More Filters</span>
-              {isExpanded ? (
-                <ChevronUp className="w-4 h-4 text-slate-600 stroke-[2.5]" />
-              ) : (
-                <ChevronDown className="w-4 h-4 text-slate-600 stroke-[2.5]" />
-              )}
+              <Calendar className="w-3.5 h-3.5 text-emerald-700" />
+              <span className="hidden sm:inline font-bold">
+                {hasCustomDateRange ? (filter.startDate === filter.endDate ? filter.startDate : 'Custom') : 'Date'}
+              </span>
             </button>
-          )}
+          </div>
         </div>
+
+        {/* 2. Expanded / Secondary Drawer Filters */}
+        {shouldShowExpanded && (
+          <div className="pt-3 border-t border-slate-100 space-y-3 animate-in fade-in slide-in-from-top-1 duration-150">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {/* Category Dropdown */}
+              <div>
+                <select
+                  value={filter.category || 'All'}
+                  onChange={(e) =>
+                    onFilterChange({ ...filter, category: e.target.value as Category | 'All' })
+                  }
+                  className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200/90 rounded-xl text-slate-800 font-medium focus:outline-hidden focus:bg-white cursor-pointer"
+                >
+                  <option value="All">All Categories</option>
+                  {STANDARD_CATEGORIES.map((c) => (
+                    <option key={c.category} value={c.category}>
+                      {c.category}
+                    </option>
+                  ))}
+                  {customCategories.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Payment Method Segmented Controls */}
+              <div className="flex items-center gap-2">
+                <div className="flex-1 p-1 bg-slate-100 rounded-xl flex items-center justify-between text-xs">
+                  {(['All', 'Cash', 'Card'] as const).map((mode) => {
+                    const active = (filter.paymentMethod || 'All') === mode;
+                    return (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => onFilterChange({ ...filter, paymentMethod: mode })}
+                        className={`flex-1 py-1 px-2 rounded-lg text-xs font-semibold transition-all cursor-pointer text-center ${
+                          active
+                            ? 'bg-white text-slate-900 shadow-2xs font-bold'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        {mode}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Settled Red Reset Filters Icon Button */}
+                {hasAdvancedFilters && (
+                  <button
+                    type="button"
+                    onClick={clearFilters}
+                    className="p-2 text-xs font-bold text-red-700 hover:bg-red-50 border border-red-200 rounded-xl transition-colors cursor-pointer flex items-center gap-1 shrink-0"
+                    title="Reset all filters"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5 text-red-700" />
+                    <span className="hidden sm:inline">Reset</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Active Result Status Line */}
+            <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
+              <span>
+                Showing <strong className="text-slate-700 font-bold">{totalFilteredCount}</strong> filtered transactions
+              </span>
+              {hasAdvancedFilters && (
+                <span className="text-emerald-700 font-semibold flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  Active filters applied
+                </span>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Expanded Section (Always shown on Record page, collapsible on Home) */}
-      {shouldShowExpanded && (
-        <div className="pt-3 border-t border-slate-100 space-y-3 animate-in fade-in slide-in-from-top-1 duration-150">
-          {/* Custom Date Range */}
-          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
-            <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs text-slate-700 flex-1 min-w-[130px]">
-              <Calendar className="w-3.5 h-3.5 text-slate-400" />
-              <span className="text-slate-400 font-medium">From:</span>
-              <input
-                type="date"
-                value={filter.startDate}
-                onChange={(e) =>
-                  onFilterChange({
-                    ...filter,
-                    type: 'custom',
-                    startDate: e.target.value,
-                  })
-                }
-                className="bg-transparent focus:outline-hidden text-slate-800 text-xs cursor-pointer w-full"
-              />
-            </div>
+      {/* Custom Calendar Date Modal Popup */}
+      <CalendarDateModal
+        isOpen={isCalendarModalOpen}
+        onClose={() => setIsCalendarModalOpen(false)}
+        startDate={filter.startDate || ''}
+        endDate={filter.endDate || ''}
+        activeType={filter.type}
+        onApply={(type, start, end) => {
+          onFilterChange({
+            ...filter,
+            type,
+            startDate: start,
+            endDate: end,
+          });
+        }}
+      />
 
-            <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs text-slate-700 flex-1 min-w-[130px]">
-              <Calendar className="w-3.5 h-3.5 text-slate-400" />
-              <span className="text-slate-400 font-medium">To:</span>
-              <input
-                type="date"
-                value={filter.endDate}
-                onChange={(e) =>
-                  onFilterChange({
-                    ...filter,
-                    type: 'custom',
-                    endDate: e.target.value,
-                  })
-                }
-                className="bg-transparent focus:outline-hidden text-slate-800 text-xs cursor-pointer w-full"
-              />
-            </div>
-          </div>
-
-          {/* Search Bar & Dropdowns */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
-            {/* Search */}
-            <div className="relative flex-1 min-w-[180px]">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input
-                type="text"
-                placeholder="Search notes, category, amount..."
-                value={filter.searchQuery || ''}
-                onChange={(e) => onFilterChange({ ...filter, searchQuery: e.target.value })}
-                className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-hidden focus:bg-white focus:ring-1 focus:ring-slate-900"
-              />
-            </div>
-
-            {/* Dropdowns */}
-            <div className="flex items-center gap-2">
-              <select
-                value={filter.category || 'All'}
-                onChange={(e) =>
-                  onFilterChange({ ...filter, category: e.target.value as Category | 'All' })
-                }
-                className="px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl text-slate-700 focus:outline-hidden cursor-pointer"
-              >
-                <option value="All">All Categories</option>
-                {STANDARD_CATEGORIES.map((c) => (
-                  <option key={c.category} value={c.category}>
-                    {c.category}
-                  </option>
-                ))}
-                {customCategories.map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))}
-              </select>
-
-              <select
-                value={filter.paymentMethod || 'All'}
-                onChange={(e) =>
-                  onFilterChange({ ...filter, paymentMethod: e.target.value as PaymentMethod | 'All' })
-                }
-                className="px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl text-slate-700 focus:outline-hidden cursor-pointer"
-              >
-                <option value="All">All Modes</option>
-                <option value="Cash">Cash</option>
-                <option value="Card">Card</option>
-              </select>
-
-              <button
-                type="button"
-                onClick={onExportCSV}
-                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer shrink-0"
-                title="Download CSV"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">CSV</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+      {/* Download / Export Records Modal Popup */}
+      <DownloadRecordsModal
+        isOpen={isDownloadModalOpen}
+        onClose={() => setIsDownloadModalOpen(false)}
+        transactions={transactions}
+        currency={currency}
+        onNotification={onNotification}
+      />
+    </>
   );
 };

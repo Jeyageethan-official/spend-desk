@@ -46,7 +46,7 @@ const getCategoryIcon = (cat: Category) => {
     case 'Transport': return <Car className="w-4 h-4 text-blue-500" />;
     case 'Shopping': return <ShoppingBag className="w-4 h-4 text-purple-500" />;
     case 'Bills': return <Zap className="w-4 h-4 text-amber-500" />;
-    case 'Entertainment': return <Film className="w-4 h-4 text-pink-500" />;
+    case 'Entertainment': return <Film className="w-4 h-4 text-violet-500" />;
     case 'Education': return <GraduationCap className="w-4 h-4 text-emerald-500" />;
     default: return <MoreHorizontal className="w-4 h-4 text-gray-500" />;
   }
@@ -369,7 +369,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
                           ? 'bg-emerald-100 text-emerald-700'
                           : isCard
                           ? 'bg-blue-100 text-blue-700'
-                          : 'bg-rose-100 text-rose-700'
+                          : 'bg-red-100 text-red-700'
                       }`}
                     >
                       {isCashIn ? (

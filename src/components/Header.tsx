@@ -19,6 +19,7 @@ import { GoogleSheetMeta } from '../types/finance';
 import { UserProfile } from '../lib/storage';
 import { formatCurrency } from '../lib/calculations';
 import { triggerFeedback } from '../lib/haptics';
+import { SpendDeskLogo } from './SpendDeskLogo';
 
 interface HeaderProps {
   user: any;
@@ -96,21 +97,11 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center justify-between h-14 sm:h-16">
           {/* Logo & App Title */}
           <div className="flex items-center gap-2.5 sm:gap-3">
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-xs shrink-0">
-              <Wallet className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-1.5">
-                <h1 className="text-base sm:text-lg font-bold tracking-tight text-slate-900 leading-none">
-                  MONEY TRACKER
-                </h1>
-                <span className="hidden sm:inline-flex px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                  Cash &amp; Card
-                </span>
-              </div>
-              <p className="text-[10px] text-slate-500 hidden sm:block">
-                Daily Cash Wallet + Card Tracker
-              </p>
+            <SpendDeskLogo size="md" />
+            <div className="hidden sm:block">
+              <span className="inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-200/60">
+                Cash &amp; Card Spending
+              </span>
             </div>
           </div>
 

@@ -99,19 +99,34 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     initialSection || 'main'
   );
 
+  // Preserve scroll position of main settings list so back returns to exact location
+  const mainScrollPosRef = useRef<number>(0);
+
+  const handleOpenSubPage = (sub: typeof currentSubPage) => {
+    mainScrollPosRef.current = window.scrollY || document.documentElement.scrollTop || 0;
+    setCurrentSubPage(sub);
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  };
+
+  const handleBackToMain = () => {
+    setCurrentSubPage('main');
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: mainScrollPosRef.current, left: 0, behavior: 'instant' });
+    });
+  };
+
   // If initialSection changes, update subpage
   useEffect(() => {
     if (initialSection) {
-      setCurrentSubPage(initialSection);
+      if (initialSection !== 'main') {
+        mainScrollPosRef.current = window.scrollY || 0;
+        setCurrentSubPage(initialSection);
+        window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+      } else {
+        setCurrentSubPage('main');
+      }
     }
   }, [initialSection]);
-
-  // Scroll to top whenever subpage opens or switches so user never starts mid-scroll
-  useEffect(() => {
-    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
-    document.documentElement.scrollTo({ top: 0, left: 0, behavior: 'instant' });
-    document.body.scrollTo({ top: 0, left: 0, behavior: 'instant' });
-  }, [currentSubPage]);
 
   // Custom Profile Avatar state (synced with userProfile or localStorage)
   const [customAvatar, setCustomAvatar] = useState<string | null>(() => {
@@ -185,7 +200,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       console.error(e);
     }
 
-    setCurrentSubPage('main');
+    handleBackToMain();
   };
 
   const handleModalAvatarFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -448,7 +463,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
           <button
             type="button"
-            onClick={currentSubPage === 'main' ? onBack : () => setCurrentSubPage('main')}
+            onClick={currentSubPage === 'main' ? onBack : handleBackToMain}
             className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-700 hover:text-slate-900 hover:bg-slate-100 active:scale-95 transition-all cursor-pointer border border-slate-200/90 shadow-2xs"
             title="Back"
             aria-label="Back"
@@ -486,261 +501,281 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             {/* ============================================================== */}
             {currentSubPage === 'main' && (
               <div className="space-y-6">
-                {/* WhatsApp Centered Profile Hero Card */}
-                <div className="bg-white rounded-3xl border border-slate-200/90 p-6 shadow-xs text-center relative overflow-hidden">
-                  {/* Single Clean Profile Edit Pencil Icon */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditModalName(profileName);
-                      setEditModalEmail(profileEmail);
-                      setEditModalAvatar(customAvatar);
-                      setCurrentSubPage('profile');
-                    }}
-                    className="absolute top-4 right-4 p-2 sm:p-2.5 rounded-2xl bg-slate-100 hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 transition-all cursor-pointer border border-slate-200/90 shadow-2xs group"
-                    title="Edit Profile"
-                    aria-label="Edit Profile"
-                  >
-                    <Edit3 className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                  </button>
-
-              {/* Centered Circular Avatar */}
-              <div className="relative inline-block mx-auto mb-3">
-                <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full overflow-hidden border-2 border-emerald-500/80 p-0.5 shadow-sm bg-slate-100 flex items-center justify-center">
-                  {customAvatar ? (
-                    <img
-                      src={customAvatar}
-                      alt="Profile Avatar"
-                      className="w-full h-full rounded-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full rounded-full bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center font-bold text-2xl sm:text-3xl">
-                      {profileName.charAt(0).toUpperCase()}
+                {/* WhatsApp-Style Horizontal Profile Card (Avatar Left, Name & Gmail Right) */}
+                <div 
+                  onClick={() => {
+                    setEditModalName(profileName);
+                    setEditModalEmail(profileEmail);
+                    setEditModalAvatar(customAvatar);
+                    handleOpenSubPage('profile');
+                  }}
+                  className="bg-white rounded-3xl border border-slate-200/90 p-4 sm:p-5 shadow-xs flex items-center justify-between gap-4 cursor-pointer hover:border-slate-300 hover:shadow-sm transition-all group"
+                >
+                  <div className="flex items-center gap-3.5 sm:gap-4 min-w-0">
+                    {/* Left: Avatar Circle with WhatsApp-style camera badge */}
+                    <div className="relative shrink-0">
+                      <div className="w-16 h-16 sm:w-18 sm:h-18 rounded-full overflow-hidden border-2 border-emerald-500/80 p-0.5 shadow-2xs bg-slate-100 flex items-center justify-center">
+                        {customAvatar ? (
+                          <img
+                            src={customAvatar}
+                            alt={profileName}
+                            className="w-full h-full rounded-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full rounded-full bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center font-bold text-xl sm:text-2xl">
+                            {profileName.charAt(0).toUpperCase()}
+                          </div>
+                        )}
+                      </div>
+                      <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center shadow-xs border-2 border-white">
+                        <Camera className="w-3 h-3" />
+                      </div>
                     </div>
-                  )}
+
+                    {/* Right: Profile Name on top, Gmail underneath */}
+                    <div className="min-w-0">
+                      <h2 className="text-base sm:text-lg font-bold text-slate-900 truncate group-hover:text-emerald-700 transition-colors">
+                        {profileName}
+                      </h2>
+                      <p className="text-xs text-slate-500 truncate mt-0.5 font-medium">
+                        {profileEmail}
+                      </p>
+
+                      {/* Status indicator */}
+                      <div className="mt-1.5 inline-flex items-center gap-1.5 text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200/70 px-2 py-0.5 rounded-full">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                        <span className="truncate">{activeSheet ? 'Google Sheets Synced' : 'Offline Storage'}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Clean Edit Pencil Button */}
+                  <div className="p-2 sm:p-2.5 rounded-2xl bg-slate-50 group-hover:bg-emerald-50 text-slate-500 group-hover:text-emerald-700 transition-all border border-slate-200/80 shadow-2xs shrink-0">
+                    <Edit3 className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                  </div>
                 </div>
-              </div>
-
-              {/* Profile Name & Email */}
-              <div>
-                <h2 className="text-base sm:text-lg font-bold text-slate-900">
-                  {profileName}
-                </h2>
-
-                <p className="text-xs text-slate-500 mt-0.5">
-                  {profileEmail}
-                </p>
-
-                {/* Status indicator */}
-                <div className="mt-2.5 inline-flex items-center gap-1.5 text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200/80 px-2.5 py-1 rounded-full font-semibold">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>{activeSheet ? 'Google Sheets Synced' : 'Offline Local Storage'}</span>
-                </div>
-              </div>
-            </div>
 
             {/* WhatsApp / iOS Grouped Settings Menu List */}
-            <div className="space-y-1">
-              <div className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                Preferences &amp; Control
+            <div className="space-y-4">
+              {/* Group 1: Financial Preferences */}
+              <div className="space-y-1.5">
+                <div className="px-3 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                  Financial Configuration
+                </div>
+
+                <div className="bg-white rounded-3xl border border-slate-200/90 shadow-xs divide-y divide-slate-100 overflow-hidden">
+                  {/* 1. Manage Categories */}
+                  <button
+                    type="button"
+                    onClick={() => handleOpenSubPage('categories')}
+                    className="w-full px-4 py-3.5 hover:bg-slate-50 flex items-center justify-between transition-colors cursor-pointer text-left"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0">
+                        <Tag className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-xs text-slate-900">Manage Categories</h4>
+                        <p className="text-[11px] text-slate-400">
+                          {categories.length} categories · All editable &amp; removable
+                        </p>
+                      </div>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-slate-400" />
+                  </button>
+
+                  {/* 2. Currency & Format */}
+                  <button
+                    type="button"
+                    onClick={() => handleOpenSubPage('preferences')}
+                    className="w-full px-4 py-3.5 hover:bg-slate-50 flex items-center justify-between transition-colors cursor-pointer text-left"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-2xl bg-blue-50 text-blue-700 flex items-center justify-center shrink-0">
+                        <DollarSign className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-xs text-slate-900">Currency &amp; Format</h4>
+                        <p className="text-[11px] text-slate-400">
+                          Active currency: <span className="font-mono font-bold text-slate-700">{currency}</span>
+                        </p>
+                      </div>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-slate-400" />
+                  </button>
+
+                  {/* 3. Budget & Limits */}
+                  <button
+                    type="button"
+                    onClick={() => handleOpenSubPage('budget')}
+                    className="w-full px-4 py-3.5 hover:bg-slate-50 flex items-center justify-between transition-colors cursor-pointer text-left"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-2xl bg-purple-50 text-purple-700 flex items-center justify-center shrink-0">
+                        <Sliders className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-xs text-slate-900">Budget Targets &amp; Alerts</h4>
+                        <p className="text-[11px] text-slate-400">
+                          Monthly targets, low cash warnings &amp; SMS alerts
+                        </p>
+                      </div>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-slate-400" />
+                  </button>
+                </div>
               </div>
 
-              <div className="bg-white rounded-3xl border border-slate-200/90 shadow-xs divide-y divide-slate-100 overflow-hidden">
-                {/* 1. Manage Categories */}
-                <button
-                  type="button"
-                  onClick={() => setCurrentSubPage('categories')}
-                  className="w-full px-4 py-3.5 hover:bg-slate-50 flex items-center justify-between transition-colors cursor-pointer text-left"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0">
-                      <Tag className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-xs text-slate-900">Manage Categories</h4>
-                      <p className="text-[11px] text-slate-400">
-                        {categories.length} categories · All editable &amp; removable
-                      </p>
-                    </div>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-slate-400" />
-                </button>
+              {/* Group 2: Cloud & Connectivity */}
+              <div className="space-y-1.5">
+                <div className="px-3 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                  Cloud &amp; Sync
+                </div>
 
-                {/* 2. Currency & Format */}
-                <button
-                  type="button"
-                  onClick={() => setCurrentSubPage('preferences')}
-                  className="w-full px-4 py-3.5 hover:bg-slate-50 flex items-center justify-between transition-colors cursor-pointer text-left"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-2xl bg-blue-50 text-blue-700 flex items-center justify-center shrink-0">
-                      <DollarSign className="w-4 h-4" />
+                <div className="bg-white rounded-3xl border border-slate-200/90 shadow-xs divide-y divide-slate-100 overflow-hidden">
+                  {/* Google Sheets Manager (Opens SheetManagerView directly) */}
+                  <button
+                    type="button"
+                    onClick={onOpenSyncModal}
+                    className="w-full px-4 py-3.5 hover:bg-slate-50 flex items-center justify-between transition-colors cursor-pointer text-left"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-2xl bg-teal-50 text-teal-700 flex items-center justify-center shrink-0">
+                        <FileSpreadsheet className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-xs text-slate-900">Google Sheets Sync</h4>
+                        <p className="text-[11px] text-slate-400">
+                          {activeSheet ? `Connected: ${activeSheet.name}` : 'Connect spreadsheet'}
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <h4 className="font-bold text-xs text-slate-900">Currency &amp; Format</h4>
-                      <p className="text-[11px] text-slate-400">
-                        Active currency: <span className="font-mono font-bold text-slate-700">{currency}</span>
-                      </p>
-                    </div>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-slate-400" />
-                </button>
+                    <ChevronRight className="w-4 h-4 text-slate-400" />
+                  </button>
+                </div>
+              </div>
 
-                {/* 3. Budget & Limits */}
-                <button
-                  type="button"
-                  onClick={() => setCurrentSubPage('budget')}
-                  className="w-full px-4 py-3.5 hover:bg-slate-50 flex items-center justify-between transition-colors cursor-pointer text-left"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-2xl bg-purple-50 text-purple-700 flex items-center justify-center shrink-0">
-                      <Sliders className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-xs text-slate-900">Budget &amp; Limits</h4>
-                      <p className="text-[11px] text-slate-400">
-                        Monthly budget limits, low cash warnings &amp; SMS alerts
-                      </p>
-                    </div>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-slate-400" />
-                </button>
+              {/* Group 3: Data & Privacy */}
+              <div className="space-y-1.5">
+                <div className="px-3 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                  Data Vault &amp; System
+                </div>
 
-                {/* 4. Google Sheets Manager */}
-                <button
-                  type="button"
-                  onClick={() => setCurrentSubPage('cloud')}
-                  className="w-full px-4 py-3.5 hover:bg-slate-50 flex items-center justify-between transition-colors cursor-pointer text-left"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-2xl bg-teal-50 text-teal-700 flex items-center justify-center shrink-0">
-                      <FileSpreadsheet className="w-4 h-4" />
+                <div className="bg-white rounded-3xl border border-slate-200/90 shadow-xs divide-y divide-slate-100 overflow-hidden">
+                  {/* Data Management & Backups */}
+                  <button
+                    type="button"
+                    onClick={() => handleOpenSubPage('data')}
+                    className="w-full px-4 py-3.5 hover:bg-slate-50 flex items-center justify-between transition-colors cursor-pointer text-left"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-2xl bg-amber-50 text-amber-700 flex items-center justify-center shrink-0">
+                        <Database className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-xs text-slate-900">Backup &amp; Restore</h4>
+                        <p className="text-[11px] text-slate-400">
+                          Export CSV, download JSON snapshot, restore records
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <h4 className="font-bold text-xs text-slate-900">Google Sheets Manager</h4>
-                      <p className="text-[11px] text-slate-400">
-                        {activeSheet ? `Connected: ${activeSheet.name}` : 'Connect spreadsheet'}
-                      </p>
-                    </div>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-slate-400" />
-                </button>
+                    <ChevronRight className="w-4 h-4 text-slate-400" />
+                  </button>
 
-                {/* 5. Data & Backups */}
-                <button
-                  type="button"
-                  onClick={() => setCurrentSubPage('data')}
-                  className="w-full px-4 py-3.5 hover:bg-slate-50 flex items-center justify-between transition-colors cursor-pointer text-left"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-2xl bg-amber-50 text-amber-700 flex items-center justify-center shrink-0">
-                      <Database className="w-4 h-4" />
+                  {/* About & Security */}
+                  <button
+                    type="button"
+                    onClick={() => handleOpenSubPage('about')}
+                    className="w-full px-4 py-3.5 hover:bg-slate-50 flex items-center justify-between transition-colors cursor-pointer text-left"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-2xl bg-slate-100 text-slate-700 flex items-center justify-center shrink-0">
+                        <Info className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-xs text-slate-900">App Info &amp; Privacy</h4>
+                        <p className="text-[11px] text-slate-400">
+                          Storage: {storageUsageKb} KB · Private offline vault
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <h4 className="font-bold text-xs text-slate-900">Data Management &amp; Backups</h4>
-                      <p className="text-[11px] text-slate-400">
-                        Export CSV, download JSON snapshot, restore records
-                      </p>
-                    </div>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-slate-400" />
-                </button>
-
-                {/* 6. About & Security */}
-                <button
-                  type="button"
-                  onClick={() => setCurrentSubPage('about')}
-                  className="w-full px-4 py-3.5 hover:bg-slate-50 flex items-center justify-between transition-colors cursor-pointer text-left"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-2xl bg-slate-100 text-slate-700 flex items-center justify-center shrink-0">
-                      <Info className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-xs text-slate-900">About &amp; Offline Privacy</h4>
-                      <p className="text-[11px] text-slate-400">
-                        Local storage: {storageUsageKb} KB · v3.2 PRO
-                      </p>
-                    </div>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-slate-400" />
-                </button>
+                    <ChevronRight className="w-4 h-4 text-slate-400" />
+                  </button>
+                </div>
               </div>
             </div>
           </div>
         )}
 
         {/* ============================================================== */}
-        {/* SUB-PAGE: EDIT PROFILE (Full Dedicated Page, NOT a popup)       */}
+        {/* SUB-PAGE: EDIT PROFILE (Horizontal layout, WhatsApp camera badge) */}
         {/* ============================================================== */}
         {currentSubPage === 'profile' && (
-          <div className="space-y-6">
-            <div className="bg-white rounded-3xl border border-slate-200/90 p-6 shadow-xs space-y-6">
-              <div className="border-b border-slate-100 pb-4">
-                <h3 className="text-base font-bold text-slate-900">Personal Profile</h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Update your public name, profile photo, and alert contact details.
-                </p>
-              </div>
-
-              <form onSubmit={handleSaveFullProfile} className="space-y-5">
-                {/* Photo Upload & Preview */}
-                <div className="flex flex-col sm:flex-row items-center gap-5 p-4 rounded-2xl bg-slate-50/70 border border-slate-200/80">
-                  <div className="relative">
-                    <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full overflow-hidden border-2 border-emerald-500/80 p-0.5 shadow-sm bg-white flex items-center justify-center shrink-0">
-                      {editModalAvatar ? (
-                        <img
-                          src={editModalAvatar}
-                          alt="Avatar Preview"
-                          className="w-full h-full rounded-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-full rounded-full bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center font-bold text-2xl sm:text-3xl">
-                          {editModalName.charAt(0).toUpperCase() || 'J'}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="space-y-2 text-center sm:text-left flex-1">
-                    <h4 className="font-bold text-xs text-slate-800">Profile Picture</h4>
-                    <p className="text-[11px] text-slate-400">
-                      Supports JPG, PNG or WebP under 2MB.
-                    </p>
-                    <div className="flex items-center justify-center sm:justify-start gap-2 pt-1">
-                      <input
-                        type="file"
-                        ref={modalAvatarInputRef}
-                        onChange={handleModalAvatarFileChange}
-                        accept="image/*"
-                        className="hidden"
+          <div className="space-y-4">
+            <div className="bg-white rounded-3xl border border-slate-200/90 p-5 sm:p-6 shadow-xs space-y-5">
+              {/* Horizontal Profile Header (Avatar on Left, Name & Gmail on Right) */}
+              <div className="flex items-center gap-4 p-4 rounded-2xl bg-slate-50/90 border border-slate-200/80">
+                {/* Profile Circle with WhatsApp-style camera overlay button */}
+                <div className="relative shrink-0">
+                  <div className="w-18 h-18 sm:w-20 sm:h-20 rounded-full overflow-hidden border-2 border-emerald-500/80 p-0.5 shadow-sm bg-white flex items-center justify-center">
+                    {editModalAvatar ? (
+                      <img
+                        src={editModalAvatar}
+                        alt="Avatar Preview"
+                        className="w-full h-full rounded-full object-cover"
                       />
-                      <button
-                        type="button"
-                        onClick={() => modalAvatarInputRef.current?.click()}
-                        className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-2xs transition-colors cursor-pointer flex items-center gap-1.5"
-                      >
-                        <Camera className="w-3.5 h-3.5" />
-                        <span>Upload Photo</span>
-                      </button>
-
-                      {editModalAvatar && (
-                        <button
-                          type="button"
-                          onClick={() => setEditModalAvatar(null)}
-                          className="px-3 py-1.5 text-rose-600 hover:bg-rose-50 text-xs font-semibold rounded-xl transition-colors cursor-pointer border border-rose-200"
-                        >
-                          Remove
-                        </button>
-                      )}
-                    </div>
+                    ) : (
+                      <div className="w-full h-full rounded-full bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center font-bold text-2xl">
+                        {editModalName.charAt(0).toUpperCase() || 'J'}
+                      </div>
+                    )}
                   </div>
+
+                  <input
+                    type="file"
+                    ref={modalAvatarInputRef}
+                    onChange={handleModalAvatarFileChange}
+                    accept="image/*"
+                    className="hidden"
+                  />
+
+                  {/* WhatsApp-Style Camera Icon Button on Avatar */}
+                  <button
+                    type="button"
+                    onClick={() => modalAvatarInputRef.current?.click()}
+                    className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white flex items-center justify-center shadow-md cursor-pointer border-2 border-white transition-all"
+                    title="Change profile photo"
+                    aria-label="Change profile photo"
+                  >
+                    <Camera className="w-3.5 h-3.5" />
+                  </button>
                 </div>
 
-                {/* Full Name */}
+                {/* Right: Display Name on top, Gmail underneath */}
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-base sm:text-lg font-bold text-slate-900 truncate">
+                    {editModalName || 'Your Name'}
+                  </h3>
+                  <p className="text-xs text-slate-500 truncate mt-0.5">
+                    {editModalEmail || 'your.email@gmail.com'}
+                  </p>
+                  {editModalAvatar && (
+                    <button
+                      type="button"
+                      onClick={() => setEditModalAvatar(null)}
+                      className="text-[11px] text-rose-600 hover:underline font-semibold mt-1 inline-block cursor-pointer"
+                    >
+                      Remove photo
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Form to update Name & Email */}
+              <form onSubmit={handleSaveFullProfile} className="space-y-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                    Display Name *
+                    Display Name
                   </label>
                   <div className="relative">
                     <UserIcon className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
@@ -755,10 +790,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </div>
                 </div>
 
-                {/* Gmail / Email */}
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                    Gmail / Email Address *
+                    Gmail / Email Address
                   </label>
                   <input
                     type="email"
@@ -770,20 +804,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   />
                 </div>
 
-                {/* Action Buttons */}
-                <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+                <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
                   <button
                     type="button"
-                    onClick={() => setCurrentSubPage('main')}
+                    onClick={handleBackToMain}
                     className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-50 cursor-pointer transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-bold cursor-pointer shadow-xs transition-colors flex items-center gap-2"
+                    className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 active:scale-95 text-white text-xs font-bold cursor-pointer shadow-xs transition-all flex items-center gap-2"
                   >
-                    <CheckCircle2 className="w-4 h-4" />
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                     <span>Save Changes</span>
                   </button>
                 </div>
@@ -1160,60 +1193,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
         )}
 
-        {/* ============================================================== */}
-        {/* SUB-PAGE 4: GOOGLE SHEETS MANAGER                              */}
-        {/* ============================================================== */}
-        {currentSubPage === 'cloud' && (
-          <div className="space-y-4 animate-in fade-in duration-150">
-            <div className="bg-white rounded-3xl border border-slate-200/90 p-5 shadow-xs space-y-4">
-              <h3 className="text-sm font-bold text-slate-900">Google Sheets Manager</h3>
-              <p className="text-xs text-slate-500">Live backup of transactions, debt logs, and KPI summary.</p>
-
-              {activeSheet ? (
-                <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200/80 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="font-bold text-xs text-slate-900">{activeSheet.name}</h4>
-                      <span className="text-[10px] text-slate-500 font-mono">ID: {activeSheet.id}</span>
-                    </div>
-                    <a
-                      href={activeSheet.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white border border-emerald-300 text-emerald-800 text-xs font-bold hover:bg-emerald-50"
-                    >
-                      <span>Open Sheet</span>
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </a>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={onOpenSyncModal}
-                    className="text-xs font-bold text-emerald-700 hover:underline cursor-pointer"
-                  >
-                    Sync Now or Change Sheet &rarr;
-                  </button>
-                </div>
-              ) : (
-                <div className="p-6 rounded-2xl bg-slate-50 border border-slate-200 text-center space-y-3">
-                  <FileSpreadsheet className="w-8 h-8 text-slate-400 mx-auto" />
-                  <p className="text-xs text-slate-600">No Google Sheet connected to this device.</p>
-                  <button
-                    type="button"
-                    onClick={onOpenSyncModal}
-                    className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold cursor-pointer"
-                  >
-                    Connect Google Sheets
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ============================================================== */}
-        {/* SUB-PAGE 5: DATA MANAGEMENT & BACKUPS                          */}
-        {/* ============================================================== */}
+        {/* SUB-PAGE: DATA MANAGEMENT & BACKUPS */}
         {currentSubPage === 'data' && (
           <div className="space-y-4 animate-in fade-in duration-150">
             <div className="bg-white rounded-3xl border border-slate-200/90 p-5 shadow-xs space-y-4">

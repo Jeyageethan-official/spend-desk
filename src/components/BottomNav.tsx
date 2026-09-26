@@ -78,13 +78,13 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             onTabChange('lend');
           }}
           className={`flex-1 relative flex flex-col items-center justify-center h-full transition-all cursor-pointer ${
-            activeTab === 'lend' ? 'text-amber-700 font-bold' : 'text-slate-400 hover:text-slate-700'
+            activeTab === 'lend' ? 'text-emerald-700 font-bold' : 'text-slate-400 hover:text-emerald-700'
           }`}
         >
           <div className="relative">
             <HandCoins className={`w-5 h-5 ${activeTab === 'lend' ? 'stroke-[2.5]' : ''}`} />
             {pendingLendCount > 0 && (
-              <span className="absolute -top-1 -right-2 min-w-4 h-4 px-1 rounded-full bg-amber-500 text-white text-[9px] font-bold flex items-center justify-center">
+              <span className="absolute -top-1 -right-2 min-w-4 h-4 px-1 rounded-full bg-red-700 text-white text-[9px] font-bold flex items-center justify-center shadow-xs">
                 {pendingLendCount}
               </span>
             )}

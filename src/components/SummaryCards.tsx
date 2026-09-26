@@ -94,7 +94,7 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
             <button
               type="button"
               onClick={onAddExpense}
-              className="flex-1 py-2.5 px-3 rounded-xl bg-rose-600/90 hover:bg-rose-600 active:bg-rose-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
+              className="flex-1 py-2.5 px-3 rounded-xl bg-red-700 hover:bg-red-800 active:bg-red-900 border border-red-800/40 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
             >
               <ArrowUpRight className="w-4 h-4 text-white stroke-[2.5]" />
               <span>- Spend</span>
@@ -184,8 +184,8 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
 
         {/* CASH SPENT */}
         <div className="bg-white rounded-2xl p-3.5 border border-slate-200/80 shadow-xs flex flex-col justify-between">
-          <div className="flex items-center justify-between text-rose-600 mb-1">
-            <span className="p-1.5 rounded-lg bg-rose-50 text-rose-600">
+          <div className="flex items-center justify-between text-red-700 mb-1">
+            <span className="p-1.5 rounded-lg bg-red-50 text-red-700">
               <TrendingDown className="w-3.5 h-3.5" />
             </span>
             <span className="text-[10px] font-bold uppercase text-slate-400">Out</span>
@@ -193,7 +193,7 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
           <span className="text-[11px] font-semibold text-slate-500 uppercase">
             CASH SPENT
           </span>
-          <p className="text-base sm:text-lg font-bold text-rose-600 mt-0.5 truncate">
+          <p className="text-base sm:text-lg font-bold text-red-700 mt-0.5 truncate">
             {formatCurrency(summary.cashSpent, currency)}
           </p>
         </div>

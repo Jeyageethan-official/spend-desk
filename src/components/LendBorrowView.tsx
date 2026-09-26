@@ -179,19 +179,19 @@ export const LendBorrowView: React.FC<LendBorrowViewProps> = ({
         </div>
 
         {/* I BORROWED */}
-        <div className="bg-white rounded-2xl p-4 border border-rose-200/80 shadow-xs flex flex-col justify-between">
-          <div className="flex items-center justify-between text-rose-600 mb-1">
-            <span className="p-1.5 rounded-lg bg-rose-50 text-rose-600">
+        <div className="bg-white rounded-2xl p-4 border border-red-200/80 shadow-xs flex flex-col justify-between">
+          <div className="flex items-center justify-between text-red-700 mb-1">
+            <span className="p-1.5 rounded-lg bg-red-50 text-red-700">
               <ArrowDownLeft className="w-4 h-4 stroke-[2.5]" />
             </span>
-            <span className="text-[10px] font-bold uppercase text-rose-800 bg-rose-100/60 px-2 py-0.5 rounded-full">
+            <span className="text-[10px] font-bold uppercase text-red-800 bg-red-100/60 px-2 py-0.5 rounded-full">
               To Return
             </span>
           </div>
           <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
             I Borrowed
           </span>
-          <p className="text-lg sm:text-2xl font-black text-rose-700 mt-0.5 truncate">
+          <p className="text-lg sm:text-2xl font-black text-red-700 mt-0.5 truncate">
             {formatCurrency(totalBorrowedToPay, currency)}
           </p>
         </div>
@@ -209,7 +209,7 @@ export const LendBorrowView: React.FC<LendBorrowViewProps> = ({
           <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">
             Net Position
           </span>
-          <p className={`text-lg sm:text-2xl font-black mt-0.5 truncate ${netBalance >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+          <p className={`text-lg sm:text-2xl font-black mt-0.5 truncate ${netBalance >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
             {formatCurrency(netBalance, currency)}
           </p>
         </div>
@@ -229,7 +229,7 @@ export const LendBorrowView: React.FC<LendBorrowViewProps> = ({
         <button
           type="button"
           onClick={() => handleOpenModal('borrowed')}
-          className="py-2.5 px-4 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white rounded-2xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs cursor-pointer transition-all"
+          className="py-2.5 px-4 bg-red-700 hover:bg-red-800 active:bg-red-900 text-white rounded-2xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm cursor-pointer transition-all border border-red-800/40"
         >
           <Plus className="w-4 h-4 stroke-[2.5]" />
           <span>I Borrowed</span>
@@ -336,7 +336,7 @@ export const LendBorrowView: React.FC<LendBorrowViewProps> = ({
                     ? 'border-slate-200 bg-slate-50/50'
                     : isLent
                     ? 'border-emerald-200/80 hover:border-emerald-300'
-                    : 'border-rose-200/80 hover:border-rose-300'
+                    : 'border-red-200/80 hover:border-red-300'
                 }`}
               >
                 <div className="flex items-start justify-between gap-3">
@@ -352,7 +352,7 @@ export const LendBorrowView: React.FC<LendBorrowViewProps> = ({
                             ? 'bg-slate-200 text-slate-700'
                             : isLent
                             ? 'bg-emerald-100 text-emerald-800'
-                            : 'bg-rose-100 text-rose-800'
+                            : 'bg-red-100 text-red-800'
                         }`}
                       >
                         {isSettled ? 'Settled' : isLent ? 'Lent' : 'Borrowed'}
@@ -395,7 +395,7 @@ export const LendBorrowView: React.FC<LendBorrowViewProps> = ({
                           ? 'text-slate-400 line-through'
                           : isLent
                           ? 'text-emerald-700'
-                          : 'text-rose-700'
+                          : 'text-red-700'
                       }`}
                     >
                       {formatCurrency(item.amount, currency)}
@@ -434,7 +434,7 @@ export const LendBorrowView: React.FC<LendBorrowViewProps> = ({
                     <button
                       type="button"
                       onClick={() => onDeleteItem(item.id)}
-                      className="p-1.5 text-slate-300 hover:text-rose-600 rounded-lg cursor-pointer transition-colors"
+                      className="p-1.5 text-slate-300 hover:text-red-700 rounded-lg cursor-pointer transition-colors"
                       title="Delete record"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -480,7 +480,7 @@ export const LendBorrowView: React.FC<LendBorrowViewProps> = ({
                   type="button"
                   onClick={() => setType('borrowed')}
                   className={`py-2 px-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                    type === 'borrowed' ? 'bg-white text-rose-700 shadow-xs' : 'text-slate-600'
+                    type === 'borrowed' ? 'bg-white text-red-700 shadow-xs' : 'text-slate-600'
                   }`}
                 >
                   I Borrowed
@@ -587,7 +587,7 @@ export const LendBorrowView: React.FC<LendBorrowViewProps> = ({
               </div>
 
               {formError && (
-                <p className="text-xs text-rose-600 font-semibold">{formError}</p>
+                <p className="text-xs text-red-700 font-semibold">{formError}</p>
               )}
 
               <div className="pt-2 flex justify-end gap-2">

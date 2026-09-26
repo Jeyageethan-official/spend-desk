@@ -61,21 +61,21 @@ export const BudgetAlerts: React.FC<BudgetAlertsProps> = ({
     <div className="space-y-3">
       {/* Sleek, Compact Low Cash Warning Banner */}
       {isCashLow && (
-        <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border border-amber-500/25 rounded-2xl px-3.5 py-2.5 flex items-center justify-between gap-3 text-amber-900 animate-in fade-in shadow-2xs">
+        <div className="bg-amber-50/95 border border-amber-200/90 rounded-2xl px-3.5 py-2.5 flex items-center justify-between gap-2.5 text-amber-950 shadow-2xs">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-7 h-7 rounded-xl bg-amber-500/20 text-amber-700 flex items-center justify-center shrink-0">
+            <div className="w-7 h-7 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
               <ShieldAlert className="w-4 h-4" />
             </div>
-            <div className="text-xs truncate">
-              <span className="font-bold text-amber-950 mr-1.5">Low Cash Alert:</span>
-              <span className="text-amber-800 font-medium">
-                Wallet cash is down to <strong className="text-amber-950 font-bold">{formatCurrency(summary.currentCashBalance, currency)}</strong> (Limit: {formatCurrency(budgetConfig.lowCashThreshold, currency)})
+            <div className="text-xs">
+              <span className="font-bold text-amber-950">Low Cash:</span>{' '}
+              <span className="text-amber-900 font-semibold tabular-nums">
+                {formatCurrency(summary.currentCashBalance, currency)}
+              </span>
+              <span className="text-amber-700/80 text-[11px] ml-1">
+                (Min: {formatCurrency(budgetConfig.lowCashThreshold, currency)})
               </span>
             </div>
           </div>
-          <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold shrink-0 hidden sm:inline-block">
-            Low Wallet
-          </span>
         </div>
       )}
 

@@ -53,15 +53,15 @@ export interface CategoryDef {
 }
 
 export const DEFAULT_INITIAL_CATEGORIES: CategoryDef[] = [
-  { id: 'cat-food', name: 'Food', iconName: 'Utensils', color: '#ef4444' },
-  { id: 'cat-transport', name: 'Transport', iconName: 'Car', color: '#3b82f6' },
-  { id: 'cat-shopping', name: 'Shopping', iconName: 'ShoppingBag', color: '#8b5cf6' },
-  { id: 'cat-bills', name: 'Bills', iconName: 'Zap', color: '#f59e0b' },
-  { id: 'cat-entertainment', name: 'Entertainment', iconName: 'Film', color: '#ec4899' },
-  { id: 'cat-education', name: 'Education', iconName: 'GraduationCap', color: '#10b981' },
-  { id: 'cat-health', name: 'Healthcare', iconName: 'HeartPulse', color: '#06b6d4' },
-  { id: 'cat-groceries', name: 'Groceries', iconName: 'Apple', color: '#84cc16' },
-  { id: 'cat-other', name: 'Other', iconName: 'MoreHorizontal', color: '#6b7280' },
+  { id: 'cat-food', name: 'Food', iconName: 'Utensils', color: '#ea580c' },
+  { id: 'cat-transport', name: 'Transport', iconName: 'Car', color: '#0284c7' },
+  { id: 'cat-shopping', name: 'Shopping', iconName: 'ShoppingBag', color: '#6366f1' },
+  { id: 'cat-bills', name: 'Bills', iconName: 'Zap', color: '#d97706' },
+  { id: 'cat-entertainment', name: 'Entertainment', iconName: 'Film', color: '#7c3aed' },
+  { id: 'cat-education', name: 'Education', iconName: 'GraduationCap', color: '#0d9488' },
+  { id: 'cat-health', name: 'Healthcare', iconName: 'HeartPulse', color: '#0284c7' },
+  { id: 'cat-groceries', name: 'Groceries', iconName: 'Apple', color: '#16a34a' },
+  { id: 'cat-other', name: 'Other', iconName: 'MoreHorizontal', color: '#64748b' },
 ];
 
 export const loadStoredCategoryDefs = (): CategoryDef[] => {

@@ -9,13 +9,13 @@ import {
 import { loadStoredCategoryDefs } from './storage';
 
 export const STANDARD_CATEGORIES: { category: Category; color: string; iconName: string; bgClass: string; textClass: string }[] = [
-  { category: 'Food', color: '#EF4444', iconName: 'Utensils', bgClass: 'bg-red-50 text-red-700 border-red-200', textClass: 'text-red-600' },
-  { category: 'Transport', color: '#3B82F6', iconName: 'Car', bgClass: 'bg-blue-50 text-blue-700 border-blue-200', textClass: 'text-blue-600' },
-  { category: 'Shopping', color: '#8B5CF6', iconName: 'ShoppingBag', bgClass: 'bg-purple-50 text-purple-700 border-purple-200', textClass: 'text-purple-600' },
-  { category: 'Bills', color: '#F59E0B', iconName: 'Zap', bgClass: 'bg-amber-50 text-amber-700 border-amber-200', textClass: 'text-amber-600' },
-  { category: 'Entertainment', color: '#EC4899', iconName: 'Film', bgClass: 'bg-pink-50 text-pink-700 border-pink-200', textClass: 'text-pink-600' },
-  { category: 'Education', color: '#10B981', iconName: 'GraduationCap', bgClass: 'bg-emerald-50 text-emerald-700 border-emerald-200', textClass: 'text-emerald-600' },
-  { category: 'Other', color: '#6B7280', iconName: 'MoreHorizontal', bgClass: 'bg-gray-50 text-gray-700 border-gray-200', textClass: 'text-gray-600' },
+  { category: 'Food', color: '#EA580C', iconName: 'Utensils', bgClass: 'bg-orange-50 text-orange-700 border-orange-200', textClass: 'text-orange-600' },
+  { category: 'Transport', color: '#0284C7', iconName: 'Car', bgClass: 'bg-sky-50 text-sky-700 border-sky-200', textClass: 'text-sky-600' },
+  { category: 'Shopping', color: '#6366F1', iconName: 'ShoppingBag', bgClass: 'bg-indigo-50 text-indigo-700 border-indigo-200', textClass: 'text-indigo-600' },
+  { category: 'Bills', color: '#D97706', iconName: 'Zap', bgClass: 'bg-amber-50 text-amber-700 border-amber-200', textClass: 'text-amber-600' },
+  { category: 'Entertainment', color: '#7C3AED', iconName: 'Film', bgClass: 'bg-violet-50 text-violet-700 border-violet-200', textClass: 'text-violet-600' },
+  { category: 'Education', color: '#0D9488', iconName: 'GraduationCap', bgClass: 'bg-teal-50 text-teal-700 border-teal-200', textClass: 'text-teal-600' },
+  { category: 'Other', color: '#64748B', iconName: 'MoreHorizontal', bgClass: 'bg-slate-50 text-slate-700 border-slate-200', textClass: 'text-slate-600' },
 ];
 
 export const formatCurrency = (amount: number, currency: string = 'Rs'): string => {

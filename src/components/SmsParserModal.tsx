@@ -2,17 +2,17 @@ import React, { useState } from 'react';
 import { 
   X, 
   MessageSquare, 
-  Check, 
   ArrowDownLeft, 
   CreditCard, 
   ArrowUpRight, 
   Sparkles, 
   Zap, 
-  CornerDownRight 
+  Clipboard,
+  CheckCircle2
 } from 'lucide-react';
-import { Transaction, Category, PaymentMethod, TransactionType } from '../types/finance';
+import { Transaction } from '../types/finance';
 import { parseBankSms, SAMPLE_SMS_TEMPLATES } from '../lib/smsParser';
-import { formatCurrency, STANDARD_CATEGORIES } from '../lib/calculations';
+import { formatCurrency } from '../lib/calculations';
 
 interface SmsParserModalProps {
   isOpen: boolean;
@@ -35,6 +35,19 @@ export const SmsParserModal: React.FC<SmsParserModalProps> = ({
     if (text.trim()) {
       const res = parseBankSms(text);
       setParsed(res);
+    }
+  };
+
+  const handlePasteClipboard = async () => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.readText) {
+        const text = await navigator.clipboard.readText();
+        if (text) {
+          handleInputChange(text);
+        }
+      }
+    } catch {
+      // ignore
     }
   };
 
@@ -64,43 +77,43 @@ export const SmsParserModal: React.FC<SmsParserModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-150">
       <div 
-        className="w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden max-h-[92vh] flex flex-col"
+        className="w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-200/90 overflow-hidden max-h-[92vh] flex flex-col"
         role="dialog"
         aria-modal="true"
       >
-        {/* Header - Blue Theme */}
-        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-blue-50/50">
+        {/* Sleek Minimalist Header */}
+        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-blue-600 text-white shadow-xs">
-              <MessageSquare className="w-5 h-5" />
+            <div className="w-9 h-9 rounded-2xl bg-blue-50 text-blue-700 flex items-center justify-center shrink-0">
+              <MessageSquare className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-slate-900">
-                Bank SMS &amp; Alert Reader
+              <h2 className="text-sm sm:text-base font-bold text-slate-900 leading-tight">
+                Bank SMS Reader
               </h2>
-              <p className="text-xs text-slate-500">
-                Paste bank SMS or transaction alert to auto-fill
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                Auto-extract amount, category &amp; payment method
               </p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-600 rounded-xl cursor-pointer"
+            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl cursor-pointer transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Content */}
+        {/* Modal Body */}
         <div className="p-5 overflow-y-auto space-y-4 text-xs sm:text-sm">
-          {/* Quick Preset Samples */}
+          {/* Quick Example Templates */}
           <div>
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5 flex items-center gap-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5 flex items-center gap-1">
               <Sparkles className="w-3 h-3 text-blue-600" />
-              Try Example SMS:
+              Quick Templates
             </span>
             <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
               {SAMPLE_SMS_TEMPLATES.map((sample, idx) => (
@@ -108,7 +121,7 @@ export const SmsParserModal: React.FC<SmsParserModalProps> = ({
                   key={idx}
                   type="button"
                   onClick={() => handleApplyTemplate(sample.text)}
-                  className="px-2.5 py-1 text-xs bg-slate-100 hover:bg-blue-50 hover:text-blue-700 border border-slate-200 rounded-lg whitespace-nowrap text-slate-700 transition-colors cursor-pointer shrink-0"
+                  className="px-2.5 py-1 text-xs bg-slate-50 hover:bg-blue-50 hover:text-blue-700 border border-slate-200/80 rounded-xl whitespace-nowrap text-slate-700 font-medium transition-colors cursor-pointer shrink-0"
                 >
                   {sample.title}
                 </button>
@@ -117,38 +130,59 @@ export const SmsParserModal: React.FC<SmsParserModalProps> = ({
           </div>
 
           {/* SMS Paste Textarea */}
-          <div>
-            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-              Paste SMS or Notification Text
-            </label>
+          <div className="relative">
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                SMS / Alert Text
+              </label>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handlePasteClipboard}
+                  className="text-[10px] font-semibold text-blue-600 hover:underline cursor-pointer flex items-center gap-1"
+                >
+                  <Clipboard className="w-3 h-3" />
+                  <span>Paste</span>
+                </button>
+                {smsInput && (
+                  <button
+                    type="button"
+                    onClick={() => setSmsInput('')}
+                    className="text-[10px] font-semibold text-rose-600 hover:underline cursor-pointer"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            </div>
             <textarea
               rows={3}
               value={smsInput}
               onChange={(e) => handleInputChange(e.target.value)}
-              placeholder="e.g. A/C *5678 debited for LKR 2,500.00 at Keells Super on 25-SEP-2026..."
-              className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl text-slate-800 text-xs sm:text-sm focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+              placeholder="Paste SMS here (e.g. A/C *5678 debited for LKR 2,500.00 at Keells Super on 25-SEP-2026...)"
+              className="w-full p-3 bg-slate-50 hover:bg-slate-50/80 focus:bg-white border border-slate-200 rounded-2xl text-slate-800 text-xs sm:text-sm focus:outline-hidden focus:ring-2 focus:ring-slate-900/5 focus:border-slate-400 transition-all resize-none"
             />
           </div>
 
           {/* Parsed Preview Card */}
-          {smsInput.trim() && (
-            <div className="bg-slate-50 border border-blue-200/80 rounded-2xl p-4 space-y-3 animate-in fade-in">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-blue-900 flex items-center gap-1">
+          {smsInput.trim() ? (
+            <div className="bg-slate-50 border border-slate-200/90 rounded-2xl p-4 space-y-3.5 animate-in fade-in">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-200/70">
+                <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
                   <Zap className="w-3.5 h-3.5 text-blue-600" />
-                  Auto-Detected Details
+                  Detected Transaction
                 </span>
-                <span className="text-base font-extrabold text-slate-900">
+                <span className="text-base sm:text-lg font-black text-slate-900 tabular-nums">
                   {formatCurrency(parsed.amount, currency)}
                 </span>
               </div>
 
               <div className="grid grid-cols-2 gap-2 text-xs">
-                <div className="p-2 bg-white rounded-xl border border-slate-100">
-                  <span className="text-[10px] uppercase text-slate-400 font-semibold block">
+                <div className="p-2.5 bg-white rounded-xl border border-slate-200/80">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">
                     Type
                   </span>
-                  <div className="flex items-center gap-1.5 font-bold mt-0.5">
+                  <div className="flex items-center gap-1 font-bold mt-0.5">
                     {parsed.type === 'cash_added' ? (
                       <>
                         <ArrowDownLeft className="w-3.5 h-3.5 text-emerald-600" />
@@ -161,33 +195,33 @@ export const SmsParserModal: React.FC<SmsParserModalProps> = ({
                       </>
                     ) : (
                       <>
-                        <ArrowUpRight className="w-3.5 h-3.5 text-rose-600" />
-                        <span className="text-rose-700">Cash Spent</span>
+                        <ArrowUpRight className="w-3.5 h-3.5 text-red-600" />
+                        <span className="text-red-600">Cash Spent</span>
                       </>
                     )}
                   </div>
                 </div>
 
-                <div className="p-2 bg-white rounded-xl border border-slate-100">
-                  <span className="text-[10px] uppercase text-slate-400 font-semibold block">
+                <div className="p-2.5 bg-white rounded-xl border border-slate-200/80">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">
                     Category
                   </span>
-                  <p className="font-bold text-slate-900 mt-0.5">
+                  <p className="font-bold text-slate-900 mt-0.5 truncate">
                     {parsed.category}
                   </p>
                 </div>
 
-                <div className="p-2 bg-white rounded-xl border border-slate-100">
-                  <span className="text-[10px] uppercase text-slate-400 font-semibold block">
-                    Payment Method
+                <div className="p-2.5 bg-white rounded-xl border border-slate-200/80">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">
+                    Payment Mode
                   </span>
                   <p className="font-bold text-slate-900 mt-0.5">
                     {parsed.paymentMethod}
                   </p>
                 </div>
 
-                <div className="p-2 bg-white rounded-xl border border-slate-100">
-                  <span className="text-[10px] uppercase text-slate-400 font-semibold block">
+                <div className="p-2.5 bg-white rounded-xl border border-slate-200/80">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">
                     Merchant / Note
                   </span>
                   <p className="font-bold text-slate-900 mt-0.5 truncate">
@@ -200,18 +234,24 @@ export const SmsParserModal: React.FC<SmsParserModalProps> = ({
                 <button
                   type="button"
                   onClick={handleConfirmAdd}
-                  className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs cursor-pointer transition-colors"
+                  className="w-full py-3 px-4 bg-slate-900 hover:bg-slate-800 active:scale-95 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-xs cursor-pointer transition-all"
                 >
-                  <Check className="w-4 h-4" />
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                   <span>
-                    Auto-Fill &amp; Record {formatCurrency(parsed.amount, currency)}
+                    Confirm &amp; Record {formatCurrency(parsed.amount, currency)}
                   </span>
                 </button>
               ) : (
-                <p className="text-xs text-amber-800 bg-amber-50 p-2.5 rounded-xl text-center">
-                  Could not parse amount from this SMS. Try another sample or edit manual.
+                <p className="text-xs text-amber-800 bg-amber-50 p-2.5 rounded-xl text-center font-medium border border-amber-200/80">
+                  Could not parse amount from this SMS. Please check text or enter manually.
                 </p>
               )}
+            </div>
+          ) : (
+            <div className="p-4 rounded-2xl bg-slate-50 border border-dashed border-slate-200 text-center">
+              <p className="text-xs text-slate-500 font-medium">
+                Copy and paste your bank debit SMS or ATM withdrawal alert above.
+              </p>
             </div>
           )}
         </div>
