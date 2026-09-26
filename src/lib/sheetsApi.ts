@@ -1,5 +1,47 @@
 import { Transaction, SpendingSummary, CategorySummary, LendItem } from '../types/finance';
 
+export const GOOGLE_OAUTH_CLIENT_ID = '377806164433-ftqbldc3ul9jfenp00hcgveeonoifdjs.apps.googleusercontent.com';
+
+/**
+ * Modern Google Identity Services (GIS) Access Token Request.
+ * Obtains a fresh Google OAuth access token with Sheets & Drive scopes.
+ */
+export const requestGoogleAccessToken = (): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    try {
+      const google = (window as any).google;
+      if (!google?.accounts?.oauth2) {
+        reject(new Error('Google Identity script loading. Please try again in a moment.'));
+        return;
+      }
+      const client = google.accounts.oauth2.initTokenClient({
+        client_id: GOOGLE_OAUTH_CLIENT_ID,
+        scope: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file',
+        callback: (response: any) => {
+          if (response.error) {
+            reject(new Error(response.error_description || response.error));
+            return;
+          }
+          if (response.access_token) {
+            try {
+              localStorage.setItem('money_tracker_access_token', response.access_token);
+            } catch (e) {}
+            resolve(response.access_token);
+          } else {
+            reject(new Error('No access token received from Google.'));
+          }
+        },
+        error_callback: (nonOAuthError: any) => {
+          reject(new Error(nonOAuthError?.message || 'Google Auth dialog closed.'));
+        }
+      });
+      client.requestAccessToken({ prompt: 'consent' });
+    } catch (e: any) {
+      reject(e);
+    }
+  });
+};
+
 export interface DriveSpreadsheetItem {
   id: string;
   name: string;

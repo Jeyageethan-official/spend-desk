@@ -23,6 +23,7 @@ import { GoogleSheetMeta } from '../types/finance';
 import { 
   listUserSpreadsheets, 
   createMoneyTrackerSpreadsheet, 
+  requestGoogleAccessToken,
   DriveSpreadsheetItem,
   GOOGLE_APPS_SCRIPT_TEMPLATE
 } from '../lib/sheetsApi';
@@ -100,15 +101,29 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
     setSuccessMsg('');
     const title = newTitle.trim() || 'SpendDesk - Cash & Card';
 
-    if (!accessToken || accessToken === 'local_token') {
-      setIsCreating(false);
-      onNotification?.('Please Sign in with Google to create a spreadsheet in your Google Drive.', 'info');
-      onSignInDirect();
-      return;
-    }
-    
     try {
-      const created = await createMoneyTrackerSpreadsheet(accessToken, title);
+      let token = accessToken;
+
+      // If token is missing, expired, or local, prompt for Google token
+      if (!token || token === 'local_token' || token.length < 30) {
+        onNotification?.('Requesting Google Drive permission...', 'info');
+        token = await requestGoogleAccessToken();
+      }
+
+      let created;
+      try {
+        created = await createMoneyTrackerSpreadsheet(token, title);
+      } catch (err: any) {
+        // Retry with fresh token if expired (401 / UNAUTHENTICATED)
+        if (err?.message?.includes('401') || err?.message?.includes('UNAUTHENTICATED')) {
+          onNotification?.('Re-authenticating with Google...', 'info');
+          token = await requestGoogleAccessToken();
+          created = await createMoneyTrackerSpreadsheet(token, title);
+        } else {
+          throw err;
+        }
+      }
+
       const newMeta: GoogleSheetMeta = {
         id: created.id,
         name: created.name,
@@ -116,18 +131,21 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
         lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
       onSetActiveSheet(newMeta);
-      setSuccessMsg(`Created and connected "${created.name}" in Google Drive!`);
-      onNotification?.(`Created and connected "${created.name}" in Google Drive!`, 'success');
-      try { await onPushToSheet(); } catch {}
+      setSuccessMsg(`Created "${created.name}" in your Google Drive!`);
+      onNotification?.(`Created "${created.name}" in your Google Drive!`, 'success');
+
+      try { await onPushToSheet(); } catch (e) { console.warn(e); }
+
+      // Open newly created Google Sheet in a new tab for immediate verification!
+      if (created.url) {
+        window.open(created.url, '_blank');
+      }
+
       setActiveTab('sync');
     } catch (err: any) {
       console.error(err);
-      if (err?.message?.includes('401') || err?.message?.includes('UNAUTHENTICATED')) {
-        onNotification?.('Google session expired. Please sign in with Google.', 'info');
-        onSignInDirect();
-      } else {
-        onNotification?.('Could not create Google Sheet. Please re-connect Google account.', 'error');
-      }
+      setErrorMsg(err.message || 'Could not create Google Sheet.');
+      onNotification?.(err.message || 'Could not create Google Sheet.', 'error');
     } finally {
       setIsCreating(false);
     }
