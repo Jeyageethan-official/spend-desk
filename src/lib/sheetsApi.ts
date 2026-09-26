@@ -1,19 +1,18 @@
 import { Transaction, SpendingSummary, CategorySummary, LendItem } from '../types/finance';
 
-export const PRIMARY_GOOGLE_CLIENT_ID = '403491523597-qdt2hjm4qi2nhggb25u1oihvivklq3lh.apps.googleusercontent.com';
-export const SECONDARY_GOOGLE_CLIENT_ID = '377806164433-ftqbldc3ul9jfenp00hcgveeonoifdjs.apps.googleusercontent.com';
+export const GOOGLE_OAUTH_CLIENT_ID = '377806164433-ftqbldc3ul9jfenp00hcgveeonoifdjs.apps.googleusercontent.com';
 
 export const getGoogleClientId = (): string => {
   return localStorage.getItem('money_tracker_google_client_id') || 
          import.meta.env.VITE_GOOGLE_CLIENT_ID || 
-         PRIMARY_GOOGLE_CLIENT_ID;
+         GOOGLE_OAUTH_CLIENT_ID;
 };
 
 /**
  * Modern Google Identity Services (GIS) Access Token Request.
  * Obtains a fresh Google OAuth access token with Sheets & Drive scopes.
  */
-export const requestGoogleAccessToken = (overrideClientId?: string): Promise<string> => {
+export const requestGoogleAccessToken = (): Promise<string> => {
   return new Promise((resolve, reject) => {
     try {
       const google = (window as any).google;
@@ -21,18 +20,12 @@ export const requestGoogleAccessToken = (overrideClientId?: string): Promise<str
         reject(new Error('Google Identity script loading. Please try again in a moment.'));
         return;
       }
-      const clientId = overrideClientId || getGoogleClientId();
+      const clientId = getGoogleClientId();
       const client = google.accounts.oauth2.initTokenClient({
         client_id: clientId,
         scope: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file',
         callback: (response: any) => {
           if (response.error) {
-            // If primary client ID failed with invalid_client, try secondary client ID automatically!
-            if ((response.error === 'invalid_client' || response.error_description?.includes('invalid_client')) && !overrideClientId) {
-              console.warn('Primary Client ID failed, retrying with secondary Client ID...');
-              requestGoogleAccessToken(SECONDARY_GOOGLE_CLIENT_ID).then(resolve).catch(reject);
-              return;
-            }
             reject(new Error(response.error_description || response.error));
             return;
           }
