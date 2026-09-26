@@ -5,9 +5,9 @@ const SUPABASE_ANON_KEY = 'spenddesk_supabase_anon_key';
 const USER_STORAGE_KEY = 'money_tracker_user_info';
 const TOKEN_STORAGE_KEY = 'money_tracker_access_token';
 
-// Default Supabase project credentials (Users can override in Settings)
-const DEFAULT_SUPABASE_URL = 'https://xyzcompany.supabase.co'; 
-const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh5emNvbXBhbnkiLCJyb2xlIjoiYW5vbiIsImlhdCI6MTY3MDAwMDAwMCwiZXhwIjoyMDAwMDAwMDAwfQ.placeholder';
+// Default Supabase project credentials
+const DEFAULT_SUPABASE_URL = 'https://nlomzcogrzaejbwnhmjx.supabase.co'; 
+const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_uuEEz0Pmx_1t9Z7_VHHJeQ_vgF5LHm2';
 
 export const getStoredSupabaseConfig = () => {
   const url = localStorage.getItem(SUPABASE_URL_KEY) || import.meta.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL;
