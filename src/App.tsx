@@ -343,64 +343,28 @@ export default function App() {
     autoDiscoverDriveSheet();
   }, [accessToken, activeSheet, handlePullFromSheet]);
 
-  // Google Login handler via GIS (Single clean popup, no redirect to localhost)
+  // Google Login handler via working OAuth flow (Stays on live domain, 0 double popups)
   const handleSignIn = async () => {
     try {
       showNotification('Opening Google Sign-In...', 'info');
       try { localStorage.removeItem('money_tracker_google_client_id'); } catch (e) {}
 
-      const token = await requestGoogleAccessToken();
-      if (token) {
-        setAccessToken(token);
-        const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        if (res.ok) {
-          const profile = await res.json();
-          const authedUser = {
-            displayName: profile.name || profile.given_name || 'User',
-            email: profile.email || '',
-            photoURL: profile.picture || undefined,
-          };
-          setUser(authedUser);
-          try {
-            localStorage.setItem('money_tracker_user', JSON.stringify({ name: authedUser.displayName, email: authedUser.email, picture: authedUser.photoURL }));
-            localStorage.setItem('money_tracker_access_token', token);
-          } catch (e) {}
-          showNotification(`Signed in as ${authedUser.displayName}!`, 'success');
-
-          // Auto-discover existing SpendDesk Google Sheet from Drive & Pull live data!
-          try {
-            const driveSheets = await listUserSpreadsheets(token);
-            if (driveSheets.length > 0) {
-              const targetSheet = (activeSheet?.id ? driveSheets.find(s => s.id === activeSheet.id) : null) || 
-                                  driveSheets.find(s => s.name.toLowerCase().includes('spenddesk')) || 
-                                  driveSheets[0];
-              if (targetSheet) {
-                const meta: GoogleSheetMeta = {
-                  id: targetSheet.id,
-                  name: targetSheet.name,
-                  url: targetSheet.webViewLink || `https://docs.google.com/spreadsheets/d/${targetSheet.id}/edit`,
-                  lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                };
-                handleSetActiveSheet(meta);
-                await handlePullFromSheet(targetSheet.id, token);
-              }
-            }
-          } catch (driveErr) {
-            console.warn('Drive auto-discover error on login:', driveErr);
+      const res = await googleSignIn();
+      if (res && !res.success && res.errorMessage) {
+        console.warn('Primary OAuth notice:', res.errorMessage);
+        try {
+          const token = await requestGoogleAccessToken();
+          if (token) {
+            setAccessToken(token);
+            showNotification('Signed in to Google!', 'success');
           }
-          return;
+        } catch (gisErr) {
+          showNotification('Google Sign-In canceled.', 'info');
         }
       }
     } catch (err: any) {
       console.warn('Google Sign-In Exception:', err);
-      const msg = String(err?.message || err);
-      if (msg.includes('closed') || msg.includes('cancel')) {
-        showNotification('Google Sign-In canceled.', 'info');
-      } else {
-        showNotification('Unable to sign in to Google. Please try again.', 'error');
-      }
+      showNotification('Google Sign-In canceled or failed.', 'info');
     }
   };
 

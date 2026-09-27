@@ -53,8 +53,10 @@ export interface AuthResult {
 export const signInWithGoogleSupabase = async (): Promise<AuthResult> => {
   try {
     const supabase = getSupabase();
-    // Get current URL for redirect back after Google login
-    const redirectUrl = window.location.href.split('#')[0].split('?')[0];
+    // Dynamic redirect URL to ensure user stays on the exact current website domain (Live site vs Localhost)
+    const currentOrigin = window.location.origin;
+    const currentPath = window.location.pathname;
+    const redirectUrl = `${currentOrigin}${currentPath}`.replace(/\/+$/, '') + '/';
 
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
