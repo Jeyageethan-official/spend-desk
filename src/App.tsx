@@ -343,10 +343,12 @@ export default function App() {
     autoDiscoverDriveSheet();
   }, [accessToken, activeSheet, handlePullFromSheet]);
 
-  // Google Login handler via GIS with Drive Auto-Sync across browsers
+  // Google Login handler via GIS (Single clean popup, no redirect to localhost)
   const handleSignIn = async () => {
     try {
       showNotification('Opening Google Sign-In...', 'info');
+      try { localStorage.removeItem('money_tracker_google_client_id'); } catch (e) {}
+
       const token = await requestGoogleAccessToken();
       if (token) {
         setAccessToken(token);
@@ -392,14 +394,13 @@ export default function App() {
         }
       }
     } catch (err: any) {
-      console.warn('GIS auth fallback to Supabase:', err);
-      try {
-        const res = await googleSignIn();
-        if (res.success && res.user) {
-          setUser(res.user);
-          showNotification('Signed in with Google!', 'success');
-        }
-      } catch (e) {}
+      console.warn('Google Sign-In Exception:', err);
+      const msg = String(err?.message || err);
+      if (msg.includes('closed') || msg.includes('cancel')) {
+        showNotification('Google Sign-In canceled.', 'info');
+      } else {
+        showNotification('Unable to sign in to Google. Please try again.', 'error');
+      }
     }
   };
 

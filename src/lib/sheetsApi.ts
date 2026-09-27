@@ -3,9 +3,13 @@ import { Transaction, SpendingSummary, CategorySummary, LendItem } from '../type
 export const GOOGLE_OAUTH_CLIENT_ID = '377806164433-ftqbldc3ul9jfenp00hcgveeonoifdjs.apps.googleusercontent.com';
 
 export const getGoogleClientId = (): string => {
-  return localStorage.getItem('money_tracker_google_client_id') || 
-         import.meta.env.VITE_GOOGLE_CLIENT_ID || 
-         GOOGLE_OAUTH_CLIENT_ID;
+  try {
+    const custom = localStorage.getItem('money_tracker_google_client_id');
+    if (custom && (custom.includes('ftqbide3') || custom.includes('403491523597'))) {
+      localStorage.removeItem('money_tracker_google_client_id');
+    }
+  } catch (e) {}
+  return GOOGLE_OAUTH_CLIENT_ID;
 };
 
 /**
