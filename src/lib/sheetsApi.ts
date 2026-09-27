@@ -66,6 +66,24 @@ export const requestGoogleAccessToken = (candidateIndex: number = 0): Promise<st
   });
 };
 
+const parseGoogleApiError = (status: number, errorText: string, defaultContext: string): Error => {
+  let message = errorText;
+  try {
+    const json = JSON.parse(errorText);
+    message = json?.error?.message || errorText;
+  } catch (e) {}
+
+  if (message.includes('Google Sheets API has not been used') || message.includes('sheets.googleapis.com') || message.includes('SERVICE_DISABLED')) {
+    return new Error('GOOGLE_SHEETS_API_DISABLED: Google Sheets API is not enabled in your Google Cloud Console project.');
+  }
+
+  if (message.includes('Google Drive API has not been used') || message.includes('drive.googleapis.com')) {
+    return new Error('GOOGLE_DRIVE_API_DISABLED: Google Drive API is not enabled in your Google Cloud Console project.');
+  }
+
+  return new Error(`${defaultContext}: (${status}) ${message}`);
+};
+
 export interface DriveSpreadsheetItem {
   id: string;
   name: string;
@@ -86,7 +104,7 @@ export const listUserSpreadsheets = async (accessToken: string): Promise<DriveSp
 
   if (!res.ok) {
     const errorText = await res.text();
-    throw new Error(`Failed to list spreadsheets: ${res.status} ${errorText}`);
+    throw parseGoogleApiError(res.status, errorText, 'Failed to list spreadsheets');
   }
 
   const data = await res.json();
@@ -144,7 +162,7 @@ export const createMoneyTrackerSpreadsheet = async (
 
   if (!res.ok) {
     const errorText = await res.text();
-    throw new Error(`Failed to create spreadsheet: ${res.status} ${errorText}`);
+    throw parseGoogleApiError(res.status, errorText, 'Failed to create spreadsheet');
   }
 
   const result = await res.json();

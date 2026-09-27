@@ -334,9 +334,47 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
           <div className="p-5 sm:p-6 space-y-4 flex-1 flex flex-col justify-between">
             <div>
               {errorMsg && (
-                <div className="mb-4 p-3 bg-rose-50 border border-rose-200 rounded-2xl text-rose-700 text-xs flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{errorMsg}</span>
+                <div className="mb-4 p-4 bg-rose-50 border border-rose-200 rounded-2xl text-rose-800 text-xs space-y-2">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="font-bold">
+                        {errorMsg.includes('GOOGLE_SHEETS_API_DISABLED') || errorMsg.includes('Google Sheets API')
+                          ? 'Google Sheets API is Disabled in your GCP Project'
+                          : errorMsg.includes('GOOGLE_DRIVE_API_DISABLED') || errorMsg.includes('Google Drive API')
+                          ? 'Google Drive API is Disabled in your GCP Project'
+                          : 'Spreadsheet Request Error'}
+                      </p>
+                      <p className="mt-1 text-[11px] text-rose-700 leading-relaxed">
+                        {errorMsg.includes('API_DISABLED') || errorMsg.includes('403') || errorMsg.includes('SERVICE_DISABLED')
+                          ? 'Your Google Cloud Console project requires Google Sheets API and Google Drive API to be enabled before creating spreadsheets.'
+                          : errorMsg}
+                      </p>
+                    </div>
+                  </div>
+
+                  {(errorMsg.includes('API_DISABLED') || errorMsg.includes('403') || errorMsg.includes('SERVICE_DISABLED') || errorMsg.includes('Google Sheets API')) && (
+                    <div className="pt-2 border-t border-rose-200/80 flex flex-wrap items-center gap-2">
+                      <a
+                        href="https://console.cloud.google.com/apis/library/sheets.googleapis.com"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3 py-1.5 rounded-xl bg-rose-700 hover:bg-rose-800 text-white font-bold text-[11px] inline-flex items-center gap-1 shadow-2xs"
+                      >
+                        <span>Enable Google Sheets API</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                      <a
+                        href="https://console.cloud.google.com/apis/library/drive.googleapis.com"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-[11px] inline-flex items-center gap-1 shadow-2xs"
+                      >
+                        <span>Enable Google Drive API</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    </div>
+                  )}
                 </div>
               )}
 
