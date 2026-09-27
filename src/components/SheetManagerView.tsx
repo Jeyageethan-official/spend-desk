@@ -15,7 +15,6 @@ import {
   Plus,
   Search,
   CheckCircle2,
-  Calendar,
   ShieldCheck,
   Unlink
 } from 'lucide-react';
@@ -47,7 +46,7 @@ interface SheetManagerViewProps {
   onNotification?: (msg: string, type?: 'success' | 'info' | 'error') => void;
 }
 
-type SheetMenuTab = 'sync' | 'webhook';
+type SheetMenuTab = 'sheets' | 'drive' | 'webhook';
 
 export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
   onBack,
@@ -63,7 +62,7 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
   totalLendCount = 0,
   onNotification,
 }) => {
-  const [activeTab, setActiveTab] = useState<SheetMenuTab>('sync');
+  const [activeTab, setActiveTab] = useState<SheetMenuTab>('sheets');
   const [spreadsheets, setSpreadsheets] = useState<DriveSpreadsheetItem[]>([]);
   const [driveSearch, setDriveSearch] = useState('');
   const [loadingList, setLoadingList] = useState(false);
@@ -74,12 +73,12 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
-  // Auto load Drive sheets when user is authenticated
+  // Auto load Drive sheets when switching to 'drive' tab or authenticated
   useEffect(() => {
-    if (accessToken && spreadsheets.length === 0) {
+    if (accessToken && activeTab === 'drive' && spreadsheets.length === 0) {
       loadDriveSheets();
     }
-  }, [accessToken]);
+  }, [accessToken, activeTab]);
 
   const loadDriveSheets = async () => {
     if (!accessToken || accessToken === 'local_token') return;
@@ -104,7 +103,6 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
     try {
       let token = accessToken;
 
-      // If token is missing, expired, or local, prompt for Google token
       if (!token || token === 'local_token' || token.length < 30) {
         token = await requestGoogleAccessToken();
       }
@@ -148,9 +146,9 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
       console.error(err);
       const raw = String(err?.message || err);
       if (raw.includes('sheets.googleapis.com') || raw.includes('GOOGLE_SHEETS_API_DISABLED')) {
-        setErrorMsg('Google Sheets API is not enabled in your Google Cloud account. Please enable it to create sheets.');
+        setErrorMsg('Google Sheets API is not enabled in your Google Cloud account. Please click the button below to enable it.');
       } else if (raw.includes('drive.googleapis.com') || raw.includes('GOOGLE_DRIVE_API_DISABLED')) {
-        setErrorMsg('Google Drive API is not enabled in your Google Cloud account. Please enable it to create sheets.');
+        setErrorMsg('Google Drive API is not enabled in your Google Cloud account. Please click the button below to enable it.');
       } else if (raw.includes('invalid_client') || raw.includes('401')) {
         setErrorMsg('Google Sign-In session expired or permission denied. Please sign in again.');
       } else {
@@ -171,6 +169,7 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
     onSetActiveSheet(meta);
     setSuccessMsg(`Connected to "${item.name}"`);
     onNotification?.(`Connected to "${item.name}"`, 'success');
+    setActiveTab('sheets');
   };
 
   const handleSaveWebhook = () => {
@@ -260,20 +259,38 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
             )}
           </div>
 
-          {/* Menu Tabs */}
+          {/* 3 Menu Tabs: Sheets | Drive | Webhook */}
           <div className="px-5 pt-3.5 pb-2 bg-white border-b border-slate-100">
-            <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-100/90 rounded-2xl">
+            <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-100/90 rounded-2xl">
               <button
                 type="button"
-                onClick={() => setActiveTab('sync')}
+                onClick={() => setActiveTab('sheets')}
                 className={`py-2 px-2 text-center font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                  activeTab === 'sync'
+                  activeTab === 'sheets'
                     ? 'bg-white text-emerald-800 shadow-2xs'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                <UploadCloud className="w-4 h-4 shrink-0 text-emerald-600" />
-                <span>Google Drive Sync</span>
+                <FileSpreadsheet className="w-4 h-4 shrink-0 text-emerald-600" />
+                <span>Sheets</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('drive');
+                  if (accessToken && spreadsheets.length === 0) {
+                    loadDriveSheets();
+                  }
+                }}
+                className={`py-2 px-2 text-center font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                  activeTab === 'drive'
+                    ? 'bg-white text-emerald-800 shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <FolderOpen className="w-4 h-4 shrink-0 text-blue-600" />
+                <span>Drive</span>
               </button>
 
               <button
@@ -286,7 +303,7 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                 }`}
               >
                 <Link className="w-4 h-4 shrink-0 text-indigo-600" />
-                <span>Webhook Integration</span>
+                <span>Webhook</span>
               </button>
             </div>
           </div>
@@ -342,11 +359,11 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                 </div>
               )}
 
-              {/* ==================== TAB 1: SYNC ==================== */}
-              {activeTab === 'sync' && (
+              {/* ==================== TAB 1: SHEETS ==================== */}
+              {activeTab === 'sheets' && (
                 <div className="space-y-6 animate-in fade-in duration-150">
                   {/* Connected Sheet Controls */}
-                  {activeSheet && (
+                  {activeSheet ? (
                     <div className="space-y-4">
                       <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-3">
                         <div className="flex items-start justify-between">
@@ -424,6 +441,20 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                         </button>
                       </div>
                     </div>
+                  ) : (
+                    <div className="p-6 rounded-3xl bg-slate-50/70 border border-slate-200 text-center space-y-3">
+                      <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-800 flex items-center justify-center mx-auto">
+                        <FileSpreadsheet className="w-6 h-6" />
+                      </div>
+                      <div className="max-w-xs mx-auto">
+                        <h4 className="font-bold text-slate-900 text-sm">
+                          No Sheet Connected
+                        </h4>
+                        <p className="text-xs text-slate-500 mt-1">
+                          Create a new dedicated SpendDesk sheet below or select an existing sheet from the Drive tab.
+                        </p>
+                      </div>
+                    </div>
                   )}
 
                   {/* Create New Dedicated Sheet Block */}
@@ -450,9 +481,13 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                       </button>
                     </div>
                   </div>
+                </div>
+              )}
 
-                  {/* Existing Drive Sheets Selection List */}
-                  <div className="space-y-2 pt-2 border-t border-slate-100">
+              {/* ==================== TAB 2: DRIVE ==================== */}
+              {activeTab === 'drive' && (
+                <div className="space-y-4 animate-in fade-in duration-150">
+                  <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <h4 className="font-bold text-xs text-slate-700">
                         Connect Existing Google Drive Sheet
@@ -481,7 +516,7 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                           />
                         </div>
 
-                        <div className="max-h-52 overflow-y-auto space-y-1.5 pr-1 divide-y divide-slate-100">
+                        <div className="max-h-64 overflow-y-auto space-y-1.5 pr-1 divide-y divide-slate-100">
                           {loadingList ? (
                             <div className="p-6 text-center text-xs text-slate-400">
                               Loading spreadsheets from your Google Drive...
@@ -534,7 +569,7 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                 </div>
               )}
 
-              {/* ==================== TAB 2: WEBHOOK ==================== */}
+              {/* ==================== TAB 3: WEBHOOK ==================== */}
               {activeTab === 'webhook' && (
                 <div className="space-y-4 animate-in fade-in duration-150">
                   <div className="p-4 rounded-2xl bg-indigo-50/60 border border-indigo-200/80 space-y-2">

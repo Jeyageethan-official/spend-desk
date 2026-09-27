@@ -177,15 +177,35 @@ export default function App() {
     saveStoredLendItems(lendItems);
   }, [lendItems]);
 
-  // Automatic background push to connected Google Sheet whenever data changes
+  const lastSyncedHashRef = useRef<string>('');
+
+  // Automatic background push to connected Google Sheet ONLY when data actually changes
   useEffect(() => {
-    if (activeSheet && accessToken && accessToken !== 'local_token') {
-      const timer = setTimeout(() => {
-        handlePushToSheet();
-      }, 2000);
-      return () => clearTimeout(timer);
+    if (!activeSheet || !accessToken || accessToken === 'local_token') return;
+
+    const currentHash = JSON.stringify({
+      tCount: transactions.length,
+      lCount: lendItems.length,
+      firstTx: transactions[0]?.id || '',
+      firstTxAmt: transactions[0]?.amount || 0,
+      firstLend: lendItems[0]?.id || '',
+    });
+
+    if (lastSyncedHashRef.current === currentHash) return;
+
+    // Set initial hash on mount without firing push
+    if (!lastSyncedHashRef.current) {
+      lastSyncedHashRef.current = currentHash;
+      return;
     }
-  }, [transactions, lendItems, activeSheet, accessToken]);
+
+    const timer = setTimeout(() => {
+      lastSyncedHashRef.current = currentHash;
+      handlePushToSheet();
+    }, 3000);
+
+    return () => clearTimeout(timer);
+  }, [transactions, lendItems, activeSheet?.id, accessToken]);
 
   // Scroll to top whenever activeTab changes
   useEffect(() => {
