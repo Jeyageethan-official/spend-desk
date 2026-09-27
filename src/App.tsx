@@ -682,59 +682,38 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Desktop Navigation Bar (Visible on md+ screens across tabs) */}
-      {activeTab !== 'sheets' && (
-        <div className="hidden md:block max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 pt-4 sm:pt-6">
-          <div className="flex items-center justify-between bg-white p-1.5 rounded-2xl border border-slate-200/90 shadow-xs">
-            <div className="flex items-center gap-1">
-              {[
-                { id: 'dashboard', label: 'Overview & Wallet' },
-                { id: 'transactions', label: 'Transaction Ledger' },
-                { id: 'lend', label: `Lend & Borrow${pendingLendCount > 0 ? ` (${pendingLendCount})` : ''}` },
-                { id: 'analytics', label: 'Category & Trends' },
-                { id: 'settings', label: 'Settings & Profile' },
-              ].map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => {
-                    if (tab.id === 'settings') {
-                      setSettingsSection('main');
-                    }
-                    setActiveTab(tab.id as AppTab);
-                  }}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                    activeTab === tab.id
-                      ? 'bg-slate-900 text-white shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-
-            <div className="flex items-center gap-2 pr-1">
+      {/* Desktop Navigation Bar (Centered, clean workspace tabs) */}
+      <div className="hidden md:block max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 pt-4 sm:pt-6">
+        <div className="flex items-center justify-center bg-white p-1.5 rounded-2xl border border-slate-200/90 shadow-xs">
+          <div className="flex items-center gap-1.5 flex-wrap justify-center">
+            {[
+              { id: 'dashboard', label: 'Overview & Wallet' },
+              { id: 'transactions', label: 'Transaction Ledger' },
+              { id: 'lend', label: `Lend & Borrow${pendingLendCount > 0 ? ` (${pendingLendCount})` : ''}` },
+              { id: 'analytics', label: 'Category & Trends' },
+              { id: 'sheets', label: 'Google Sheets' },
+            ].map((tab) => (
               <button
+                key={tab.id}
                 type="button"
-                onClick={() => setIsSmsModalOpen(true)}
-                className="px-3 py-1.5 text-xs font-bold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 rounded-xl flex items-center gap-1.5 cursor-pointer transition-colors"
+                onClick={() => {
+                  if (tab.id === 'sheets') {
+                    setSheetsSourceTab(activeTab);
+                  }
+                  setActiveTab(tab.id as AppTab);
+                }}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  activeTab === tab.id
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
               >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Paste Bank SMS</span>
+                {tab.label}
               </button>
-              <button
-                type="button"
-                onClick={handleExportCSV}
-                className="px-3 py-1.5 text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl flex items-center gap-1.5 cursor-pointer transition-colors"
-              >
-                <Download className="w-3.5 h-3.5 text-slate-500" />
-                <span>Export CSV</span>
-              </button>
-            </div>
+            ))}
           </div>
         </div>
-      )}
+      </div>
 
       {/* Main Content with Smooth Page Fade & Slide Transition Animation */}
       <AnimatePresence mode="wait">

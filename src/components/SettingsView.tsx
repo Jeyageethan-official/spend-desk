@@ -545,7 +545,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       {/* 1. TOP MINIMALIST APP BAR (WhatsApp / iOS Style)               */}
       {/* ============================================================== */}
       <div className="bg-white/95 backdrop-blur-md border-b border-slate-200 sticky top-0 z-30 shadow-xs">
-        <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
+        <div className="max-w-2xl md:max-w-4xl lg:max-w-5xl mx-auto px-4 h-14 flex items-center justify-between">
           <button
             type="button"
             onClick={() => safeNavigateBack(currentSubPage === 'main' ? onBack : handleBackToMain)}
@@ -571,7 +571,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
       </div>
 
-      <div className="max-w-2xl mx-auto px-4 pt-6 space-y-6">
+      <div className="max-w-2xl md:max-w-4xl lg:max-w-5xl mx-auto px-4 pt-6 space-y-6">
         <AnimatePresence mode="wait">
           <motion.div
             key={currentSubPage}
@@ -582,215 +582,240 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             className="space-y-6"
           >
             {/* ============================================================== */}
+            {/* ============================================================== */}
             {/* VIEW 0: MAIN SETTINGS PAGE (WhatsApp-style Hero Profile Card)  */}
             {/* ============================================================== */}
             {currentSubPage === 'main' && (
-              <div className="space-y-6">
-                {/* WhatsApp-Style Horizontal Profile Card (Avatar Left, Name & Gmail Right) */}
-                <div 
-                  onClick={() => {
-                    setEditModalName(profileName);
-                    setEditModalEmail(profileEmail);
-                    setEditModalAvatar(customAvatar);
-                    handleOpenSubPage('profile');
-                  }}
-                  className="bg-white rounded-3xl border border-slate-200/90 p-4 sm:p-5 shadow-xs flex items-center justify-between gap-4 cursor-pointer hover:border-slate-300 hover:shadow-sm transition-all group"
-                >
-                  <div className="flex items-center gap-3.5 sm:gap-4 min-w-0">
-                    {/* Left: Avatar Circle with WhatsApp-style camera badge */}
-                    <div className="relative shrink-0">
-                      <div className="w-16 h-16 sm:w-18 sm:h-18 rounded-full overflow-hidden border-2 border-emerald-500/80 p-0.5 shadow-2xs bg-slate-100 flex items-center justify-center">
-                        {customAvatar ? (
-                          <img
-                            src={customAvatar}
-                            alt={profileName}
-                            className="w-full h-full rounded-full object-cover"
-                          />
-                        ) : (
-                          <div className="w-full h-full rounded-full bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center font-bold text-xl sm:text-2xl">
-                            {profileName.charAt(0).toUpperCase()}
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+                {/* Left Column on Desktop: Profile Card & Quick Info */}
+                <div className="md:col-span-5 space-y-4">
+                  {/* WhatsApp-Style Hero Profile Card */}
+                  <div 
+                    onClick={() => {
+                      setEditModalName(profileName);
+                      setEditModalEmail(profileEmail);
+                      setEditModalAvatar(customAvatar);
+                      handleOpenSubPage('profile');
+                    }}
+                    className="bg-white rounded-3xl border border-slate-200/90 p-4 sm:p-5 shadow-xs flex flex-col justify-between gap-4 cursor-pointer hover:border-slate-300 hover:shadow-sm transition-all group"
+                  >
+                    <div className="flex items-center gap-3.5 sm:gap-4 min-w-0">
+                      {/* Left: Avatar Circle with WhatsApp-style camera badge */}
+                      <div className="relative shrink-0">
+                        <div className="w-16 h-16 sm:w-18 sm:h-18 rounded-full overflow-hidden border-2 border-emerald-500/80 p-0.5 shadow-2xs bg-slate-100 flex items-center justify-center">
+                          {customAvatar ? (
+                            <img
+                              src={customAvatar}
+                              alt={profileName}
+                              className="w-full h-full rounded-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-full h-full rounded-full bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center font-bold text-xl sm:text-2xl">
+                              {profileName.charAt(0).toUpperCase()}
+                            </div>
+                          )}
+                        </div>
+                        <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center shadow-xs border-2 border-white">
+                          <Camera className="w-3 h-3" />
+                        </div>
+                      </div>
+
+                      {/* Right: Profile Name on top, Gmail underneath */}
+                      <div className="min-w-0 flex-1">
+                        <h2 className="text-base sm:text-lg font-bold text-slate-900 truncate group-hover:text-emerald-700 transition-colors">
+                          {profileName}
+                        </h2>
+                        <p className="text-xs text-slate-500 truncate mt-0.5 font-medium">
+                          {profileEmail}
+                        </p>
+
+                        {/* Status indicator */}
+                        <div className="mt-1.5 inline-flex items-center gap-1.5 text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200/70 px-2 py-0.5 rounded-full">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                          <span className="truncate">{activeSheet ? 'Google Sheets Synced' : 'Offline Storage'}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-emerald-700">
+                      <span>Edit Profile Details</span>
+                      <Edit3 className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                    </div>
+                  </div>
+
+                  {/* Desktop Quick Workspace Info Card */}
+                  <div className="hidden md:block bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-3xl p-5 shadow-xs space-y-3">
+                    <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                      Workspace Summary
+                    </h4>
+                    <div className="space-y-2 text-xs">
+                      <div className="flex items-center justify-between py-1 border-b border-slate-700/60">
+                        <span className="text-slate-300">Local Database</span>
+                        <span className="font-mono font-bold text-emerald-400">{storageUsageKb} KB</span>
+                      </div>
+                      <div className="flex items-center justify-between py-1 border-b border-slate-700/60">
+                        <span className="text-slate-300">Total Transactions</span>
+                        <span className="font-mono font-bold text-white">{transactions.length} items</span>
+                      </div>
+                      <div className="flex items-center justify-between py-1">
+                        <span className="text-slate-300">Active Currency</span>
+                        <span className="font-mono font-bold text-amber-400">{currency}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right Column on Desktop: Grouped Settings Menu List */}
+                <div className="md:col-span-7 space-y-4">
+                  {/* Group 1: Financial Preferences */}
+                  <div className="space-y-1.5">
+                    <div className="px-3 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                      Financial Configuration
+                    </div>
+
+                    <div className="bg-white rounded-3xl border border-slate-200/90 shadow-xs divide-y divide-slate-100 overflow-hidden">
+                      {/* 1. Manage Categories */}
+                      <button
+                        type="button"
+                        onClick={() => handleOpenSubPage('categories')}
+                        className="w-full px-4 py-3.5 hover:bg-slate-50 flex items-center justify-between transition-colors cursor-pointer text-left"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0">
+                            <Tag className="w-4 h-4" />
                           </div>
-                        )}
-                      </div>
-                      <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center shadow-xs border-2 border-white">
-                        <Camera className="w-3 h-3" />
-                      </div>
-                    </div>
+                          <div>
+                            <h4 className="font-bold text-xs text-slate-900">Manage Categories</h4>
+                            <p className="text-[11px] text-slate-400">
+                              {categories.length} categories · All editable &amp; removable
+                            </p>
+                          </div>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-slate-400" />
+                      </button>
 
-                    {/* Right: Profile Name on top, Gmail underneath */}
-                    <div className="min-w-0">
-                      <h2 className="text-base sm:text-lg font-bold text-slate-900 truncate group-hover:text-emerald-700 transition-colors">
-                        {profileName}
-                      </h2>
-                      <p className="text-xs text-slate-500 truncate mt-0.5 font-medium">
-                        {profileEmail}
-                      </p>
+                      {/* 2. Currency & Format */}
+                      <button
+                        type="button"
+                        onClick={() => handleOpenSubPage('preferences')}
+                        className="w-full px-4 py-3.5 hover:bg-slate-50 flex items-center justify-between transition-colors cursor-pointer text-left"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-2xl bg-blue-50 text-blue-700 flex items-center justify-center shrink-0">
+                            <DollarSign className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h4 className="font-bold text-xs text-slate-900">Currency &amp; Format</h4>
+                            <p className="text-[11px] text-slate-400">
+                              Active currency: <span className="font-mono font-bold text-slate-700">{currency}</span>
+                            </p>
+                          </div>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-slate-400" />
+                      </button>
 
-                      {/* Status indicator */}
-                      <div className="mt-1.5 inline-flex items-center gap-1.5 text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200/70 px-2 py-0.5 rounded-full">
-                        <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
-                        <span className="truncate">{activeSheet ? 'Google Sheets Synced' : 'Offline Storage'}</span>
-                      </div>
+                      {/* 3. Budget & Limits */}
+                      <button
+                        type="button"
+                        onClick={() => handleOpenSubPage('budget')}
+                        className="w-full px-4 py-3.5 hover:bg-slate-50 flex items-center justify-between transition-colors cursor-pointer text-left"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-2xl bg-purple-50 text-purple-700 flex items-center justify-center shrink-0">
+                            <Sliders className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h4 className="font-bold text-xs text-slate-900">Budget Targets &amp; Alerts</h4>
+                            <p className="text-[11px] text-slate-400">
+                              Monthly targets, low cash warnings &amp; SMS alerts
+                            </p>
+                          </div>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-slate-400" />
+                      </button>
                     </div>
                   </div>
 
-                  {/* Clean Edit Pencil Button */}
-                  <div className="p-2 sm:p-2.5 rounded-2xl bg-slate-50 group-hover:bg-emerald-50 text-slate-500 group-hover:text-emerald-700 transition-all border border-slate-200/80 shadow-2xs shrink-0">
-                    <Edit3 className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                  {/* Group 2: Cloud & Connectivity */}
+                  <div className="space-y-1.5">
+                    <div className="px-3 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                      Cloud &amp; Sync
+                    </div>
+
+                    <div className="bg-white rounded-3xl border border-slate-200/90 shadow-xs divide-y divide-slate-100 overflow-hidden">
+                      {/* Google Sheets Manager (Opens SheetManagerView directly) */}
+                      <button
+                        type="button"
+                        onClick={onOpenSyncModal}
+                        className="w-full px-4 py-3.5 hover:bg-slate-50 flex items-center justify-between transition-colors cursor-pointer text-left"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-2xl bg-teal-50 text-teal-700 flex items-center justify-center shrink-0">
+                            <FileSpreadsheet className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h4 className="font-bold text-xs text-slate-900">Google Sheets Sync</h4>
+                            <p className="text-[11px] text-slate-400">
+                              {activeSheet ? `Connected: ${activeSheet.name}` : 'Connect spreadsheet'}
+                            </p>
+                          </div>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-slate-400" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Group 3: Data & Privacy */}
+                  <div className="space-y-1.5">
+                    <div className="px-3 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                      Data Vault &amp; System
+                    </div>
+
+                    <div className="bg-white rounded-3xl border border-slate-200/90 shadow-xs divide-y divide-slate-100 overflow-hidden">
+                      {/* Data Management & Backups */}
+                      <button
+                        type="button"
+                        onClick={() => handleOpenSubPage('data')}
+                        className="w-full px-4 py-3.5 hover:bg-slate-50 flex items-center justify-between transition-colors cursor-pointer text-left"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-2xl bg-amber-50 text-amber-700 flex items-center justify-center shrink-0">
+                            <Database className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h4 className="font-bold text-xs text-slate-900">Backup &amp; Restore</h4>
+                            <p className="text-[11px] text-slate-400">
+                              Export CSV, download JSON snapshot, restore records
+                            </p>
+                          </div>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-slate-400" />
+                      </button>
+
+                      {/* About & Security */}
+                      <button
+                        type="button"
+                        onClick={() => handleOpenSubPage('about')}
+                        className="w-full px-4 py-3.5 hover:bg-slate-50 flex items-center justify-between transition-colors cursor-pointer text-left"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-2xl bg-slate-100 text-slate-700 flex items-center justify-center shrink-0">
+                            <Info className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h4 className="font-bold text-xs text-slate-900">App Info &amp; Privacy</h4>
+                            <p className="text-[11px] text-slate-400">
+                              Storage: {storageUsageKb} KB · Private offline vault
+                            </p>
+                          </div>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-slate-400" />
+                      </button>
+                    </div>
                   </div>
                 </div>
-
-            {/* WhatsApp / iOS Grouped Settings Menu List */}
-            <div className="space-y-4">
-              {/* Group 1: Financial Preferences */}
-              <div className="space-y-1.5">
-                <div className="px-3 text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  Financial Configuration
-                </div>
-
-                <div className="bg-white rounded-3xl border border-slate-200/90 shadow-xs divide-y divide-slate-100 overflow-hidden">
-                  {/* 1. Manage Categories */}
-                  <button
-                    type="button"
-                    onClick={() => handleOpenSubPage('categories')}
-                    className="w-full px-4 py-3.5 hover:bg-slate-50 flex items-center justify-between transition-colors cursor-pointer text-left"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0">
-                        <Tag className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-xs text-slate-900">Manage Categories</h4>
-                        <p className="text-[11px] text-slate-400">
-                          {categories.length} categories · All editable &amp; removable
-                        </p>
-                      </div>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-slate-400" />
-                  </button>
-
-                  {/* 2. Currency & Format */}
-                  <button
-                    type="button"
-                    onClick={() => handleOpenSubPage('preferences')}
-                    className="w-full px-4 py-3.5 hover:bg-slate-50 flex items-center justify-between transition-colors cursor-pointer text-left"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-2xl bg-blue-50 text-blue-700 flex items-center justify-center shrink-0">
-                        <DollarSign className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-xs text-slate-900">Currency &amp; Format</h4>
-                        <p className="text-[11px] text-slate-400">
-                          Active currency: <span className="font-mono font-bold text-slate-700">{currency}</span>
-                        </p>
-                      </div>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-slate-400" />
-                  </button>
-
-                  {/* 3. Budget & Limits */}
-                  <button
-                    type="button"
-                    onClick={() => handleOpenSubPage('budget')}
-                    className="w-full px-4 py-3.5 hover:bg-slate-50 flex items-center justify-between transition-colors cursor-pointer text-left"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-2xl bg-purple-50 text-purple-700 flex items-center justify-center shrink-0">
-                        <Sliders className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-xs text-slate-900">Budget Targets &amp; Alerts</h4>
-                        <p className="text-[11px] text-slate-400">
-                          Monthly targets, low cash warnings &amp; SMS alerts
-                        </p>
-                      </div>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-slate-400" />
-                  </button>
-                </div>
               </div>
-
-              {/* Group 2: Cloud & Connectivity */}
-              <div className="space-y-1.5">
-                <div className="px-3 text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  Cloud &amp; Sync
-                </div>
-
-                <div className="bg-white rounded-3xl border border-slate-200/90 shadow-xs divide-y divide-slate-100 overflow-hidden">
-                  {/* Google Sheets Manager (Opens SheetManagerView directly) */}
-                  <button
-                    type="button"
-                    onClick={onOpenSyncModal}
-                    className="w-full px-4 py-3.5 hover:bg-slate-50 flex items-center justify-between transition-colors cursor-pointer text-left"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-2xl bg-teal-50 text-teal-700 flex items-center justify-center shrink-0">
-                        <FileSpreadsheet className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-xs text-slate-900">Google Sheets Sync</h4>
-                        <p className="text-[11px] text-slate-400">
-                          {activeSheet ? `Connected: ${activeSheet.name}` : 'Connect spreadsheet'}
-                        </p>
-                      </div>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-slate-400" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Group 3: Data & Privacy */}
-              <div className="space-y-1.5">
-                <div className="px-3 text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  Data Vault &amp; System
-                </div>
-
-                <div className="bg-white rounded-3xl border border-slate-200/90 shadow-xs divide-y divide-slate-100 overflow-hidden">
-                  {/* Data Management & Backups */}
-                  <button
-                    type="button"
-                    onClick={() => handleOpenSubPage('data')}
-                    className="w-full px-4 py-3.5 hover:bg-slate-50 flex items-center justify-between transition-colors cursor-pointer text-left"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-2xl bg-amber-50 text-amber-700 flex items-center justify-center shrink-0">
-                        <Database className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-xs text-slate-900">Backup &amp; Restore</h4>
-                        <p className="text-[11px] text-slate-400">
-                          Export CSV, download JSON snapshot, restore records
-                        </p>
-                      </div>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-slate-400" />
-                  </button>
-
-                  {/* About & Security */}
-                  <button
-                    type="button"
-                    onClick={() => handleOpenSubPage('about')}
-                    className="w-full px-4 py-3.5 hover:bg-slate-50 flex items-center justify-between transition-colors cursor-pointer text-left"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-2xl bg-slate-100 text-slate-700 flex items-center justify-center shrink-0">
-                        <Info className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-xs text-slate-900">App Info &amp; Privacy</h4>
-                        <p className="text-[11px] text-slate-400">
-                          Storage: {storageUsageKb} KB · Private offline vault
-                        </p>
-                      </div>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-slate-400" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+            )}
 
         {/* ============================================================== */}
         {/* SUB-PAGE: EDIT PROFILE (Horizontal layout, WhatsApp camera badge) */}

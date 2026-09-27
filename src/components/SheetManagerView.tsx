@@ -220,7 +220,7 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
         </div>
       </div>
 
-      <div className="max-w-2xl mx-auto px-4 pt-6 space-y-6">
+      <div className="max-w-2xl md:max-w-4xl mx-auto px-4 pt-6 space-y-6">
         {/* Main Card */}
         <div className="bg-white rounded-3xl border border-slate-200/90 shadow-xs flex flex-col min-h-[580px] overflow-hidden">
           {/* Top Status Banner */}
@@ -526,28 +526,51 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                               No spreadsheets found matching your search.
                             </div>
                           ) : (
-                            filteredDriveSheets.map((item) => (
-                              <div
-                                key={item.id}
-                                className="pt-2 flex items-center justify-between hover:bg-slate-50 p-2 rounded-xl transition-colors"
-                              >
-                                <div className="min-w-0 pr-2">
-                                  <span className="font-bold text-xs text-slate-800 block truncate">
-                                    {item.name}
-                                  </span>
-                                  <span className="text-[10px] text-slate-400 block">
-                                    Modified: {item.modifiedTime ? new Date(item.modifiedTime).toLocaleDateString() : 'N/A'}
-                                  </span>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => handleSelectExisting(item)}
-                                  className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 text-xs font-bold cursor-pointer transition-colors shrink-0"
+                            filteredDriveSheets.map((item) => {
+                              const isConnected = activeSheet?.id === item.id;
+                              return (
+                                <div
+                                  key={item.id}
+                                  className={`pt-2 flex items-center justify-between p-2.5 rounded-xl transition-colors ${
+                                    isConnected
+                                      ? 'bg-emerald-50/80 border border-emerald-200/90'
+                                      : 'hover:bg-slate-50'
+                                  }`}
                                 >
-                                  Connect
-                                </button>
-                              </div>
-                            ))
+                                  <div className="min-w-0 pr-2">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-bold text-xs text-slate-800 block truncate">
+                                        {item.name}
+                                      </span>
+                                      {isConnected && (
+                                        <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold inline-flex items-center gap-1 shrink-0">
+                                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                          Connected
+                                        </span>
+                                      )}
+                                    </div>
+                                    <span className="text-[10px] text-slate-400 block mt-0.5">
+                                      Modified: {item.modifiedTime ? new Date(item.modifiedTime).toLocaleDateString() : 'N/A'}
+                                    </span>
+                                  </div>
+
+                                  {isConnected ? (
+                                    <span className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold inline-flex items-center gap-1 shrink-0">
+                                      <CheckCircle2 className="w-3.5 h-3.5" />
+                                      Active
+                                    </span>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSelectExisting(item)}
+                                      className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-emerald-600 hover:text-white text-slate-700 text-xs font-bold cursor-pointer transition-colors shrink-0"
+                                    >
+                                      Connect
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            })
                           )}
                         </div>
                       </>
