@@ -505,6 +505,45 @@ export const overwriteLendItemsInSheet = async (
   );
 };
 
+export const fetchAllLendItemsFromSheet = async (
+  accessToken: string,
+  spreadsheetId: string
+): Promise<LendItem[]> => {
+  try {
+    const res = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Lend_Borrow!A2:I500`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      }
+    );
+
+    if (!res.ok) return [];
+
+    const data = await res.json();
+    const rows: any[][] = data.values || [];
+
+    return rows
+      .filter((row) => row && row[0] && row[1])
+      .map((row) => ({
+        id: String(row[0]),
+        personName: String(row[1] || ''),
+        type: row[2] === 'I Borrowed' ? 'borrowed' : 'lent',
+        thingsOrReason: String(row[3] || ''),
+        amount: parseFloat(String(row[4] || '0').replace(/[^0-9.-]+/g, '')) || 0,
+        date: String(row[5] || ''),
+        dueDate: String(row[6] || ''),
+        status: (row[7] as any) === 'returned' ? 'returned' : 'pending',
+        phone: String(row[8] || ''),
+        createdAt: Date.now(),
+      }));
+  } catch (e) {
+    console.warn('Failed to fetch lend items from sheet:', e);
+    return [];
+  }
+};
+
 export const syncViaWebhook = async (
   webhookUrl: string, 
   transactions: Transaction[], 

@@ -40,6 +40,9 @@ import {
   overwriteTransactionsInSheet, 
   overwriteLendItemsInSheet,
   fetchAllTransactionsFromSheet,
+  fetchAllLendItemsFromSheet,
+  listUserSpreadsheets,
+  requestGoogleAccessToken,
   syncViaWebhook
 } from './lib/sheetsApi';
 import { generateTransactionSmsText, triggerDeviceSms } from './lib/smsAlert';
@@ -258,7 +261,49 @@ export default function App() {
     saveStoredSheetMeta(meta);
   };
 
-  // Google Login handler via GIS (shows "to continue to SpendDesk") with Supabase fallback
+  // Pull Data from Connected Google Sheet
+  const handlePullFromSheet = useCallback(async (targetSheetId?: string, targetToken?: string) => {
+    const sId = targetSheetId || activeSheet?.id;
+    const token = targetToken || accessToken;
+    if (!sId || !token || token === 'local_token') return;
+    setIsSyncing(true);
+    try {
+      const remoteTxs = await fetchAllTransactionsFromSheet(token, sId);
+      const remoteLends = await fetchAllLendItemsFromSheet(token, sId);
+
+      if (remoteTxs.length > 0) {
+        setTransactions(remoteTxs);
+        saveStoredTransactions(remoteTxs);
+      }
+      if (remoteLends.length > 0) {
+        setLendItems(remoteLends);
+        saveStoredLendItems(remoteLends);
+      }
+
+      const totalCount = remoteTxs.length + remoteLends.length;
+      if (totalCount > 0) {
+        showNotification(`Loaded ${remoteTxs.length} transactions & ${remoteLends.length} lend items from Google Sheets!`, 'success');
+      } else {
+        showNotification('No transaction records found in Google Sheet yet.', 'info');
+      }
+    } catch (err: any) {
+      console.error('Failed to fetch from sheet:', err);
+      showNotification('Could not read from sheet: ' + (err.message || err), 'error');
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [activeSheet?.id, accessToken]);
+
+  // Initial Auto-Pull on App Load when connected sheet exists
+  const hasInitialAutoPulledRef = useRef(false);
+  useEffect(() => {
+    if (activeSheet?.id && accessToken && accessToken !== 'local_token' && !hasInitialAutoPulledRef.current) {
+      hasInitialAutoPulledRef.current = true;
+      handlePullFromSheet(activeSheet.id, accessToken);
+    }
+  }, [activeSheet?.id, accessToken, handlePullFromSheet]);
+
+  // Google Login handler via GIS with Drive Auto-Sync across browsers
   const handleSignIn = async () => {
     try {
       showNotification('Opening Google Sign-In...', 'info');
@@ -281,6 +326,28 @@ export default function App() {
             localStorage.setItem('money_tracker_access_token', token);
           } catch (e) {}
           showNotification(`Signed in as ${authedUser.displayName}!`, 'success');
+
+          // Auto-discover existing SpendDesk Google Sheet from Drive & Pull live data!
+          try {
+            const driveSheets = await listUserSpreadsheets(token);
+            if (driveSheets.length > 0) {
+              const targetSheet = (activeSheet?.id ? driveSheets.find(s => s.id === activeSheet.id) : null) || 
+                                  driveSheets.find(s => s.name.toLowerCase().includes('spenddesk')) || 
+                                  driveSheets[0];
+              if (targetSheet) {
+                const meta: GoogleSheetMeta = {
+                  id: targetSheet.id,
+                  name: targetSheet.name,
+                  url: targetSheet.webViewLink || `https://docs.google.com/spreadsheets/d/${targetSheet.id}/edit`,
+                  lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                };
+                handleSetActiveSheet(meta);
+                await handlePullFromSheet(targetSheet.id, token);
+              }
+            }
+          } catch (driveErr) {
+            console.warn('Drive auto-discover error on login:', driveErr);
+          }
           return;
         }
       }
@@ -338,26 +405,6 @@ export default function App() {
       setIsSyncing(false);
     }
   }, [activeSheet, accessToken, transactions, lendItems]);
-
-  // Pull Data from Connected Google Sheet
-  const handlePullFromSheet = async () => {
-    if (!activeSheet || !accessToken) return;
-    setIsSyncing(true);
-    try {
-      const remoteTxs = await fetchAllTransactionsFromSheet(accessToken, activeSheet.id);
-      if (remoteTxs.length > 0) {
-        setTransactions(remoteTxs);
-        showNotification(`Loaded ${remoteTxs.length} records from Google Sheets!`, 'success');
-      } else {
-        showNotification('No transactions found in this Google Sheet yet.', 'info');
-      }
-    } catch (err: any) {
-      console.error('Failed to fetch from sheet:', err);
-      showNotification('Failed to read from sheet: ' + err.message, 'error');
-    } finally {
-      setIsSyncing(false);
-    }
-  };
 
   // Add / Edit Transaction Handler with SMS Notification
   const handleSaveTransaction = (data: Omit<Transaction, 'id' | 'createdAt'> & { id?: string; sendSmsTo?: string }) => {
@@ -569,7 +616,7 @@ export default function App() {
             setIsTxModalOpen(true);
           }}
           onOpenSmsModal={() => setIsSmsModalOpen(true)}
-          onQuickSync={handlePushToSheet}
+          onQuickSync={() => handlePullFromSheet()}
           onOpenAuthHelp={() => setIsAuthHelpOpen(true)}
           onOpenSettings={(tab) => {
             setSettingsSection((tab as any) || 'main');
