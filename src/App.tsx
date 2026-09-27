@@ -408,8 +408,20 @@ export default function App() {
     await logout();
     setUser(null);
     setAccessToken(null);
-    try { localStorage.removeItem('money_tracker_access_token'); } catch (e) {}
-    showNotification('Signed out. Local data preserved.', 'info');
+    setActiveSheet(null);
+    const defaultProfile: UserProfile = { name: 'My Wallet', email: '', avatar: null };
+    setUserProfile(defaultProfile);
+    saveStoredProfile(defaultProfile);
+    try {
+      localStorage.removeItem('money_tracker_user');
+      localStorage.removeItem('money_tracker_user_info');
+      localStorage.removeItem('money_tracker_access_token');
+      localStorage.removeItem('money_tracker_profile_name');
+      localStorage.removeItem('money_tracker_profile_email');
+      localStorage.removeItem('money_tracker_custom_avatar');
+      localStorage.removeItem('money_tracker_active_sheet_v2');
+    } catch (e) {}
+    showNotification('Signed out successfully. Profile cleared.', 'info');
   };
 
   // Push Data to Connected Google Sheet (Transactions, Lend/Borrow, and Dashboard KPIs)

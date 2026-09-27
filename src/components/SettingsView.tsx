@@ -157,18 +157,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   // Keep in sync with userProfile prop changes
   useEffect(() => {
-    if (userProfile?.name && userProfile.name !== profileName) {
-      setProfileName(userProfile.name);
-      setEditModalName(userProfile.name);
-    }
-    if (userProfile?.avatar !== undefined && userProfile.avatar !== customAvatar) {
-      setCustomAvatar(userProfile.avatar);
-      setEditModalAvatar(userProfile.avatar);
-    }
-    if (userProfile?.email && userProfile.email !== profileEmail) {
-      setProfileEmail(userProfile.email);
-      setEditModalEmail(userProfile.email);
-    }
+    const nextName = userProfile?.name && userProfile.name !== 'Jeyaram Tech' ? userProfile.name : 'My Wallet';
+    const nextAvatar = userProfile?.avatar || null;
+    const nextEmail = userProfile?.email && userProfile.email !== 'jeyaramantech05@gmail.com' ? userProfile.email : '';
+
+    setProfileName(nextName);
+    setEditModalName(nextName);
+    setCustomAvatar(nextAvatar);
+    setEditModalAvatar(nextAvatar);
+    setProfileEmail(nextEmail);
+    setEditModalEmail(nextEmail);
   }, [userProfile]);
 
   // Profile avatar file input ref
