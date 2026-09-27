@@ -69,7 +69,7 @@ import {
 export default function App() {
   const [user, setUser] = useState<any>(() => {
     try {
-      const saved = localStorage.getItem('money_tracker_user_info');
+      const saved = localStorage.getItem('money_tracker_user') || localStorage.getItem('money_tracker_user_info');
       return saved ? JSON.parse(saved) : null;
     } catch {
       return null;
@@ -142,13 +142,38 @@ export default function App() {
       (authedUser, token) => {
         setUser(authedUser);
         setAccessToken(token);
+        if (window.location.hash && window.location.hash.includes('access_token')) {
+          try {
+            if (window.history && window.history.replaceState) {
+              window.history.replaceState(null, '', window.location.pathname + window.location.search);
+            }
+          } catch (e) {}
+        }
       },
       () => {
-        setUser(null);
-        setAccessToken(null);
+        // Only clear if no offline stored user
+        const storedUser = localStorage.getItem('money_tracker_user');
+        if (!storedUser) {
+          setUser(null);
+          setAccessToken(null);
+        }
       }
     );
     return () => unsubscribe();
+  }, []);
+
+  // Clean URL hash fragment on OAuth redirect return
+  useEffect(() => {
+    if (window.location.hash && (window.location.hash.includes('access_token=') || window.location.hash.includes('error='))) {
+      const timer = setTimeout(() => {
+        try {
+          if (window.history && window.history.replaceState) {
+            window.history.replaceState(null, '', window.location.pathname + window.location.search);
+          }
+        } catch (e) {}
+      }, 500);
+      return () => clearTimeout(timer);
+    }
   }, []);
 
   // Auto-sync User Profile details (Name, Email, Google Avatar) when signed in
