@@ -27,30 +27,38 @@ export const formatCurrency = (amount: number, currency: string = 'Rs'): string 
 };
 
 export const filterTransactions = (
-  transactions: Transaction[],
+  transactions: Transaction[] = [],
   filter: FilterState
 ): Transaction[] => {
+  if (!Array.isArray(transactions)) return [];
   return transactions.filter((tx) => {
+    if (!tx || typeof tx !== 'object') return false;
+    const date = tx.date || '';
+    const category = tx.category || 'Other';
+    const paymentMethod = tx.paymentMethod || 'cash';
+    const notes = tx.notes || '';
+    const amount = tx.amount || 0;
+
     // Date filter
-    if (filter.startDate && tx.date < filter.startDate) return false;
-    if (filter.endDate && tx.date > filter.endDate) return false;
+    if (filter?.startDate && date < filter.startDate) return false;
+    if (filter?.endDate && date > filter.endDate) return false;
 
     // Category filter
-    if (filter.category && filter.category !== 'All' && tx.category !== filter.category) {
+    if (filter?.category && filter.category !== 'All' && category !== filter.category) {
       return false;
     }
 
     // Payment method filter
-    if (filter.paymentMethod && filter.paymentMethod !== 'All' && tx.paymentMethod !== filter.paymentMethod) {
+    if (filter?.paymentMethod && filter.paymentMethod !== 'All' && paymentMethod !== filter.paymentMethod) {
       return false;
     }
 
     // Search query
-    if (filter.searchQuery && filter.searchQuery.trim() !== '') {
+    if (filter?.searchQuery && filter.searchQuery.trim() !== '') {
       const q = filter.searchQuery.toLowerCase();
-      const matchNotes = tx.notes.toLowerCase().includes(q);
-      const matchCat = tx.category.toLowerCase().includes(q);
-      const matchAmt = tx.amount.toString().includes(q);
+      const matchNotes = notes.toLowerCase().includes(q);
+      const matchCat = category.toLowerCase().includes(q);
+      const matchAmt = amount.toString().includes(q);
       if (!matchNotes && !matchCat && !matchAmt) return false;
     }
 
@@ -59,32 +67,33 @@ export const filterTransactions = (
 };
 
 export const calculateSummary = (
-  allTransactions: Transaction[],
-  filteredTransactions: Transaction[]
+  allTransactions: Transaction[] = [],
+  filteredTransactions: Transaction[] = []
 ): SpendingSummary => {
-  // Cash balance is calculated from all-time physical cash transactions
-  const allCashAdded = allTransactions
-    .filter((tx) => tx.type === 'cash_added')
-    .reduce((sum, tx) => sum + tx.amount, 0);
+  const allTxs = Array.isArray(allTransactions) ? allTransactions : [];
+  const filtTxs = Array.isArray(filteredTransactions) ? filteredTransactions : [];
 
-  const allCashSpent = allTransactions
-    .filter((tx) => tx.type === 'cash_expense')
-    .reduce((sum, tx) => sum + tx.amount, 0);
+  const allCashAdded = allTxs
+    .filter((tx) => tx && tx.type === 'cash_added')
+    .reduce((sum, tx) => sum + (tx.amount || 0), 0);
+
+  const allCashSpent = allTxs
+    .filter((tx) => tx && tx.type === 'cash_expense')
+    .reduce((sum, tx) => sum + (tx.amount || 0), 0);
 
   const currentCashBalance = allCashAdded - allCashSpent;
 
-  // Filtered period statistics
-  const cashAdded = filteredTransactions
-    .filter((tx) => tx.type === 'cash_added')
-    .reduce((sum, tx) => sum + tx.amount, 0);
+  const cashAdded = filtTxs
+    .filter((tx) => tx && tx.type === 'cash_added')
+    .reduce((sum, tx) => sum + (tx.amount || 0), 0);
 
-  const cashSpent = filteredTransactions
-    .filter((tx) => tx.type === 'cash_expense')
-    .reduce((sum, tx) => sum + tx.amount, 0);
+  const cashSpent = filtTxs
+    .filter((tx) => tx && tx.type === 'cash_expense')
+    .reduce((sum, tx) => sum + (tx.amount || 0), 0);
 
-  const cardSpend = filteredTransactions
-    .filter((tx) => tx.type === 'card_expense')
-    .reduce((sum, tx) => sum + tx.amount, 0);
+  const cardSpend = filtTxs
+    .filter((tx) => tx && tx.type === 'card_expense')
+    .reduce((sum, tx) => sum + (tx.amount || 0), 0);
 
   const totalSpend = cashSpent + cardSpend;
   const outOfWallet = cashSpent;
@@ -100,27 +109,29 @@ export const calculateSummary = (
 };
 
 export const calculateCategoryBreakdown = (
-  transactions: Transaction[]
+  transactions: Transaction[] = []
 ): CategorySummary[] => {
-  const expenseTxs = transactions.filter(
-    (tx) => tx.type === 'cash_expense' || tx.type === 'card_expense'
+  const txs = Array.isArray(transactions) ? transactions : [];
+  const expenseTxs = txs.filter(
+    (tx) => tx && (tx.type === 'cash_expense' || tx.type === 'card_expense')
   );
 
-  const totalExpense = expenseTxs.reduce((sum, tx) => sum + tx.amount, 0);
+  const totalExpense = expenseTxs.reduce((sum, tx) => sum + (tx.amount || 0), 0);
 
   const map = new Map<Category, { amount: number; count: number }>();
   
-  // Seed with all configured categories
-  const currentDefs = loadStoredCategoryDefs();
+  const currentDefs = loadStoredCategoryDefs() || [];
   const defMap = new Map(currentDefs.map(d => [d.name, d]));
   currentDefs.forEach(({ name }) => {
-    map.set(name, { amount: 0, count: 0 });
+    if (name) map.set(name, { amount: 0, count: 0 });
   });
 
   expenseTxs.forEach((tx) => {
-    const existing = map.get(tx.category) || { amount: 0, count: 0 };
-    map.set(tx.category, {
-      amount: existing.amount + tx.amount,
+    const cat = tx.category || 'Other';
+    const amt = tx.amount || 0;
+    const existing = map.get(cat) || { amount: 0, count: 0 };
+    map.set(cat, {
+      amount: existing.amount + amt,
       count: existing.count + 1,
     });
   });
@@ -141,8 +152,9 @@ export const calculateCategoryBreakdown = (
 };
 
 export const calculateWeeklyDailyTrend = (
-  transactions: Transaction[]
+  transactions: Transaction[] = []
 ): { trendItems: DailyTrendItem[]; dayTotals: { [key: string]: number } } => {
+  const txs = Array.isArray(transactions) ? transactions : [];
   const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const templateDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -156,17 +168,19 @@ export const calculateWeeklyDailyTrend = (
     Sun: { cash: 0, card: 0, total: 0 },
   };
 
-  transactions.forEach((tx) => {
-    if (tx.type === 'cash_expense' || tx.type === 'card_expense') {
-      const d = new Date(tx.date + 'T12:00:00');
+  txs.forEach((tx) => {
+    if (tx && (tx.type === 'cash_expense' || tx.type === 'card_expense')) {
+      const amt = tx.amount || 0;
+      const dateStr = tx.date || new Date().toISOString().split('T')[0];
+      const d = new Date(dateStr + 'T12:00:00');
       const dayLabel = dayNames[d.getDay()];
       if (dayTotals[dayLabel]) {
         if (tx.type === 'cash_expense') {
-          dayTotals[dayLabel].cash += tx.amount;
+          dayTotals[dayLabel].cash += amt;
         } else {
-          dayTotals[dayLabel].card += tx.amount;
+          dayTotals[dayLabel].card += amt;
         }
-        dayTotals[dayLabel].total += tx.amount;
+        dayTotals[dayLabel].total += amt;
       }
     }
   });
