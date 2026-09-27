@@ -47,7 +47,7 @@ interface SheetManagerViewProps {
   onNotification?: (msg: string, type?: 'success' | 'info' | 'error') => void;
 }
 
-type SheetMenuTab = 'sync' | 'drive' | 'webhook';
+type SheetMenuTab = 'sync' | 'webhook';
 
 export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
   onBack,
@@ -74,28 +74,12 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
-  const [customClientIdInput, setCustomClientIdInput] = useState(() => localStorage.getItem('money_tracker_google_client_id') || '');
-  const [showClientIdConfig, setShowClientIdConfig] = useState(false);
-
-  // Auto load Drive sheets when clicking on the 'drive' tab
+  // Auto load Drive sheets when user is authenticated
   useEffect(() => {
-    if (accessToken && activeTab === 'drive' && spreadsheets.length === 0) {
+    if (accessToken && spreadsheets.length === 0) {
       loadDriveSheets();
     }
-  }, [accessToken, activeTab]);
-
-  const handleSaveCustomClientId = () => {
-    const trimmed = customClientIdInput.trim();
-    if (trimmed) {
-      localStorage.setItem('money_tracker_google_client_id', trimmed);
-      setSuccessMsg('Custom Google Client ID saved successfully!');
-      onNotification?.('Custom Google Client ID saved!', 'success');
-    } else {
-      localStorage.removeItem('money_tracker_google_client_id');
-      setSuccessMsg('Custom Client ID cleared. Using default.');
-      onNotification?.('Custom Client ID cleared.', 'info');
-    }
-  };
+  }, [accessToken]);
 
   const loadDriveSheets = async () => {
     if (!accessToken || accessToken === 'local_token') return;
@@ -122,7 +106,6 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
 
       // If token is missing, expired, or local, prompt for Google token
       if (!token || token === 'local_token' || token.length < 30) {
-        onNotification?.('Requesting Google Drive permission...', 'info');
         token = await requestGoogleAccessToken();
       }
 
@@ -130,7 +113,6 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
       try {
         created = await createMoneyTrackerSpreadsheet(token, title);
       } catch (err: any) {
-        // Retry with fresh token if expired, scope insufficient, or unauthenticated (401 / 403)
         const errStr = String(err?.message || err);
         if (
           errStr.includes('401') || 
@@ -139,7 +121,6 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
           errStr.includes('INSUFFICIENT') ||
           errStr.includes('PERMISSION_DENIED')
         ) {
-          onNotification?.('Requesting Google Drive permission popup...', 'info');
           try { localStorage.removeItem('money_tracker_access_token'); } catch (e) {}
           token = await requestGoogleAccessToken();
           created = await createMoneyTrackerSpreadsheet(token, title);
@@ -160,22 +141,21 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
 
       try { await onPushToSheet(); } catch (e) { console.warn(e); }
 
-      // Open newly created Google Sheet in a new tab for immediate verification!
       if (created.url) {
         window.open(created.url, '_blank');
       }
-
-      setActiveTab('sync');
     } catch (err: any) {
       console.error(err);
-      const msg = err.message || 'Could not create Google Sheet.';
-      if (msg.includes('invalid_client') || msg.includes('401') || msg.includes('OAuth client was not found')) {
-        setErrorMsg('OAuth Client Error (401: invalid_client). Google Cloud project Client ID not found. Use Apps Script Webhook (Option 1) or enter your Client ID below (Option 2).');
-        setShowClientIdConfig(true);
+      const raw = String(err?.message || err);
+      if (raw.includes('sheets.googleapis.com') || raw.includes('GOOGLE_SHEETS_API_DISABLED')) {
+        setErrorMsg('Google Sheets API is not enabled in your Google Cloud account. Please enable it to create sheets.');
+      } else if (raw.includes('drive.googleapis.com') || raw.includes('GOOGLE_DRIVE_API_DISABLED')) {
+        setErrorMsg('Google Drive API is not enabled in your Google Cloud account. Please enable it to create sheets.');
+      } else if (raw.includes('invalid_client') || raw.includes('401')) {
+        setErrorMsg('Google Sign-In session expired or permission denied. Please sign in again.');
       } else {
-        setErrorMsg(msg);
+        setErrorMsg('Unable to connect to Google Sheets. Please check your network connection and try again.');
       }
-      onNotification?.(msg, 'error');
     } finally {
       setIsCreating(false);
     }
@@ -191,13 +171,12 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
     onSetActiveSheet(meta);
     setSuccessMsg(`Connected to "${item.name}"`);
     onNotification?.(`Connected to "${item.name}"`, 'success');
-    setActiveTab('sync');
   };
 
   const handleSaveWebhook = () => {
     const url = webhookInput.trim();
     saveStoredWebhookUrl(url);
-    setSuccessMsg(url ? 'Apps Script Webhook URL saved!' : 'Webhook URL cleared.');
+    setSuccessMsg(url ? 'Apps Script Webhook URL saved successfully!' : 'Webhook URL cleared.');
     onNotification?.(url ? 'Webhook URL saved.' : 'Webhook cleared.', 'info');
   };
 
@@ -210,7 +189,7 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
 
   const handleDisconnect = () => {
     onSetActiveSheet(null);
-    setSuccessMsg('Google Sheet disconnected from this device.');
+    setSuccessMsg('Google Sheet disconnected.');
     onNotification?.('Google Sheet disconnected.', 'info');
   };
 
@@ -243,7 +222,7 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
       </div>
 
       <div className="max-w-2xl mx-auto px-4 pt-6 space-y-6">
-        {/* Main Card with Consistent Height */}
+        {/* Main Card */}
         <div className="bg-white rounded-3xl border border-slate-200/90 shadow-xs flex flex-col min-h-[580px] overflow-hidden">
           {/* Top Status Banner */}
           <div className="p-5 border-b border-slate-100 bg-gradient-to-r from-slate-50 via-white to-slate-50 flex items-center justify-between">
@@ -275,15 +254,15 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                 rel="noopener noreferrer"
                 className="hidden sm:inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-slate-700 text-xs font-semibold hover:bg-slate-50 shadow-2xs transition-colors"
               >
-                <span>Open</span>
+                <span>Open Sheet</span>
                 <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
               </a>
             )}
           </div>
 
-          {/* 3 Short Menu Tabs with Fixed Sizing */}
+          {/* Menu Tabs */}
           <div className="px-5 pt-3.5 pb-2 bg-white border-b border-slate-100">
-            <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-100/90 rounded-2xl">
+            <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-100/90 rounded-2xl">
               <button
                 type="button"
                 onClick={() => setActiveTab('sync')}
@@ -294,25 +273,7 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                 }`}
               >
                 <UploadCloud className="w-4 h-4 shrink-0 text-emerald-600" />
-                <span>Sync</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveTab('drive');
-                  if (accessToken && spreadsheets.length === 0) {
-                    loadDriveSheets();
-                  }
-                }}
-                className={`py-2 px-2 text-center font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                  activeTab === 'drive'
-                    ? 'bg-white text-emerald-800 shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <FolderOpen className="w-4 h-4 shrink-0 text-blue-600" />
-                <span>Drive</span>
+                <span>Google Drive Sync</span>
               </button>
 
               <button
@@ -325,35 +286,30 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                 }`}
               >
                 <Link className="w-4 h-4 shrink-0 text-indigo-600" />
-                <span>Webhook</span>
+                <span>Webhook Integration</span>
               </button>
             </div>
           </div>
 
-          {/* Body Content with Fixed Sizing */}
+          {/* Body Content */}
           <div className="p-5 sm:p-6 space-y-4 flex-1 flex flex-col justify-between">
             <div>
+              {/* Error Alert Banner */}
               {errorMsg && (
                 <div className="mb-4 p-4 bg-rose-50 border border-rose-200 rounded-2xl text-rose-800 text-xs space-y-2">
                   <div className="flex items-start gap-2">
                     <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
                     <div className="flex-1">
-                      <p className="font-bold">
-                        {errorMsg.includes('GOOGLE_SHEETS_API_DISABLED') || errorMsg.includes('Google Sheets API')
-                          ? 'Google Sheets API is Disabled in your GCP Project'
-                          : errorMsg.includes('GOOGLE_DRIVE_API_DISABLED') || errorMsg.includes('Google Drive API')
-                          ? 'Google Drive API is Disabled in your GCP Project'
-                          : 'Spreadsheet Request Error'}
+                      <p className="font-bold text-rose-900">
+                        Connection Update Required
                       </p>
                       <p className="mt-1 text-[11px] text-rose-700 leading-relaxed">
-                        {errorMsg.includes('API_DISABLED') || errorMsg.includes('403') || errorMsg.includes('SERVICE_DISABLED')
-                          ? 'Your Google Cloud Console project requires Google Sheets API and Google Drive API to be enabled before creating spreadsheets.'
-                          : errorMsg}
+                        {errorMsg}
                       </p>
                     </div>
                   </div>
 
-                  {(errorMsg.includes('API_DISABLED') || errorMsg.includes('403') || errorMsg.includes('SERVICE_DISABLED') || errorMsg.includes('Google Sheets API')) && (
+                  {(errorMsg.includes('Google Sheets API') || errorMsg.includes('Google Drive API')) && (
                     <div className="pt-2 border-t border-rose-200/80 flex flex-wrap items-center gap-2">
                       <a
                         href="https://console.cloud.google.com/apis/library/sheets.googleapis.com"
@@ -378,6 +334,7 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                 </div>
               )}
 
+              {/* Success Alert Banner */}
               {successMsg && (
                 <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-800 text-xs flex items-center gap-2">
                   <Check className="w-4 h-4 text-emerald-600 shrink-0" />
@@ -387,10 +344,10 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
 
               {/* ==================== TAB 1: SYNC ==================== */}
               {activeTab === 'sync' && (
-                <div className="space-y-4 animate-in fade-in duration-150">
-                  {activeSheet ? (
+                <div className="space-y-6 animate-in fade-in duration-150">
+                  {/* Connected Sheet Controls */}
+                  {activeSheet && (
                     <div className="space-y-4">
-                      {/* Active Sheet Card */}
                       <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-3">
                         <div className="flex items-start justify-between">
                           <div>
@@ -400,9 +357,6 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                             <h4 className="font-bold text-sm text-slate-900 mt-0.5">
                               {activeSheet.name}
                             </h4>
-                            <p className="text-[11px] text-slate-500 font-mono mt-0.5 truncate max-w-xs">
-                              ID: {activeSheet.id}
-                            </p>
                           </div>
                           <a
                             href={activeSheet.url}
@@ -417,17 +371,17 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
 
                         <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-slate-200">
                           <div>
-                            <span className="text-slate-400 block text-[10px]">Local Records</span>
+                            <span className="text-slate-400 block text-[10px]">Local Transactions</span>
                             <span className="font-bold text-slate-800">{totalTransactionsCount} items</span>
                           </div>
                           <div>
-                            <span className="text-slate-400 block text-[10px]">Lend/Debt</span>
+                            <span className="text-slate-400 block text-[10px]">Lend/Borrow</span>
                             <span className="font-bold text-slate-800">{totalLendCount} items</span>
                           </div>
                         </div>
                       </div>
 
-                      {/* Push & Pull Actions */}
+                      {/* Push & Pull Buttons */}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <button
                           type="button"
@@ -450,12 +404,11 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                         </button>
                       </div>
 
-                      {/* Disconnect Option */}
-                      <div className="pt-2 flex items-center justify-between">
+                      <div className="pt-1 flex items-center justify-between">
                         <button
                           type="button"
                           onClick={handleDisconnect}
-                          className="text-xs font-semibold text-rose-600 hover:text-rose-700 flex items-center gap-1.5 cursor-pointer py-1.5"
+                          className="text-xs font-semibold text-rose-600 hover:text-rose-700 flex items-center gap-1.5 cursor-pointer py-1"
                         >
                           <Unlink className="w-3.5 h-3.5" />
                           <span>Disconnect Sheet</span>
@@ -464,66 +417,27 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                         <button
                           type="button"
                           onClick={onExportCSV}
-                          className="text-xs font-semibold text-slate-600 hover:text-slate-900 flex items-center gap-1.5 cursor-pointer py-1.5"
+                          className="text-xs font-semibold text-slate-600 hover:text-slate-900 flex items-center gap-1.5 cursor-pointer py-1"
                         >
                           <Download className="w-3.5 h-3.5 text-slate-500" />
-                          <span>Download CSV</span>
+                          <span>Download CSV Backup</span>
                         </button>
                       </div>
                     </div>
-                  ) : (
-                    <div className="p-8 rounded-3xl bg-slate-50/70 border border-slate-200 text-center space-y-4">
-                      <div className="w-14 h-14 rounded-3xl bg-emerald-100 text-emerald-800 flex items-center justify-center mx-auto">
-                        <FileSpreadsheet className="w-7 h-7" />
-                      </div>
-                      <div className="max-w-xs mx-auto">
-                        <h4 className="font-bold text-slate-900 text-sm">
-                          Connect Google Sheets
-                        </h4>
-                        <p className="text-xs text-slate-500 mt-1">
-                          Select an existing spreadsheet from your Google Drive or create a new dedicated SpendDesk sheet with one click.
-                        </p>
-                      </div>
-
-                      <div className="flex flex-col sm:flex-row items-center justify-center gap-2 pt-2">
-                        {accessToken ? (
-                          <button
-                            type="button"
-                            onClick={() => setActiveTab('drive')}
-                            className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs cursor-pointer"
-                          >
-                            Browse Google Drive Sheets
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={onSignInDirect}
-                            className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-black text-white font-bold text-xs shadow-xs flex items-center justify-center gap-2 cursor-pointer"
-                          >
-                            <span>Sign in with Google</span>
-                          </button>
-                        )}
-                      </div>
-                    </div>
                   )}
-                </div>
-              )}
 
-              {/* ==================== TAB 2: DRIVE ==================== */}
-              {activeTab === 'drive' && (
-                <div className="space-y-4 animate-in fade-in duration-150">
-                  {/* Create New Sheet Section */}
+                  {/* Create New Dedicated Sheet Block */}
                   <div className="p-4 rounded-2xl bg-emerald-50/60 border border-emerald-200/80 space-y-3">
                     <h4 className="font-bold text-xs text-emerald-950 flex items-center gap-1.5">
                       <Plus className="w-3.5 h-3.5 text-emerald-700" />
-                      <span>Create New Dedicated Spreadsheet</span>
+                      <span>Create New SpendDesk Spreadsheet</span>
                     </h4>
                     <div className="flex flex-col sm:flex-row gap-2">
                       <input
                         type="text"
                         value={newTitle}
                         onChange={(e) => setNewTitle(e.target.value)}
-                        placeholder="e.g. My Expense Tracker 2026"
+                        placeholder="e.g. SpendDesk - My Wallet 2026"
                         className="flex-1 px-3 py-2 rounded-xl border border-emerald-300/80 bg-white text-xs font-medium text-slate-900 focus:outline-hidden"
                       />
                       <button
@@ -537,54 +451,11 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                     </div>
                   </div>
 
-                  {/* Custom Client ID Collapsible / Config Section */}
-                  <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-200/90 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <AlertCircle className="w-4 h-4 text-amber-700 shrink-0" />
-                        <h4 className="font-bold text-xs text-amber-950">
-                          Google OAuth Client ID Configuration
-                        </h4>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setShowClientIdConfig(!showClientIdConfig)}
-                        className="text-[11px] font-bold text-amber-800 hover:underline cursor-pointer"
-                      >
-                        {showClientIdConfig ? 'Hide Settings' : 'Configure Custom Client ID'}
-                      </button>
-                    </div>
-
-                    {(showClientIdConfig || errorMsg.includes('invalid_client')) && (
-                      <div className="space-y-2 pt-1 border-t border-amber-200/60 animate-in fade-in duration-150">
-                        <p className="text-[11px] text-amber-900/90 leading-relaxed">
-                          If Google OAuth shows <code className="bg-amber-100 px-1 py-0.5 rounded font-mono font-bold">Error 401: invalid_client</code>, enter your own Google OAuth 2.0 Web Client ID from <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer" className="underline font-bold text-amber-950">Google Cloud Console</a>:
-                        </p>
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            value={customClientIdInput}
-                            onChange={(e) => setCustomClientIdInput(e.target.value)}
-                            placeholder="e.g. 123456789-abc.apps.googleusercontent.com"
-                            className="flex-1 px-3 py-2 bg-white border border-amber-300 rounded-xl text-xs font-mono text-slate-900 focus:outline-hidden"
-                          />
-                          <button
-                            type="button"
-                            onClick={handleSaveCustomClientId}
-                            className="px-4 py-2 bg-amber-800 hover:bg-amber-900 text-white font-bold text-xs rounded-xl cursor-pointer"
-                          >
-                            Save Client ID
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Search Existing Sheets in Drive */}
-                  <div className="space-y-2">
+                  {/* Existing Drive Sheets Selection List */}
+                  <div className="space-y-2 pt-2 border-t border-slate-100">
                     <div className="flex items-center justify-between">
                       <h4 className="font-bold text-xs text-slate-700">
-                        Spreadsheets in your Drive
+                        Connect Existing Google Drive Sheet
                       </h4>
                       <button
                         type="button"
@@ -597,65 +468,82 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                       </button>
                     </div>
 
-                    <div className="relative">
-                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3" />
-                      <input
-                        type="text"
-                        value={driveSearch}
-                        onChange={(e) => setDriveSearch(e.target.value)}
-                        placeholder="Search spreadsheets..."
-                        className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-hidden"
-                      />
-                    </div>
+                    {accessToken ? (
+                      <>
+                        <div className="relative">
+                          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3" />
+                          <input
+                            type="text"
+                            value={driveSearch}
+                            onChange={(e) => setDriveSearch(e.target.value)}
+                            placeholder="Search your Google Drive spreadsheets..."
+                            className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-hidden"
+                          />
+                        </div>
 
-                    <div className="max-h-52 overflow-y-auto space-y-1.5 pr-1 divide-y divide-slate-100">
-                      {loadingList ? (
-                        <div className="p-6 text-center text-xs text-slate-400">
-                          Loading spreadsheets from Google Drive...
-                        </div>
-                      ) : filteredDriveSheets.length === 0 ? (
-                        <div className="p-6 text-center text-xs text-slate-400">
-                          {accessToken ? 'No spreadsheets found matching your search.' : 'Sign in with Google to view your Drive sheets.'}
-                        </div>
-                      ) : (
-                        filteredDriveSheets.map((item) => (
-                          <div
-                            key={item.id}
-                            className="pt-2 flex items-center justify-between hover:bg-slate-50 p-2 rounded-xl transition-colors"
-                          >
-                            <div className="min-w-0 pr-2">
-                              <span className="font-bold text-xs text-slate-800 block truncate">
-                                {item.name}
-                              </span>
-                              <span className="text-[10px] text-slate-400 block">
-                                Modified: {item.modifiedTime ? new Date(item.modifiedTime).toLocaleDateString() : 'N/A'}
-                              </span>
+                        <div className="max-h-52 overflow-y-auto space-y-1.5 pr-1 divide-y divide-slate-100">
+                          {loadingList ? (
+                            <div className="p-6 text-center text-xs text-slate-400">
+                              Loading spreadsheets from your Google Drive...
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => handleSelectExisting(item)}
-                              className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 text-xs font-bold cursor-pointer transition-colors shrink-0"
-                            >
-                              Connect
-                            </button>
-                          </div>
-                        ))
-                      )}
-                    </div>
+                          ) : filteredDriveSheets.length === 0 ? (
+                            <div className="p-6 text-center text-xs text-slate-400">
+                              No spreadsheets found matching your search.
+                            </div>
+                          ) : (
+                            filteredDriveSheets.map((item) => (
+                              <div
+                                key={item.id}
+                                className="pt-2 flex items-center justify-between hover:bg-slate-50 p-2 rounded-xl transition-colors"
+                              >
+                                <div className="min-w-0 pr-2">
+                                  <span className="font-bold text-xs text-slate-800 block truncate">
+                                    {item.name}
+                                  </span>
+                                  <span className="text-[10px] text-slate-400 block">
+                                    Modified: {item.modifiedTime ? new Date(item.modifiedTime).toLocaleDateString() : 'N/A'}
+                                  </span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleSelectExisting(item)}
+                                  className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 text-xs font-bold cursor-pointer transition-colors shrink-0"
+                                >
+                                  Connect
+                                </button>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="p-6 rounded-2xl bg-slate-50 border border-slate-200 text-center space-y-3">
+                        <p className="text-xs text-slate-500">
+                          Sign in with Google to automatically browse and connect existing spreadsheets from your Drive.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={onSignInDirect}
+                          className="px-5 py-2 rounded-xl bg-slate-900 hover:bg-black text-white font-bold text-xs shadow-xs inline-flex items-center gap-2 cursor-pointer"
+                        >
+                          <span>Sign in with Google</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
 
-              {/* ==================== TAB 3: WEBHOOK ==================== */}
+              {/* ==================== TAB 2: WEBHOOK ==================== */}
               {activeTab === 'webhook' && (
                 <div className="space-y-4 animate-in fade-in duration-150">
                   <div className="p-4 rounded-2xl bg-indigo-50/60 border border-indigo-200/80 space-y-2">
                     <h4 className="font-bold text-xs text-indigo-950 flex items-center gap-1.5">
                       <Link className="w-3.5 h-3.5 text-indigo-700" />
-                      <span>Google Apps Script Webhook (OAuth-free)</span>
+                      <span>Google Apps Script Webhook (Zero OAuth Setup)</span>
                     </h4>
                     <p className="text-[11px] text-indigo-900/80 leading-relaxed">
-                      If you cannot sign in with Google or prefer automated background syncing, you can deploy a free Google Apps Script web app and paste its URL below.
+                      If you prefer automatic background syncing without popup logins, deploy a free Google Apps Script web app and paste its URL below.
                     </p>
                   </div>
 
@@ -683,7 +571,7 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
 
                   <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
                     <span className="text-xs text-slate-500 font-medium">
-                      Google Apps Script Code Template
+                      Apps Script Code Template
                     </span>
                     <button
                       type="button"
@@ -711,7 +599,7 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
             <div className="pt-4 border-t border-slate-100 text-[11px] text-slate-400 flex items-center justify-between">
               <span className="flex items-center gap-1">
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Encrypted Client-Side Storage</span>
+                <span>Encrypted Local & Cloud Sync</span>
               </span>
               <span>All records synced safely</span>
             </div>
@@ -721,3 +609,4 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
     </div>
   );
 };
+

@@ -151,6 +151,22 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  // Auto-sync User Profile details (Name, Email, Google Avatar) when signed in
+  useEffect(() => {
+    if (user) {
+      setUserProfile((prev) => {
+        const next = {
+          ...prev,
+          name: user.displayName || prev.name,
+          email: user.email || prev.email,
+          avatar: user.photoURL || prev.avatar,
+        };
+        saveStoredProfile(next);
+        return next;
+      });
+    }
+  }, [user]);
+
   // Save transactions to local storage whenever they change
   useEffect(() => {
     saveStoredTransactions(transactions);
@@ -160,6 +176,16 @@ export default function App() {
   useEffect(() => {
     saveStoredLendItems(lendItems);
   }, [lendItems]);
+
+  // Automatic background push to connected Google Sheet whenever data changes
+  useEffect(() => {
+    if (activeSheet && accessToken && accessToken !== 'local_token') {
+      const timer = setTimeout(() => {
+        handlePushToSheet();
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [transactions, lendItems, activeSheet, accessToken]);
 
   // Scroll to top whenever activeTab changes
   useEffect(() => {
@@ -187,23 +213,41 @@ export default function App() {
     saveStoredSheetMeta(meta);
   };
 
-  // Google Login handler via Supabase OAuth
+  // Google Login handler via GIS (shows "to continue to SpendDesk") with Supabase fallback
   const handleSignIn = async () => {
     try {
-      const res = await googleSignIn();
-      if (res.success) {
-        if (res.user) {
-          setUser(res.user);
-          showNotification('Signed in with Supabase!', 'success');
-        } else {
-          showNotification('Redirecting to Google Sign-In...', 'info');
+      showNotification('Opening Google Sign-In...', 'info');
+      const token = await requestGoogleAccessToken();
+      if (token) {
+        setAccessToken(token);
+        const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const profile = await res.json();
+          const authedUser = {
+            displayName: profile.name || profile.given_name || 'User',
+            email: profile.email || '',
+            photoURL: profile.picture || undefined,
+          };
+          setUser(authedUser);
+          try {
+            localStorage.setItem('money_tracker_user', JSON.stringify({ name: authedUser.displayName, email: authedUser.email, picture: authedUser.photoURL }));
+            localStorage.setItem('money_tracker_access_token', token);
+          } catch (e) {}
+          showNotification(`Signed in as ${authedUser.displayName}!`, 'success');
+          return;
         }
-      } else {
-        showNotification(res.errorMessage || 'Sign-in failed.', 'error');
       }
     } catch (err: any) {
-      console.error(err);
-      showNotification('Sign-in failed. Please check Supabase settings.', 'error');
+      console.warn('GIS auth fallback to Supabase:', err);
+      try {
+        const res = await googleSignIn();
+        if (res.success && res.user) {
+          setUser(res.user);
+          showNotification('Signed in with Google!', 'success');
+        }
+      } catch (e) {}
     }
   };
 
