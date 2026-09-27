@@ -35,8 +35,17 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
   const [isEditingPhone, setIsEditingPhone] = useState(false);
   const [phoneInput, setPhoneInput] = useState(alertPhone);
 
-  const isBalanceNegative = summary.currentCashBalance < 0;
-  const isBalanceLow = summary.currentCashBalance < 1500;
+  const safeSummary: SpendingSummary = summary || {
+    currentCashBalance: 0,
+    cashAdded: 0,
+    cashSpent: 0,
+    cardSpend: 0,
+    totalSpend: 0,
+    outOfWallet: 0,
+  };
+
+  const isBalanceNegative = safeSummary.currentCashBalance < 0;
+  const isBalanceLow = safeSummary.currentCashBalance < 1500;
 
   const handleSavePhone = (e: React.FormEvent) => {
     e.preventDefault();
@@ -77,7 +86,7 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
           </p>
 
           <div className="mt-1 text-2xl sm:text-4xl font-extrabold tracking-tight text-white flex items-baseline gap-2">
-            <span>{formatCurrency(summary.currentCashBalance, currency)}</span>
+            <span>{formatCurrency(safeSummary.currentCashBalance, currency)}</span>
           </div>
 
           {/* Quick Action Buttons: Cash In, Spend, and sleek SMS Icon Button */}
@@ -178,7 +187,7 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
             CASH ADDED
           </span>
           <p className="text-base sm:text-lg font-bold text-slate-900 mt-0.5 truncate">
-            {formatCurrency(summary.cashAdded, currency)}
+            {formatCurrency(safeSummary.cashAdded, currency)}
           </p>
         </div>
 
@@ -194,7 +203,7 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
             CASH SPENT
           </span>
           <p className="text-base sm:text-lg font-bold text-red-700 mt-0.5 truncate">
-            {formatCurrency(summary.cashSpent, currency)}
+            {formatCurrency(safeSummary.cashSpent, currency)}
           </p>
         </div>
 
@@ -210,7 +219,7 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
             CARD SPEND
           </span>
           <p className="text-base sm:text-lg font-bold text-blue-600 mt-0.5 truncate">
-            {formatCurrency(summary.cardSpend, currency)}
+            {formatCurrency(safeSummary.cardSpend, currency)}
           </p>
         </div>
 
@@ -226,7 +235,7 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
             TOTAL SPEND
           </span>
           <p className="text-base sm:text-lg font-bold text-slate-900 mt-0.5 truncate">
-            {formatCurrency(summary.totalSpend, currency)}
+            {formatCurrency(safeSummary.totalSpend, currency)}
           </p>
         </div>
       </div>
