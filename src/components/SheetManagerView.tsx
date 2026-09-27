@@ -74,12 +74,28 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
+  const [customClientIdInput, setCustomClientIdInput] = useState(() => localStorage.getItem('money_tracker_google_client_id') || '');
+  const [showClientIdConfig, setShowClientIdConfig] = useState(false);
+
   // Auto load Drive sheets when clicking on the 'drive' tab
   useEffect(() => {
     if (accessToken && activeTab === 'drive' && spreadsheets.length === 0) {
       loadDriveSheets();
     }
   }, [accessToken, activeTab]);
+
+  const handleSaveCustomClientId = () => {
+    const trimmed = customClientIdInput.trim();
+    if (trimmed) {
+      localStorage.setItem('money_tracker_google_client_id', trimmed);
+      setSuccessMsg('Custom Google Client ID saved successfully!');
+      onNotification?.('Custom Google Client ID saved!', 'success');
+    } else {
+      localStorage.removeItem('money_tracker_google_client_id');
+      setSuccessMsg('Custom Client ID cleared. Using default.');
+      onNotification?.('Custom Client ID cleared.', 'info');
+    }
+  };
 
   const loadDriveSheets = async () => {
     if (!accessToken || accessToken === 'local_token') return;
@@ -152,8 +168,14 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
       setActiveTab('sync');
     } catch (err: any) {
       console.error(err);
-      setErrorMsg(err.message || 'Could not create Google Sheet.');
-      onNotification?.(err.message || 'Could not create Google Sheet.', 'error');
+      const msg = err.message || 'Could not create Google Sheet.';
+      if (msg.includes('invalid_client') || msg.includes('401') || msg.includes('OAuth client was not found')) {
+        setErrorMsg('OAuth Client Error (401: invalid_client). Google Cloud project Client ID not found. Use Apps Script Webhook (Option 1) or enter your Client ID below (Option 2).');
+        setShowClientIdConfig(true);
+      } else {
+        setErrorMsg(msg);
+      }
+      onNotification?.(msg, 'error');
     } finally {
       setIsCreating(false);
     }
@@ -475,6 +497,49 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                         {isCreating ? 'Creating...' : 'Create & Link'}
                       </button>
                     </div>
+                  </div>
+
+                  {/* Custom Client ID Collapsible / Config Section */}
+                  <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-200/90 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4 text-amber-700 shrink-0" />
+                        <h4 className="font-bold text-xs text-amber-950">
+                          Google OAuth Client ID Configuration
+                        </h4>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowClientIdConfig(!showClientIdConfig)}
+                        className="text-[11px] font-bold text-amber-800 hover:underline cursor-pointer"
+                      >
+                        {showClientIdConfig ? 'Hide Settings' : 'Configure Custom Client ID'}
+                      </button>
+                    </div>
+
+                    {(showClientIdConfig || errorMsg.includes('invalid_client')) && (
+                      <div className="space-y-2 pt-1 border-t border-amber-200/60 animate-in fade-in duration-150">
+                        <p className="text-[11px] text-amber-900/90 leading-relaxed">
+                          If Google OAuth shows <code className="bg-amber-100 px-1 py-0.5 rounded font-mono font-bold">Error 401: invalid_client</code>, enter your own Google OAuth 2.0 Web Client ID from <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer" className="underline font-bold text-amber-950">Google Cloud Console</a>:
+                        </p>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={customClientIdInput}
+                            onChange={(e) => setCustomClientIdInput(e.target.value)}
+                            placeholder="e.g. 123456789-abc.apps.googleusercontent.com"
+                            className="flex-1 px-3 py-2 bg-white border border-amber-300 rounded-xl text-xs font-mono text-slate-900 focus:outline-hidden"
+                          />
+                          <button
+                            type="button"
+                            onClick={handleSaveCustomClientId}
+                            className="px-4 py-2 bg-amber-800 hover:bg-amber-900 text-white font-bold text-xs rounded-xl cursor-pointer"
+                          >
+                            Save Client ID
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Search Existing Sheets in Drive */}
