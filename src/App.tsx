@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { 
   initSupabaseAuth as initAuth, 
   signInWithGoogleSupabase as googleSignIn, 
