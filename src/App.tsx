@@ -288,7 +288,20 @@ export default function App() {
       }
     } catch (err: any) {
       console.error('Failed to fetch from sheet:', err);
-      showNotification('Could not read from sheet: ' + (err.message || err), 'error');
+      const raw = String(err?.message || err);
+      const is401 = raw.includes('401') || 
+                    raw.includes('UNAUTHENTICATED') || 
+                    raw.includes('invalid_client') || 
+                    raw.includes('invalid_credentials') ||
+                    raw.includes('INSUFFICIENT');
+
+      if (is401) {
+        try { localStorage.removeItem('money_tracker_access_token'); } catch (e) {}
+        setAccessToken(null);
+        showNotification('Google login session expired. Please click "Sign In" to reconnect & sync live data.', 'error');
+      } else {
+        showNotification('Could not read from sheet. Please check your network connection.', 'error');
+      }
     } finally {
       setIsSyncing(false);
     }
@@ -302,6 +315,33 @@ export default function App() {
       handlePullFromSheet(activeSheet.id, accessToken);
     }
   }, [activeSheet?.id, accessToken, handlePullFromSheet]);
+
+  // Auto-discover Drive Sheet if logged in but no active sheet is set
+  useEffect(() => {
+    const autoDiscoverDriveSheet = async () => {
+      if (accessToken && accessToken !== 'local_token' && !activeSheet) {
+        try {
+          const driveSheets = await listUserSpreadsheets(accessToken);
+          if (driveSheets.length > 0) {
+            const targetSheet = driveSheets.find(s => s.name.toLowerCase().includes('spenddesk')) || driveSheets[0];
+            if (targetSheet) {
+              const meta: GoogleSheetMeta = {
+                id: targetSheet.id,
+                name: targetSheet.name,
+                url: targetSheet.webViewLink || `https://docs.google.com/spreadsheets/d/${targetSheet.id}/edit`,
+                lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              };
+              handleSetActiveSheet(meta);
+              await handlePullFromSheet(targetSheet.id, accessToken);
+            }
+          }
+        } catch (e) {
+          console.warn('Startup drive discover error:', e);
+        }
+      }
+    };
+    autoDiscoverDriveSheet();
+  }, [accessToken, activeSheet, handlePullFromSheet]);
 
   // Google Login handler via GIS with Drive Auto-Sync across browsers
   const handleSignIn = async () => {
@@ -367,6 +407,7 @@ export default function App() {
     await logout();
     setUser(null);
     setAccessToken(null);
+    try { localStorage.removeItem('money_tracker_access_token'); } catch (e) {}
     showNotification('Signed out. Local data preserved.', 'info');
   };
 
@@ -395,11 +436,19 @@ export default function App() {
       showNotification(`Synced all records to "${activeSheet.name}"!`, 'success');
     } catch (err: any) {
       console.error('Failed to sync to Google Sheet:', err);
-      if (String(err).includes('401')) {
-        showNotification('Google session expired. Please sign in again.', 'error');
-        handleSignIn();
+      const raw = String(err?.message || err);
+      const is401 = raw.includes('401') || 
+                    raw.includes('UNAUTHENTICATED') || 
+                    raw.includes('invalid_client') || 
+                    raw.includes('invalid_credentials') ||
+                    raw.includes('INSUFFICIENT');
+
+      if (is401) {
+        try { localStorage.removeItem('money_tracker_access_token'); } catch (e) {}
+        setAccessToken(null);
+        showNotification('Google login session expired. Please sign in to reconnect & sync.', 'error');
       } else {
-        showNotification('Could not sync to Google Sheet: ' + err.message, 'error');
+        showNotification('Could not sync to Google Sheet: ' + (err.message || 'Network error'), 'error');
       }
     } finally {
       setIsSyncing(false);
