@@ -17,17 +17,14 @@ import {
   CheckCircle2,
   ShieldCheck,
   Unlink,
-  Clock3,
   Table2,
-  HandCoins,
-  Palette
+  HandCoins
 } from 'lucide-react';
 import { GoogleSheetMeta, LendItem, Transaction } from '../types/finance';
 import { 
   listUserSpreadsheets, 
   createMoneyTrackerSpreadsheet, 
   requestGoogleAccessToken,
-  applySpendDeskSheetDesign,
   DriveSpreadsheetItem,
   GOOGLE_APPS_SCRIPT_TEMPLATE
 } from '../lib/sheetsApi';
@@ -77,7 +74,6 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
   const [loadingList, setLoadingList] = useState(false);
   const [newTitle, setNewTitle] = useState('SpendDesk - Cash & Card');
   const [isCreating, setIsCreating] = useState(false);
-  const [isApplyingDesign, setIsApplyingDesign] = useState(false);
   const [webhookInput, setWebhookInput] = useState(() => loadStoredWebhookUrl());
   const [copiedScript, setCopiedScript] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -200,28 +196,6 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
     onSetActiveSheet(null);
     setSuccessMsg('Google Sheet disconnected.');
     onNotification?.('Google Sheet disconnected.', 'info');
-  };
-
-  const handleApplySheetDesign = async () => {
-    if (!activeSheet) return;
-    setIsApplyingDesign(true);
-    setErrorMsg('');
-    setSuccessMsg('');
-    try {
-      let token = accessToken;
-      if (!token || token === 'local_token' || token.length < 30) {
-        token = await requestGoogleAccessToken();
-      }
-      await applySpendDeskSheetDesign(token, activeSheet.id);
-      const message = 'New SpendDesk design applied to Dashboard, Transactions and Lend & Borrow.';
-      setSuccessMsg(message);
-      onNotification?.(message, 'success');
-    } catch (err: any) {
-      console.error('Failed to apply Google Sheet design:', err);
-      setErrorMsg(err?.message || 'Could not apply the spreadsheet design. Please sign in again and retry.');
-    } finally {
-      setIsApplyingDesign(false);
-    }
   };
 
   const filteredDriveSheets = spreadsheets.filter((s) =>
@@ -428,16 +402,6 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                           <span>Pull from Sheet</span>
                         </button>
                       </div>
-
-                      <button
-                        type="button"
-                        onClick={handleApplySheetDesign}
-                        disabled={isApplyingDesign || isSyncing}
-                        className="w-full p-3.5 rounded-2xl border border-indigo-200 bg-indigo-50/70 hover:bg-indigo-100 text-indigo-900 font-bold text-xs flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 transition-colors"
-                      >
-                        <Palette className={`w-4 h-4 text-indigo-600 ${isApplyingDesign ? 'animate-pulse' : ''}`} />
-                        <span>{isApplyingDesign ? 'Applying table design…' : 'Apply premium design to all 3 tabs'}</span>
-                      </button>
 
                       <div className="pt-1 flex items-center justify-between">
                         <button
