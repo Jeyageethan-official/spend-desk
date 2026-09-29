@@ -1,4 +1,4 @@
-const CACHE_NAME = 'spenddesk-cache-v5';
+const CACHE_NAME = 'spenddesk-cache-v10';
 
 self.addEventListener('install', () => {
   self.skipWaiting();
