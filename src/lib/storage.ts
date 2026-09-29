@@ -252,7 +252,13 @@ const DEFAULT_TELEGRAM_ALERT_CONFIG: TelegramAlertConfig = {
 
 export const loadStoredTelegramAlertConfig = (email?: string | null): TelegramAlertConfig => {
   try {
-    const raw = localStorage.getItem(getScopedKey(TELEGRAM_ALERT_KEY, email));
+    const key = getScopedKey(TELEGRAM_ALERT_KEY, email);
+    let raw = localStorage.getItem(key);
+    if (!raw && email) {
+      raw = localStorage.getItem(getScopedKey(TELEGRAM_ALERT_KEY, 'guest')) || localStorage.getItem(TELEGRAM_ALERT_KEY);
+    } else if (!raw) {
+      raw = localStorage.getItem(TELEGRAM_ALERT_KEY);
+    }
     if (!raw) return DEFAULT_TELEGRAM_ALERT_CONFIG;
     const parsed = JSON.parse(raw);
     return {
@@ -266,10 +272,13 @@ export const loadStoredTelegramAlertConfig = (email?: string | null): TelegramAl
 
 export const saveStoredTelegramAlertConfig = (config: TelegramAlertConfig, email?: string | null) => {
   try {
-    localStorage.setItem(
-      getScopedKey(TELEGRAM_ALERT_KEY, email),
-      JSON.stringify({ enabled: Boolean(config.enabled), chatId: config.chatId.trim() })
-    );
+    const key = getScopedKey(TELEGRAM_ALERT_KEY, email);
+    const data = JSON.stringify({ enabled: Boolean(config.enabled), chatId: config.chatId.trim() });
+    localStorage.setItem(key, data);
+    localStorage.setItem(TELEGRAM_ALERT_KEY, data);
+    if (!email || email === 'guest') {
+      localStorage.setItem(getScopedKey(TELEGRAM_ALERT_KEY, 'guest'), data);
+    }
   } catch (e) {
     console.error('Failed to save Telegram alert settings:', e);
   }

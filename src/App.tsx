@@ -39,7 +39,8 @@ import {
   calculateSummary, 
   calculateCategoryBreakdown, 
   calculateWeeklyDailyTrend, 
-  filterTransactions 
+  filterTransactions,
+  formatCurrency 
 } from './lib/calculations';
 import { 
   syncDashboardStats, 
@@ -302,7 +303,13 @@ export default function App() {
     });
 
     setAlertPhone(loadStoredAlertPhone(scope));
-    setTelegramAlertConfig(loadStoredTelegramAlertConfig(scope));
+
+    const storedTelegram = loadStoredTelegramAlertConfig(scope);
+    setTelegramAlertConfig((prev) => {
+      const cfg = (storedTelegram && storedTelegram.chatId) ? storedTelegram : prev;
+      if (cfg && cfg.chatId) saveStoredTelegramAlertConfig(cfg, scope);
+      return cfg;
+    });
 
     const storedSheet = loadStoredSheetMeta(scope);
     setActiveSheet((prev) => {
@@ -443,9 +450,20 @@ export default function App() {
     const nextPhone = typeof workspace.alertPhone === 'string' ? workspace.alertPhone : '';
     setAlertPhone(nextPhone);
     saveStoredAlertPhone(nextPhone, scope);
-    const nextTelegram = workspace.telegramAlertConfig || { enabled: false, chatId: '' };
-    setTelegramAlertConfig(nextTelegram);
-    saveStoredTelegramAlertConfig(nextTelegram, scope);
+    setTelegramAlertConfig((prev) => {
+      const remote = workspace.telegramAlertConfig;
+      if (remote && remote.chatId) {
+        saveStoredTelegramAlertConfig(remote, scope);
+        return remote;
+      }
+      if (prev && prev.chatId) {
+        saveStoredTelegramAlertConfig(prev, scope);
+        return prev;
+      }
+      const finalCfg = remote || { enabled: false, chatId: '' };
+      saveStoredTelegramAlertConfig(finalCfg, scope);
+      return finalCfg;
+    });
 
     setActiveSheet((prev) => {
       const sheet = workspace.activeSheet || prev;
@@ -549,13 +567,16 @@ export default function App() {
   }, [transactions, lendItems, budgetConfig, alertPhone, telegramAlertConfig, activeSheet, userProfile, currency, user?.email, cloudSyncReady, queueCloudSync]);
 
   const handleSendTelegramTest = async (chatId: string) => {
-    if (!user?.email || !chatId.trim()) {
-      throw new Error('Sign in with Google and enter a Telegram chat ID first.');
+    if (!chatId.trim()) {
+      throw new Error('Enter a Telegram chat ID first.');
     }
+    const sampleTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+    const today = new Date().toISOString().split('T')[0];
+    const balFormatted = formatCurrency(overallSummary.currentCashBalance, currency);
     await sendTelegramAlert({
       chatId: chatId.trim(),
-      title: 'SpendDesk test alert',
-      message: 'Telegram is connected. New transactions will alert you here automatically.',
+      title: 'SpendDesk Alert',
+      message: `[SpendDesk Alert]\nCash Added to Wallet: ${currency} 500.00\non ${today} at ${sampleTime}.\nCurrent Balance: ${balFormatted}.`,
     });
   };
 
@@ -851,7 +872,8 @@ export default function App() {
     }
 
     if (isNewTransaction && telegramAlertConfig.enabled && telegramAlertConfig.chatId) {
-      const telegramAlert = generateTransactionTelegramAlert(recordedTx, currency);
+      const currentSum = calculateSummary(updatedTxs, updatedTxs);
+      const telegramAlert = generateTransactionTelegramAlert(recordedTx, currency, currentSum.currentCashBalance);
       void sendTelegramAlert({ ...telegramAlert, chatId: telegramAlertConfig.chatId })
         .then(() => showNotification('Telegram alert delivered.', 'success'))
         .catch((error) => {

@@ -1,4 +1,5 @@
 import { Transaction } from '../types/finance';
+import { formatCurrency } from './calculations';
 import { getSupabase } from './supabase';
 
 export interface TelegramAlertPayload {
@@ -7,20 +8,33 @@ export interface TelegramAlertPayload {
   message: string;
 }
 
-const formatAmount = (amount: number, currency: string) =>
-  `${currency} ${Math.abs(amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+export const generateTransactionTelegramAlert = (
+  tx: Transaction,
+  currency: string = 'Rs',
+  currentBalance?: number
+): TelegramAlertPayload => {
+  const typeText = 
+    tx.type === 'cash_added' ? 'Cash Added to Wallet' :
+    tx.type === 'card_expense' ? 'Card Spend' : 'Cash Spent';
 
-export const generateTransactionTelegramAlert = (tx: Transaction, currency: string): TelegramAlertPayload => {
-  const isIncome = tx.type === 'cash_added';
-  const direction = isIncome ? 'Income recorded' : 'Expense recorded';
-  const signedAmount = `${isIncome ? '+' : '-'}${formatAmount(tx.amount, currency)}`;
-  const method = tx.paymentMethod || 'Cash';
-  const note = tx.notes?.trim() ? `\n${tx.notes.trim()}` : '';
+  const formattedAmt = formatCurrency(tx.amount, currency);
+  const timeStr = tx.time || new Date(tx.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+  const noteStr = tx.notes?.trim() ? ` (${tx.notes.trim()})` : '';
+
+  const messageLines = [
+    `[SpendDesk Alert]`,
+    `${typeText}: ${formattedAmt}${noteStr}`,
+    `on ${tx.date} at ${timeStr}.`,
+  ];
+
+  if (typeof currentBalance === 'number') {
+    messageLines.push(`Current Balance: ${formatCurrency(currentBalance, currency)}.`);
+  }
 
   return {
     chatId: '',
-    title: 'SpendDesk alert',
-    message: `${direction}\n${signedAmount} · ${tx.category} · ${method}${note}`,
+    title: 'SpendDesk Alert',
+    message: messageLines.join('\n'),
   };
 };
 
