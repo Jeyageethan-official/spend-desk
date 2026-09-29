@@ -1,4 +1,4 @@
-const CACHE_NAME = 'spenddesk-cache-v3';
+const CACHE_NAME = 'spenddesk-cache-v2';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
