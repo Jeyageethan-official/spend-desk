@@ -11,6 +11,7 @@ import {
   Upload,
   FileSpreadsheet, 
   Phone, 
+  BellRing,
   Info, 
   Sliders, 
   Database,
@@ -25,7 +26,9 @@ import {
   X,
   Camera,
   User as UserIcon,
-  Sparkles
+  Sparkles,
+  FileText,
+  Pencil
 } from 'lucide-react';
 import { ICON_CATALOG, getCategoryIcon } from '../lib/icons';
 import { 
@@ -40,6 +43,8 @@ import { GoogleSheetMeta, BudgetConfig, Transaction, LendItem } from '../types/f
 import { formatCurrency } from '../lib/calculations';
 import { ConfirmModal } from './ConfirmModal';
 import { UserProfile } from '../lib/storage';
+import { TelegramAlertConfig } from '../lib/storage';
+import { generateBankStatementPdf } from '../lib/statementPdf';
 
 interface SettingsViewProps {
   onBack: () => void;
@@ -49,11 +54,18 @@ interface SettingsViewProps {
   onUpdateBudgetConfig: (config: BudgetConfig) => void;
   alertPhone: string;
   onUpdateAlertPhone: (phone: string) => void;
+  storageEmail?: string | null;
+  telegramAlertConfig: TelegramAlertConfig;
+  onUpdateTelegramAlertConfig: (config: TelegramAlertConfig) => void;
+  onSendTelegramTest: (chatId: string) => Promise<void>;
+  onCloudSyncRequested?: () => void;
+  cloudWorkspaceRevision?: number;
   activeSheet: GoogleSheetMeta | null;
   onOpenSyncModal: () => void;
   onExportCSV: () => void;
   transactions: Transaction[];
   lendItems: LendItem[];
+  user?: any;
   userProfile?: UserProfile;
   onUpdateProfile?: (updated: Partial<UserProfile>) => void;
   onResetAllData?: () => void;
@@ -83,11 +95,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onUpdateBudgetConfig,
   alertPhone,
   onUpdateAlertPhone,
+  storageEmail,
+  telegramAlertConfig,
+  onUpdateTelegramAlertConfig,
+  onSendTelegramTest,
+  onCloudSyncRequested,
+  cloudWorkspaceRevision = 0,
   activeSheet,
   onOpenSyncModal,
   onExportCSV,
   transactions,
   lendItems,
+  user,
   userProfile,
   onUpdateProfile,
   onResetAllData,
@@ -95,8 +114,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   initialSection = 'main',
   onNotification,
 }) => {
+  const workspaceEmail = storageEmail || user?.email || 'guest';
   // Navigation: 'main' is the WhatsApp-style Profile + options menu; clicking an option opens its sub-page
-  const [currentSubPage, setCurrentSubPage] = useState<'main' | 'profile' | 'categories' | 'preferences' | 'budget' | 'cloud' | 'data' | 'about'>(
+  const [currentSubPage, setCurrentSubPage] = useState<'main' | 'profile' | 'categories' | 'preferences' | 'budget' | 'alerts' | 'cloud' | 'data' | 'about'>(
     initialSection || 'main'
   );
 
@@ -129,20 +149,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
   }, [initialSection]);
 
-  // Custom Profile Avatar state (synced with userProfile or localStorage)
+  // Custom Profile Avatar state (synced with user, userProfile or localStorage)
   const [customAvatar, setCustomAvatar] = useState<string | null>(() => {
-    return userProfile?.avatar || localStorage.getItem('money_tracker_custom_avatar') || null;
+    return user?.photoURL || userProfile?.avatar || localStorage.getItem('money_tracker_custom_avatar') || null;
   });
 
   // Custom User Profile Name state
   const [profileName, setProfileName] = useState<string>(() => {
-    const stored = userProfile?.name || localStorage.getItem('money_tracker_profile_name');
+    const stored = user?.displayName || userProfile?.name || localStorage.getItem('money_tracker_profile_name');
     return stored && stored !== 'Jeyaram Tech' ? stored : 'My Wallet';
   });
 
   // Profile Email state
   const [profileEmail, setProfileEmail] = useState<string>(() => {
-    const stored = userProfile?.email || localStorage.getItem('money_tracker_profile_email');
+    const stored = user?.email || userProfile?.email || localStorage.getItem('money_tracker_profile_email');
     return stored && stored !== 'jeyaramantech05@gmail.com' ? stored : '';
   });
 
@@ -155,11 +175,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [showUnsavedConfirm, setShowUnsavedConfirm] = useState(false);
   const [pendingLeaveAction, setPendingLeaveAction] = useState<(() => void) | null>(null);
 
-  // Keep in sync with userProfile prop changes
+  // Keep in sync with user & userProfile prop changes
   useEffect(() => {
-    const nextName = userProfile?.name && userProfile.name !== 'Jeyaram Tech' ? userProfile.name : 'My Wallet';
-    const nextAvatar = userProfile?.avatar || null;
-    const nextEmail = userProfile?.email && userProfile.email !== 'jeyaramantech05@gmail.com' ? userProfile.email : '';
+    const nextName = user?.displayName || (userProfile?.name && userProfile.name !== 'Jeyaram Tech' ? userProfile.name : 'My Wallet');
+    const nextAvatar = user?.photoURL || userProfile?.avatar || null;
+    const nextEmail = user?.email || (userProfile?.email && userProfile.email !== 'jeyaramantech05@gmail.com' ? userProfile.email : '');
 
     setProfileName(nextName);
     setEditModalName(nextName);
@@ -167,7 +187,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     setEditModalAvatar(nextAvatar);
     setProfileEmail(nextEmail);
     setEditModalEmail(nextEmail);
-  }, [userProfile]);
+  }, [user, userProfile]);
 
   // Profile avatar file input ref
   const modalAvatarInputRef = useRef<HTMLInputElement>(null);
@@ -228,7 +248,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   };
 
   // Unified Categories State (All categories are fully editable and removable!)
-  const [categories, setCategories] = useState<CategoryDef[]>(() => loadStoredCategoryDefs());
+  const [categories, setCategories] = useState<CategoryDef[]>(() => loadStoredCategoryDefs(workspaceEmail));
   const [categorySearch, setCategorySearch] = useState('');
 
   // Category Add / Edit State
@@ -257,6 +277,47 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   // Alert Phone State
   const [phoneInput, setPhoneInput] = useState(alertPhone);
+  const [telegramForm, setTelegramForm] = useState<TelegramAlertConfig>(telegramAlertConfig);
+  const [isTestingTelegram, setIsTestingTelegram] = useState(false);
+
+  useEffect(() => {
+    setTelegramForm(telegramAlertConfig);
+  }, [telegramAlertConfig]);
+
+  // When another signed-in device changes settings, refresh this page's local
+  // form state too instead of waiting for the user to close and reopen it.
+  useEffect(() => {
+    setCategories(loadStoredCategoryDefs(workspaceEmail));
+    setBudgetForm(budgetConfig);
+    setCustomCurrencyInput(currency);
+    setPhoneInput(alertPhone);
+  }, [cloudWorkspaceRevision, workspaceEmail, budgetConfig, currency, alertPhone]);
+
+  const handleSaveTelegramAlerts = () => {
+    const chatId = telegramForm.chatId.trim();
+    if (telegramForm.enabled && !chatId) {
+      onNotification?.('Enter your Telegram chat ID before enabling alerts.', 'error');
+      return;
+    }
+    onUpdateTelegramAlertConfig({ enabled: telegramForm.enabled, chatId });
+  };
+
+  const handleTestTelegramAlert = async () => {
+    const chatId = telegramForm.chatId.trim();
+    if (!chatId) {
+      onNotification?.('Enter your Telegram chat ID first.', 'error');
+      return;
+    }
+    setIsTestingTelegram(true);
+    try {
+      await onSendTelegramTest(chatId);
+      onNotification?.('Test alert delivered to Telegram.', 'success');
+    } catch (error: any) {
+      onNotification?.(error?.message || 'Telegram test failed. Check bot setup and chat ID.', 'error');
+    } finally {
+      setIsTestingTelegram(false);
+    }
+  };
 
   // File Input Ref for JSON Restore
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -317,7 +378,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
     const updated = [...categories, newDef];
     setCategories(updated);
-    saveStoredCategoryDefs(updated);
+    saveStoredCategoryDefs(updated, workspaceEmail);
+    onCloudSyncRequested?.();
     setFormCatName('');
     setFormCatIcon('Tag');
     setIsAddingCategory(false);
@@ -348,7 +410,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     });
 
     setCategories(updated);
-    saveStoredCategoryDefs(updated);
+    saveStoredCategoryDefs(updated, workspaceEmail);
+    onCloudSyncRequested?.();
     setEditingCategory(null);
     setFormCatName('');
     onNotification?.(`Category updated to "${trimmed}".`, 'success');
@@ -359,7 +422,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     if (!deleteCandidate) return;
     const updated = categories.filter((c) => c.id !== deleteCandidate.id);
     setCategories(updated);
-    saveStoredCategoryDefs(updated);
+    saveStoredCategoryDefs(updated, workspaceEmail);
+    onCloudSyncRequested?.();
     const candidateName = deleteCandidate.name;
     setDeleteCandidate(null);
     onNotification?.(`Category "${candidateName}" removed.`, 'info');
@@ -367,9 +431,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   // Reset categories to standard preset
   const handleResetCategories = () => {
-    const defaults = resetToDefaultCategoryDefs();
+    const defaults = resetToDefaultCategoryDefs(workspaceEmail);
     setCategories(defaults);
     setShowResetCatConfirm(false);
+    onCloudSyncRequested?.();
     onNotification?.('Categories restored to default standard set.', 'success');
   };
 
@@ -378,14 +443,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     onUpdateCurrency(newCurr);
     setCustomCurrencyInput(newCurr);
     onNotification?.(`Currency changed to ${newCurr}`, 'success');
-    handleBackToMain();
   };
 
-  // Save Budget
+  // Save Budget & Financial Targets
   const handleSaveBudget = (e: React.FormEvent) => {
     e.preventDefault();
     onUpdateBudgetConfig(budgetForm);
-    onNotification?.('Budget configuration saved.', 'success');
+    if (customCurrencyInput.trim() && customCurrencyInput.trim() !== currency) {
+      onUpdateCurrency(customCurrencyInput.trim());
+    }
+    onNotification?.('Financial targets and currency saved successfully.', 'success');
     handleBackToMain();
   };
 
@@ -465,16 +532,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
   };
 
-  // Save Phone
-  const handleSavePhone = (e: React.FormEvent) => {
-    e.preventDefault();
-    onUpdateAlertPhone(phoneInput.trim());
-    onNotification?.(phoneInput ? `Alert phone number set to ${phoneInput}` : 'Phone number cleared', 'success');
-  };
-
   // JSON Full Backup Download
   const handleDownloadBackup = () => {
-    const jsonStr = exportFullBackupJson();
+    const jsonStr = exportFullBackupJson(workspaceEmail);
     const blob = new Blob([jsonStr], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -487,6 +547,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     onNotification?.('Full backup downloaded.', 'success');
   };
 
+  // Export PDF Statement
+  const handleExportPdfStatement = () => {
+    generateBankStatementPdf(
+      transactions,
+      userProfile || { name: profileName, email: profileEmail, avatar: customAvatar || undefined },
+      currency
+    );
+    onNotification?.('Opening printable bank statement...', 'info');
+  };
+
   // JSON Restore
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -495,9 +565,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     reader.onload = (event) => {
       const content = event.target?.result as string;
       if (!content) return;
-      const res = importFullBackupJson(content);
+      const res = importFullBackupJson(content, workspaceEmail);
       if (res.success) {
-        setCategories(loadStoredCategoryDefs());
+        setCategories(loadStoredCategoryDefs(workspaceEmail));
+        onCloudSyncRequested?.();
         onRestoreTransactions?.(transactions, lendItems);
         onNotification?.(res.message, 'success');
         setTimeout(() => {
@@ -537,29 +608,33 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
   }, [transactions, categories, lendItems]);
 
+  const activeUserAvatar = user?.photoURL || customAvatar;
+  const activeUserEmail = user?.email || profileEmail || (userProfile?.email && userProfile.email !== 'jeyaramantech05@gmail.com' ? userProfile.email : '');
+  const activeUserName = user?.displayName || profileName || (userProfile?.name && userProfile.name !== 'Jeyaram Tech' ? userProfile.name : 'My Wallet');
+
   return (
-    <div className="min-h-screen bg-slate-50/80 pb-20">
+    <div className="min-h-screen bg-slate-50/80 dark:bg-slate-950 pb-20 transition-colors">
       {/* ============================================================== */}
       {/* 1. TOP MINIMALIST APP BAR (WhatsApp / iOS Style)               */}
       {/* ============================================================== */}
-      <div className="bg-white/95 backdrop-blur-md border-b border-slate-200 sticky top-0 z-30 shadow-xs">
+      <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 sticky top-0 z-30 shadow-xs">
         <div className="max-w-2xl md:max-w-4xl lg:max-w-5xl mx-auto px-4 h-14 flex items-center justify-between">
           <button
             type="button"
             onClick={() => safeNavigateBack(currentSubPage === 'main' ? onBack : handleBackToMain)}
-            className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-700 hover:text-slate-900 hover:bg-slate-100 active:scale-95 transition-all cursor-pointer border border-slate-200/90 shadow-2xs"
+            className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 transition-all cursor-pointer border border-slate-200/90 dark:border-slate-700 shadow-2xs"
             title="Back"
             aria-label="Back"
           >
             <ArrowLeft className="w-5 h-5 stroke-[2.2]" />
           </button>
 
-          <h1 className="text-sm font-bold text-slate-900 capitalize">
+          <h1 className="text-sm font-bold text-slate-900 dark:text-white capitalize">
             {currentSubPage === 'main' && 'Settings'}
             {currentSubPage === 'profile' && 'Edit Profile'}
             {currentSubPage === 'categories' && 'Manage Categories'}
-            {currentSubPage === 'preferences' && 'Currency & Format'}
-            {currentSubPage === 'budget' && 'Budget & Limits'}
+            {currentSubPage === 'budget' && 'Financial Targets & Currency'}
+            {currentSubPage === 'alerts' && 'Automatic Alerts'}
             {currentSubPage === 'cloud' && 'Google Sheets Manager'}
             {currentSubPage === 'data' && 'Data & Backups'}
             {currentSubPage === 'about' && 'About & Privacy'}
@@ -580,64 +655,64 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             className="space-y-6"
           >
             {/* ============================================================== */}
-            {/* ============================================================== */}
             {/* VIEW 0: MAIN SETTINGS PAGE (WhatsApp-style Hero Profile Card)  */}
             {/* ============================================================== */}
             {currentSubPage === 'main' && (
               <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
                 {/* Left Column on Desktop: Profile Card & Quick Info */}
                 <div className="md:col-span-5 space-y-4">
-                  {/* WhatsApp-Style Hero Profile Card */}
-                  <div 
-                    onClick={() => {
-                      setEditModalName(profileName);
-                      setEditModalEmail(profileEmail);
-                      setEditModalAvatar(customAvatar);
-                      handleOpenSubPage('profile');
-                    }}
-                    className="bg-white rounded-3xl border border-slate-200/90 p-4 sm:p-5 shadow-xs flex flex-col justify-between gap-4 cursor-pointer hover:border-slate-300 hover:shadow-sm transition-all group"
-                  >
-                    <div className="flex items-center gap-3.5 sm:gap-4 min-w-0">
-                      {/* Left: Avatar Circle with WhatsApp-style camera badge */}
+                  {/* Profile overview */}
+                  <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/90 dark:border-slate-800 p-4 sm:p-5 shadow-xs relative group">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditModalName(activeUserName);
+                        setEditModalEmail(activeUserEmail);
+                        setEditModalAvatar(activeUserAvatar);
+                        handleOpenSubPage('profile');
+                      }}
+                      className="absolute top-4 right-4 p-2 rounded-xl bg-slate-100 hover:bg-emerald-50 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 hover:text-emerald-600 dark:text-slate-400 dark:hover:text-emerald-400 transition-all cursor-pointer shadow-2xs active:scale-95"
+                      title="Edit Profile"
+                      aria-label="Edit Profile"
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
+
+                    <div className="flex items-center gap-3.5 sm:gap-4 min-w-0 pr-8">
+                      {/* Left: Avatar Circle */}
                       <div className="relative shrink-0">
-                        <div className="w-16 h-16 sm:w-18 sm:h-18 rounded-full overflow-hidden border-2 border-emerald-500/80 p-0.5 shadow-2xs bg-slate-100 flex items-center justify-center">
-                          {customAvatar ? (
+                        <div className="w-16 h-16 sm:w-18 sm:h-18 rounded-full overflow-hidden border-2 border-emerald-500/80 p-0.5 shadow-2xs bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+                          {activeUserAvatar ? (
                             <img
-                              src={customAvatar}
-                              alt={profileName}
+                              src={activeUserAvatar}
+                              alt={activeUserName}
                               className="w-full h-full rounded-full object-cover"
                             />
                           ) : (
                             <div className="w-full h-full rounded-full bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center font-bold text-xl sm:text-2xl">
-                              {profileName.charAt(0).toUpperCase()}
+                              {activeUserName.charAt(0).toUpperCase()}
                             </div>
                           )}
-                        </div>
-                        <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center shadow-xs border-2 border-white">
-                          <Camera className="w-3 h-3" />
                         </div>
                       </div>
 
                       {/* Right: Profile Name on top, Gmail underneath */}
                       <div className="min-w-0 flex-1">
-                        <h2 className="text-base sm:text-lg font-bold text-slate-900 truncate group-hover:text-emerald-700 transition-colors">
-                          {profileName}
+                        <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white truncate">
+                          {activeUserName}
                         </h2>
-                        <p className="text-xs text-slate-500 truncate mt-0.5 font-medium">
-                          {profileEmail}
-                        </p>
+                        {activeUserEmail && (
+                          <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5 font-medium">
+                            {activeUserEmail}
+                          </p>
+                        )}
 
                         {/* Status indicator */}
-                        <div className="mt-1.5 inline-flex items-center gap-1.5 text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200/70 px-2 py-0.5 rounded-full">
+                        <div className="mt-2 inline-flex items-center gap-1.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/70 dark:border-emerald-800 px-2 py-0.5 rounded-full">
                           <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
                           <span className="truncate">{activeSheet ? 'Google Sheets Synced' : 'Offline Storage'}</span>
                         </div>
                       </div>
-                    </div>
-
-                    <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-emerald-700">
-                      <span>Edit Profile Details</span>
-                      <Edit3 className="w-4 h-4 group-hover:scale-110 transition-transform" />
                     </div>
                   </div>
 
@@ -671,19 +746,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       Financial Configuration
                     </div>
 
-                    <div className="bg-white rounded-3xl border border-slate-200/90 shadow-xs divide-y divide-slate-100 overflow-hidden">
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xs divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
                       {/* 1. Manage Categories */}
                       <button
                         type="button"
                         onClick={() => handleOpenSubPage('categories')}
-                        className="w-full px-4 py-3.5 hover:bg-slate-50 flex items-center justify-between transition-colors cursor-pointer text-left"
+                        className="w-full px-4 py-3.5 hover:bg-slate-50 dark:hover:bg-slate-800/60 flex items-center justify-between transition-colors cursor-pointer text-left"
                       >
                         <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0">
+                          <div className="w-9 h-9 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 flex items-center justify-center shrink-0">
                             <Tag className="w-4 h-4" />
                           </div>
                           <div>
-                            <h4 className="font-bold text-xs text-slate-900">Manage Categories</h4>
+                            <h4 className="font-bold text-xs text-slate-900 dark:text-white">Manage Categories</h4>
                             <p className="text-[11px] text-slate-400">
                               {categories.length} categories · All editable &amp; removable
                             </p>
@@ -692,45 +767,26 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         <ChevronRight className="w-4 h-4 text-slate-400" />
                       </button>
 
-                      {/* 2. Currency & Format */}
+                      {/* 2. Financial Targets & Currency (Merged) */}
                       <button
                         type="button"
-                        onClick={() => handleOpenSubPage('preferences')}
-                        className="w-full px-4 py-3.5 hover:bg-slate-50 flex items-center justify-between transition-colors cursor-pointer text-left"
+                        onClick={() => handleOpenSubPage('budget')}
+                        className="w-full px-4 py-3.5 hover:bg-slate-50 dark:hover:bg-slate-800/60 flex items-center justify-between transition-colors cursor-pointer text-left"
                       >
                         <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-2xl bg-blue-50 text-blue-700 flex items-center justify-center shrink-0">
-                            <DollarSign className="w-4 h-4" />
+                          <div className="w-9 h-9 rounded-2xl bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-400 flex items-center justify-center shrink-0">
+                            <Sliders className="w-4 h-4" />
                           </div>
                           <div>
-                            <h4 className="font-bold text-xs text-slate-900">Currency &amp; Format</h4>
+                            <h4 className="font-bold text-xs text-slate-900 dark:text-white">Financial Targets &amp; Currency</h4>
                             <p className="text-[11px] text-slate-400">
-                              Active currency: <span className="font-mono font-bold text-slate-700">{currency}</span>
+                              Currency ({currency}), monthly budget &amp; cash alerts
                             </p>
                           </div>
                         </div>
                         <ChevronRight className="w-4 h-4 text-slate-400" />
                       </button>
 
-                      {/* 3. Budget & Limits */}
-                      <button
-                        type="button"
-                        onClick={() => handleOpenSubPage('budget')}
-                        className="w-full px-4 py-3.5 hover:bg-slate-50 flex items-center justify-between transition-colors cursor-pointer text-left"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-2xl bg-purple-50 text-purple-700 flex items-center justify-center shrink-0">
-                            <Sliders className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <h4 className="font-bold text-xs text-slate-900">Budget Targets &amp; Alerts</h4>
-                            <p className="text-[11px] text-slate-400">
-                              Monthly targets, low cash warnings &amp; SMS alerts
-                            </p>
-                          </div>
-                        </div>
-                        <ChevronRight className="w-4 h-4 text-slate-400" />
-                      </button>
                     </div>
                   </div>
 
@@ -740,19 +796,37 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       Cloud &amp; Sync
                     </div>
 
-                    <div className="bg-white rounded-3xl border border-slate-200/90 shadow-xs divide-y divide-slate-100 overflow-hidden">
-                      {/* Google Sheets Manager (Opens SheetManagerView directly) */}
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xs divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenSubPage('alerts')}
+                        className="w-full px-4 py-3.5 hover:bg-slate-50 dark:hover:bg-slate-800/60 flex items-center justify-between transition-colors cursor-pointer text-left"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-2xl bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-400 flex items-center justify-center shrink-0">
+                            <BellRing className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h4 className="font-bold text-xs text-slate-900 dark:text-white">Automatic Alerts</h4>
+                            <p className="text-[11px] text-slate-400">
+                              {telegramAlertConfig.enabled ? 'Telegram transaction alerts enabled' : 'Connect Telegram for free alerts'}
+                            </p>
+                          </div>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-slate-400" />
+                      </button>
+                      {/* Google Sheets Manager */}
                       <button
                         type="button"
                         onClick={onOpenSyncModal}
-                        className="w-full px-4 py-3.5 hover:bg-slate-50 flex items-center justify-between transition-colors cursor-pointer text-left"
+                        className="w-full px-4 py-3.5 hover:bg-slate-50 dark:hover:bg-slate-800/60 flex items-center justify-between transition-colors cursor-pointer text-left"
                       >
                         <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-2xl bg-teal-50 text-teal-700 flex items-center justify-center shrink-0">
+                          <div className="w-9 h-9 rounded-2xl bg-teal-50 dark:bg-teal-950/60 text-teal-700 dark:text-teal-400 flex items-center justify-center shrink-0">
                             <FileSpreadsheet className="w-4 h-4" />
                           </div>
                           <div>
-                            <h4 className="font-bold text-xs text-slate-900">Google Sheets Sync</h4>
+                            <h4 className="font-bold text-xs text-slate-900 dark:text-white">Google Sheets Sync</h4>
                             <p className="text-[11px] text-slate-400">
                               {activeSheet ? `Connected: ${activeSheet.name}` : 'Connect spreadsheet'}
                             </p>
@@ -769,21 +843,21 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       Data Vault &amp; System
                     </div>
 
-                    <div className="bg-white rounded-3xl border border-slate-200/90 shadow-xs divide-y divide-slate-100 overflow-hidden">
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xs divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
                       {/* Data Management & Backups */}
                       <button
                         type="button"
                         onClick={() => handleOpenSubPage('data')}
-                        className="w-full px-4 py-3.5 hover:bg-slate-50 flex items-center justify-between transition-colors cursor-pointer text-left"
+                        className="w-full px-4 py-3.5 hover:bg-slate-50 dark:hover:bg-slate-800/60 flex items-center justify-between transition-colors cursor-pointer text-left"
                       >
                         <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-2xl bg-amber-50 text-amber-700 flex items-center justify-center shrink-0">
+                          <div className="w-9 h-9 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-400 flex items-center justify-center shrink-0">
                             <Database className="w-4 h-4" />
                           </div>
                           <div>
-                            <h4 className="font-bold text-xs text-slate-900">Backup &amp; Restore</h4>
+                            <h4 className="font-bold text-xs text-slate-900 dark:text-white">Backup, PDF Statement &amp; Data</h4>
                             <p className="text-[11px] text-slate-400">
-                              Export CSV, download JSON snapshot, restore records
+                              PDF bank statement, CSV export, JSON backup &amp; restore
                             </p>
                           </div>
                         </div>
@@ -794,14 +868,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       <button
                         type="button"
                         onClick={() => handleOpenSubPage('about')}
-                        className="w-full px-4 py-3.5 hover:bg-slate-50 flex items-center justify-between transition-colors cursor-pointer text-left"
+                        className="w-full px-4 py-3.5 hover:bg-slate-50 dark:hover:bg-slate-800/60 flex items-center justify-between transition-colors cursor-pointer text-left"
                       >
                         <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-2xl bg-slate-100 text-slate-700 flex items-center justify-center shrink-0">
+                          <div className="w-9 h-9 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center justify-center shrink-0">
                             <Info className="w-4 h-4" />
                           </div>
                           <div>
-                            <h4 className="font-bold text-xs text-slate-900">App Info &amp; Privacy</h4>
+                            <h4 className="font-bold text-xs text-slate-900 dark:text-white">App Info &amp; Privacy</h4>
                             <p className="text-[11px] text-slate-400">
                               Storage: {storageUsageKb} KB · Private offline vault
                             </p>
@@ -815,579 +889,619 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </div>
             )}
 
-        {/* ============================================================== */}
-        {/* SUB-PAGE: EDIT PROFILE (Horizontal layout, WhatsApp camera badge) */}
-        {/* ============================================================== */}
-        {currentSubPage === 'profile' && (
-          <div className="space-y-4">
-            <div className="bg-white rounded-3xl border border-slate-200/90 p-5 sm:p-6 shadow-xs space-y-5">
-              {/* Horizontal Profile Header (Avatar on Left, Name & Gmail on Right) */}
-              <div className="flex items-center gap-4 p-4 rounded-2xl bg-slate-50/90 border border-slate-200/80">
-                {/* Profile Circle with WhatsApp-style camera overlay button */}
-                <div className="relative shrink-0">
-                  <div className="w-18 h-18 sm:w-20 sm:h-20 rounded-full overflow-hidden border-2 border-emerald-500/80 p-0.5 shadow-sm bg-white flex items-center justify-center">
-                    {editModalAvatar ? (
-                      <img
-                        src={editModalAvatar}
-                        alt="Avatar Preview"
-                        className="w-full h-full rounded-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-full h-full rounded-full bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center font-bold text-2xl">
-                        {editModalName.charAt(0).toUpperCase() || 'J'}
+            {/* ============================================================== */}
+            {/* SUB-PAGE: EDIT PROFILE                                         */}
+            {/* ============================================================== */}
+            {currentSubPage === 'profile' && (
+              <div className="space-y-4">
+                <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/90 dark:border-slate-800 p-5 sm:p-6 shadow-xs space-y-5">
+                  {/* Horizontal Profile Header */}
+                  <div className="flex items-center gap-4 p-4 rounded-2xl bg-slate-50/90 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700">
+                    {/* Profile Circle with WhatsApp-style camera overlay button */}
+                    <div className="relative shrink-0">
+                      <div className="w-18 h-18 sm:w-20 sm:h-20 rounded-full overflow-hidden border-2 border-emerald-500/80 p-0.5 shadow-sm bg-white dark:bg-slate-800 flex items-center justify-center">
+                        {editModalAvatar ? (
+                          <img
+                            src={editModalAvatar}
+                            alt="Avatar Preview"
+                            className="w-full h-full rounded-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full rounded-full bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center font-bold text-2xl">
+                            {editModalName.charAt(0).toUpperCase() || 'J'}
+                          </div>
+                        )}
                       </div>
-                    )}
+
+                      <input
+                        type="file"
+                        ref={modalAvatarInputRef}
+                        onChange={handleModalAvatarFileChange}
+                        accept="image/*"
+                        className="hidden"
+                      />
+
+                      <button
+                        type="button"
+                        onClick={() => modalAvatarInputRef.current?.click()}
+                        className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white flex items-center justify-center shadow-md cursor-pointer border-2 border-white dark:border-slate-900 transition-all"
+                        title="Change profile photo"
+                        aria-label="Change profile photo"
+                      >
+                        <Camera className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white truncate">
+                        {editModalName || 'Your Name'}
+                      </h3>
+                      {editModalEmail && (
+                        <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                          {editModalEmail}
+                        </p>
+                      )}
+                      {editModalAvatar && (
+                        <button
+                          type="button"
+                          onClick={() => setEditModalAvatar(null)}
+                          className="text-[11px] text-rose-600 dark:text-rose-400 hover:underline font-semibold mt-1 inline-block cursor-pointer"
+                        >
+                          Remove photo
+                        </button>
+                      )}
+                    </div>
                   </div>
 
-                  <input
-                    type="file"
-                    ref={modalAvatarInputRef}
-                    onChange={handleModalAvatarFileChange}
-                    accept="image/*"
-                    className="hidden"
-                  />
+                  {/* Form to update Name & Email */}
+                  <form onSubmit={handleSaveFullProfile} className="space-y-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                        Display Name
+                      </label>
+                      <div className="relative">
+                        <UserIcon className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                        <input
+                          type="text"
+                          required
+                          value={editModalName}
+                          onChange={(e) => setEditModalName(e.target.value)}
+                          placeholder="e.g. My Wallet"
+                          className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-900 dark:text-white focus:outline-hidden focus:border-emerald-600 bg-slate-50 dark:bg-slate-800 transition-all"
+                        />
+                      </div>
+                    </div>
 
-                  {/* WhatsApp-Style Camera Icon Button on Avatar */}
-                  <button
-                    type="button"
-                    onClick={() => modalAvatarInputRef.current?.click()}
-                    className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white flex items-center justify-center shadow-md cursor-pointer border-2 border-white transition-all"
-                    title="Change profile photo"
-                    aria-label="Change profile photo"
-                  >
-                    <Camera className="w-3.5 h-3.5" />
-                  </button>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                        Gmail / Email Address (Optional)
+                      </label>
+                      <input
+                        type="email"
+                        value={editModalEmail}
+                        onChange={(e) => setEditModalEmail(e.target.value)}
+                        placeholder="e.g. your.email@gmail.com"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-900 dark:text-white focus:outline-hidden focus:border-emerald-600 bg-slate-50 dark:bg-slate-800 transition-all"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">
+                      <button
+                        type="button"
+                        onClick={() => safeNavigateBack(handleBackToMain)}
+                        className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="px-5 py-2.5 rounded-xl bg-slate-900 dark:bg-emerald-600 hover:bg-slate-800 dark:hover:bg-emerald-700 active:scale-95 text-white text-xs font-bold cursor-pointer shadow-xs transition-all flex items-center gap-2"
+                      >
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                        <span>Save Changes</span>
+                      </button>
+                    </div>
+                  </form>
                 </div>
+              </div>
+            )}
 
-                {/* Right: Display Name on top, Gmail underneath */}
-                <div className="min-w-0 flex-1">
-                  <h3 className="text-base sm:text-lg font-bold text-slate-900 truncate">
-                    {editModalName || 'Your Name'}
-                  </h3>
-                  <p className="text-xs text-slate-500 truncate mt-0.5">
-                    {editModalEmail || 'your.email@gmail.com'}
-                  </p>
-                  {editModalAvatar && (
+            {/* ============================================================== */}
+            {/* SUB-PAGE 1: MANAGE CATEGORIES                                  */}
+            {/* ============================================================== */}
+            {currentSubPage === 'categories' && (
+              <div className="space-y-4 animate-in fade-in duration-150">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white">Expense &amp; Income Categories</h3>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">Every category is editable and removable.</p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => setEditModalAvatar(null)}
-                      className="text-[11px] text-rose-600 hover:underline font-semibold mt-1 inline-block cursor-pointer"
+                      onClick={() => setShowResetCatConfirm(true)}
+                      className="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                      title="Restore Defaults"
                     >
-                      Remove photo
+                      <RotateCcw className="w-3 h-3" />
+                      <span>Defaults</span>
                     </button>
-                  )}
-                </div>
-              </div>
 
-              {/* Form to update Name & Email */}
-              <form onSubmit={handleSaveFullProfile} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                    Display Name
-                  </label>
-                  <div className="relative">
-                    <UserIcon className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-                    <input
-                      type="text"
-                      required
-                      value={editModalName}
-                      onChange={(e) => setEditModalName(e.target.value)}
-                      placeholder="e.g. My Wallet"
-                      className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-900 focus:outline-hidden focus:border-emerald-600 bg-slate-50 focus:bg-white transition-all"
-                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsAddingCategory(true);
+                        setEditingCategory(null);
+                        setFormCatName('');
+                        setFormCatIcon('Tag');
+                      }}
+                      className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 cursor-pointer shadow-xs"
+                    >
+                      <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                      <span>Add</span>
+                    </button>
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                    Gmail / Email Address (Optional)
-                  </label>
+                {(isAddingCategory || editingCategory) && (
+                  <form
+                    onSubmit={editingCategory ? handleSaveEditedCategory : handleSaveNewCategory}
+                    className="bg-white dark:bg-slate-900 rounded-2xl border-2 border-emerald-500/80 p-4 shadow-md space-y-3"
+                  >
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+                      <div className="flex items-center gap-2">
+                        <div className="p-1.5 rounded-lg bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300">
+                          {React.createElement(getCategoryIcon(formCatIcon), { className: 'w-4 h-4' })}
+                        </div>
+                        <span className="font-bold text-xs text-slate-900 dark:text-white">
+                          {editingCategory ? `Edit: ${editingCategory.name}` : 'New Category'}
+                        </span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsAddingCategory(false);
+                          setEditingCategory(null);
+                        }}
+                        className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                          Category Name *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={formCatName}
+                          onChange={(e) => setFormCatName(e.target.value)}
+                          placeholder="e.g. Dining Out, Gym, Freelance..."
+                          className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-900 dark:text-white focus:outline-hidden focus:border-emerald-600 bg-slate-50 dark:bg-slate-800"
+                          autoFocus
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                          Pick Icon: <span className="font-mono text-emerald-700 dark:text-emerald-400">{formCatIcon}</span>
+                        </label>
+                        <div className="relative mb-2">
+                          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                          <input
+                            type="text"
+                            value={iconPickerSearch}
+                            onChange={(e) => setIconPickerSearch(e.target.value)}
+                            placeholder="Search 80+ icons (food, fuel, gym)..."
+                            className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-slate-200 focus:outline-hidden bg-white dark:bg-slate-800"
+                          />
+                        </div>
+
+                        <div className="flex items-center gap-1 overflow-x-auto pb-1 text-[10px] scrollbar-none mb-2">
+                          {['all', 'food', 'transport', 'shopping', 'bills', 'health', 'home', 'leisure', 'finance', 'work'].map((f) => (
+                            <button
+                              key={f}
+                              type="button"
+                              onClick={() => setIconPickerFilter(f)}
+                              className={`px-2 py-0.5 rounded-lg capitalize whitespace-nowrap cursor-pointer ${
+                                iconPickerFilter === f
+                                  ? 'bg-slate-900 dark:bg-emerald-600 text-white font-bold'
+                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                              }`}
+                            >
+                              {f}
+                            </button>
+                          ))}
+                        </div>
+
+                        <div className="max-h-40 overflow-y-auto p-1.5 bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 grid grid-cols-6 sm:grid-cols-8 gap-1.5">
+                          {filteredIcons.map((item) => {
+                            const IconComponent = item.component;
+                            const isSelected = formCatIcon === item.name;
+                            return (
+                              <button
+                                key={item.name}
+                                type="button"
+                                onClick={() => setFormCatIcon(item.name)}
+                                title={`${item.label} (${item.name})`}
+                                className={`p-1.5 rounded-xl flex items-center justify-center transition-all cursor-pointer ${
+                                  isSelected
+                                    ? 'bg-emerald-600 text-white shadow-xs'
+                                    : 'bg-white dark:bg-slate-900 hover:bg-emerald-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700'
+                                }`}
+                              >
+                                <IconComponent className="w-4 h-4" />
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsAddingCategory(false);
+                          setEditingCategory(null);
+                        }}
+                        className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="px-4 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-bold cursor-pointer shadow-xs"
+                      >
+                        {editingCategory ? 'Update' : 'Save'}
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3" />
                   <input
-                    type="email"
-                    value={editModalEmail}
-                    onChange={(e) => setEditModalEmail(e.target.value)}
-                    placeholder="e.g. your.email@gmail.com"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-medium text-slate-900 focus:outline-hidden focus:border-emerald-600 bg-slate-50 focus:bg-white transition-all"
+                    type="text"
+                    value={categorySearch}
+                    onChange={(e) => setCategorySearch(e.target.value)}
+                    placeholder="Search category list..."
+                    className="w-full pl-8 pr-3 py-2 rounded-2xl border border-slate-200 dark:border-slate-700 text-xs bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-hidden"
                   />
                 </div>
 
-                <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
-                  <button
-                    type="button"
-                    onClick={() => safeNavigateBack(handleBackToMain)}
-                    className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-50 cursor-pointer transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 active:scale-95 text-white text-xs font-bold cursor-pointer shadow-xs transition-all flex items-center gap-2"
-                  >
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                    <span>Save Changes</span>
-                  </button>
+                <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xs divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
+                  {filteredCategories.map((cat) => {
+                    const IconComp = getCategoryIcon(cat.iconName);
+                    const stats = categoryStats[cat.name] || { count: 0, total: 0 };
+                    return (
+                      <div
+                        key={cat.id}
+                        className="p-3.5 hover:bg-slate-50 dark:hover:bg-slate-800/60 flex items-center justify-between gap-3"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-9 h-9 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
+                            <IconComp className="w-4 h-4" />
+                          </div>
+                          <div className="min-w-0">
+                            <h4 className="font-bold text-xs text-slate-900 dark:text-white truncate">
+                              {cat.name}
+                            </h4>
+                            <span className="text-[11px] text-slate-400">
+                              {stats.count} {stats.count === 1 ? 'tx' : 'txs'} · {formatCurrency(stats.total, currency)}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingCategory(cat);
+                              setFormCatName(cat.name);
+                              setFormCatIcon(cat.iconName || 'Tag');
+                              setIsAddingCategory(false);
+                            }}
+                            className="p-1.5 text-slate-500 hover:text-emerald-700 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer"
+                            title="Edit category"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDeleteCandidate(cat)}
+                            className="p-1.5 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer"
+                            title="Delete category"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {/* ============================================================== */}
-        {/* SUB-PAGE 1: MANAGE CATEGORIES (ALL EDITABLE & REMOVABLE!)      */}
-        {/* ============================================================== */}
-        {currentSubPage === 'categories' && (
-          <div className="space-y-4 animate-in fade-in duration-150">
-            {/* Header info & action */}
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <h3 className="text-sm font-bold text-slate-900">Expense &amp; Income Categories</h3>
-                <p className="text-[11px] text-slate-500">Every category is editable and removable.</p>
               </div>
+            )}
 
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowResetCatConfirm(true)}
-                  className="px-2.5 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold flex items-center gap-1 cursor-pointer"
-                  title="Restore Defaults"
-                >
-                  <RotateCcw className="w-3 h-3" />
-                  <span>Defaults</span>
-                </button>
+            {/* ============================================================== */}
+            {/* SUB-PAGE 2: FINANCIAL TARGETS & CURRENCY (MERGED)             */}
+            {/* ============================================================== */}
+            {currentSubPage === 'budget' && (
+              <div className="space-y-4 animate-in fade-in duration-150">
+                <form onSubmit={handleSaveBudget} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/90 dark:border-slate-800 p-5 sm:p-6 shadow-xs space-y-5">
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">Financial Targets &amp; Currency</h3>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsAddingCategory(true);
-                    setEditingCategory(null);
-                    setFormCatName('');
-                    setFormCatIcon('Tag');
-                  }}
-                  className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 cursor-pointer shadow-xs"
-                >
-                  <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-                  <span>Add</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Add / Edit Category Form */}
-            {(isAddingCategory || editingCategory) && (
-              <form
-                onSubmit={editingCategory ? handleSaveEditedCategory : handleSaveNewCategory}
-                className="bg-white rounded-2xl border-2 border-emerald-500/80 p-4 shadow-md space-y-3"
-              >
-                <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                  <div className="flex items-center gap-2">
-                    <div className="p-1.5 rounded-lg bg-emerald-100 text-emerald-800">
-                      {React.createElement(getCategoryIcon(formCatIcon), { className: 'w-4 h-4' })}
-                    </div>
-                    <span className="font-bold text-xs text-slate-900">
-                      {editingCategory ? `Edit: ${editingCategory.name}` : 'New Category'}
-                    </span>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsAddingCategory(false);
-                      setEditingCategory(null);
-                    }}
-                    className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                      Category Name *
+                  {/* Currency Selection Dropdown & Quick Presets */}
+                  <div className="space-y-3 pb-4 border-b border-slate-100 dark:border-slate-800">
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                      Primary Currency
                     </label>
-                    <input
-                      type="text"
-                      required
-                      value={formCatName}
-                      onChange={(e) => setFormCatName(e.target.value)}
-                      placeholder="e.g. Dining Out, Gym, Freelance..."
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium text-slate-900 focus:outline-hidden focus:border-emerald-600 bg-slate-50"
-                      autoFocus
-                    />
-                  </div>
 
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                      Pick Icon: <span className="font-mono text-emerald-700">{formCatIcon}</span>
-                    </label>
-                    <div className="relative mb-2">
-                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
-                      <input
-                        type="text"
-                        value={iconPickerSearch}
-                        onChange={(e) => setIconPickerSearch(e.target.value)}
-                        placeholder="Search 80+ icons (food, fuel, gym)..."
-                        className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 text-xs text-slate-800 focus:outline-hidden bg-white"
-                      />
-                    </div>
-
-                    {/* Icon Category Filter Tabs */}
-                    <div className="flex items-center gap-1 overflow-x-auto pb-1 text-[10px] scrollbar-none mb-2">
-                      {['all', 'food', 'transport', 'shopping', 'bills', 'health', 'home', 'leisure', 'finance', 'work'].map((f) => (
-                        <button
-                          key={f}
-                          type="button"
-                          onClick={() => setIconPickerFilter(f)}
-                          className={`px-2 py-0.5 rounded-lg capitalize whitespace-nowrap cursor-pointer ${
-                            iconPickerFilter === f
-                              ? 'bg-slate-900 text-white font-bold'
-                              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                          }`}
-                        >
-                          {f}
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Icon Catalog Grid */}
-                    <div className="max-h-40 overflow-y-auto p-1.5 bg-slate-50 rounded-xl border border-slate-200 grid grid-cols-6 sm:grid-cols-8 gap-1.5">
-                      {filteredIcons.map((item) => {
-                        const IconComponent = item.component;
-                        const isSelected = formCatIcon === item.name;
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                      {COMMON_CURRENCIES.map((c) => {
+                        const isSelected = currency === c.symbol;
                         return (
                           <button
-                            key={item.name}
+                            key={c.code}
                             type="button"
-                            onClick={() => setFormCatIcon(item.name)}
-                            title={`${item.label} (${item.name})`}
-                            className={`p-1.5 rounded-xl flex items-center justify-center transition-all cursor-pointer ${
+                            onClick={() => handleSaveCurrency(c.symbol)}
+                            className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
                               isSelected
-                                ? 'bg-emerald-600 text-white shadow-xs'
-                                : 'bg-white hover:bg-emerald-50 text-slate-700 border border-slate-200'
+                                ? 'border-emerald-600 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-300 font-bold'
+                                : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-300'
                             }`}
                           >
-                            <IconComponent className="w-4 h-4" />
+                            <span className="text-base font-bold block">{c.symbol}</span>
+                            <span className="text-[10px] text-slate-500 dark:text-slate-400 block truncate">{c.label}</span>
                           </button>
                         );
                       })}
                     </div>
-                  </div>
-                </div>
 
-                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsAddingCategory(false);
-                      setEditingCategory(null);
-                    }}
-                    className="px-3 py-1.5 rounded-xl border border-slate-200 text-slate-600 text-xs cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-4 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-bold cursor-pointer shadow-xs"
-                  >
-                    {editingCategory ? 'Update' : 'Save'}
-                  </button>
-                </div>
-              </form>
+                    <div className="pt-2">
+                      <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                        Custom Currency Symbol
+                      </label>
+                      <div className="flex items-center gap-2 max-w-xs">
+                        <input
+                          type="text"
+                          value={customCurrencyInput}
+                          onChange={(e) => setCustomCurrencyInput(e.target.value)}
+                          placeholder="e.g. Rs, INR, $"
+                          className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold font-mono text-slate-900 dark:text-white focus:outline-hidden bg-slate-50 dark:bg-slate-800 flex-1"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Budget Limits Inputs */}
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                        Monthly Expense Budget ({currency})
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="any"
+                        value={budgetForm.monthlyBudget || ''}
+                        onChange={(e) => setBudgetForm({ ...budgetForm, monthlyBudget: parseFloat(e.target.value) || 0 })}
+                        placeholder="e.g. 50000"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-900 dark:text-white focus:outline-hidden bg-slate-50 dark:bg-slate-800"
+                      />
+                      <span className="text-[10px] text-slate-400 mt-1 block">Set 0 to clear or disable monthly budget tracking.</span>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                        Low Cash Wallet Warning ({currency})
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="any"
+                        value={budgetForm.lowCashThreshold || ''}
+                        onChange={(e) => setBudgetForm({ ...budgetForm, lowCashThreshold: parseFloat(e.target.value) || 0 })}
+                        placeholder="e.g. 1000"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-900 dark:text-white focus:outline-hidden bg-slate-50 dark:bg-slate-800"
+                      />
+                      <span className="text-[10px] text-slate-400 mt-1 block">Warns when cash balance drops below this amount.</span>
+                    </div>
+
+                    <div className="pt-2">
+                      <label className="flex items-center gap-2.5 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={budgetForm.notifyOnLimit}
+                          onChange={(e) => setBudgetForm({ ...budgetForm, notifyOnLimit: e.target.checked })}
+                          className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500"
+                        />
+                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                          Show alert banners when exceeding limits
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+                    <button
+                      type="submit"
+                      className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer shadow-xs transition-colors"
+                    >
+                      Save Configuration
+                    </button>
+                  </div>
+                </form>
+              </div>
             )}
 
-            {/* Search Categories */}
-            <div className="relative">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3" />
-              <input
-                type="text"
-                value={categorySearch}
-                onChange={(e) => setCategorySearch(e.target.value)}
-                placeholder="Search category list..."
-                className="w-full pl-8 pr-3 py-2 rounded-2xl border border-slate-200 text-xs bg-white focus:outline-hidden"
-              />
-            </div>
-
-            {/* Unified Categories List */}
-            <div className="bg-white rounded-3xl border border-slate-200/90 shadow-xs divide-y divide-slate-100 overflow-hidden">
-              {filteredCategories.map((cat) => {
-                const IconComp = getCategoryIcon(cat.iconName);
-                const stats = categoryStats[cat.name] || { count: 0, total: 0 };
-                return (
-                  <div
-                    key={cat.id}
-                    className="p-3.5 hover:bg-slate-50 flex items-center justify-between gap-3"
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-9 h-9 rounded-2xl bg-slate-100 border border-slate-200/80 flex items-center justify-center text-emerald-600 shrink-0">
-                        <IconComp className="w-4 h-4" />
-                      </div>
-                      <div className="min-w-0">
-                        <h4 className="font-bold text-xs text-slate-900 truncate">
-                          {cat.name}
-                        </h4>
-                        <span className="text-[11px] text-slate-400">
-                          {stats.count} {stats.count === 1 ? 'tx' : 'txs'} · {formatCurrency(stats.total, currency)}
-                        </span>
-                      </div>
+            {currentSubPage === 'alerts' && (
+              <div className="space-y-4 animate-in fade-in duration-150">
+                <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/90 dark:border-slate-800 p-5 sm:p-6 shadow-xs space-y-5">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 flex items-center justify-center shrink-0">
+                      <BellRing className="w-5 h-5" />
                     </div>
-
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingCategory(cat);
-                          setFormCatName(cat.name);
-                          setFormCatIcon(cat.iconName || 'Tag');
-                          setIsAddingCategory(false);
-                        }}
-                        className="p-1.5 text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg cursor-pointer"
-                        title="Edit category"
-                      >
-                        <Edit3 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setDeleteCandidate(cat)}
-                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
-                        title="Delete category"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900 dark:text-white">Telegram transaction alerts</h3>
+                      <p className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-400 mt-1">
+                        Free automatic alerts after every new transaction. Telegram must be installed and you must start your SpendDesk bot once.
+                      </p>
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
 
-        {/* ============================================================== */}
-        {/* SUB-PAGE 2: CURRENCY & FORMAT                                  */}
-        {/* ============================================================== */}
-        {currentSubPage === 'preferences' && (
-          <div className="space-y-4 animate-in fade-in duration-150">
-            <div className="bg-white rounded-3xl border border-slate-200/90 p-5 shadow-xs space-y-4">
-              <h3 className="text-sm font-bold text-slate-900">Primary Currency</h3>
-              <p className="text-xs text-slate-500">Select standard preset or type your custom symbol.</p>
-
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                {COMMON_CURRENCIES.map((c) => {
-                  const isSelected = currency === c.symbol;
-                  return (
-                    <button
-                      key={c.code}
-                      type="button"
-                      onClick={() => handleSaveCurrency(c.symbol)}
-                      className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
-                        isSelected
-                          ? 'border-emerald-600 bg-emerald-50 text-emerald-900 font-bold'
-                          : 'border-slate-200 hover:border-slate-300 bg-white text-slate-700'
-                      }`}
-                    >
-                      <span className="text-base font-bold block">{c.symbol}</span>
-                      <span className="text-[10px] text-slate-500 block truncate">{c.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div className="pt-3 border-t border-slate-100">
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  Custom Currency Symbol
-                </label>
-                <div className="flex items-center gap-2 max-w-xs">
-                  <input
-                    type="text"
-                    value={customCurrencyInput}
-                    onChange={(e) => setCustomCurrencyInput(e.target.value)}
-                    placeholder="e.g. Rs, INR, $"
-                    className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold font-mono text-slate-900 focus:outline-hidden bg-slate-50 flex-1"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (customCurrencyInput.trim()) {
-                        handleSaveCurrency(customCurrencyInput.trim());
-                      }
-                    }}
-                    className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold cursor-pointer"
-                  >
-                    Apply
-                  </button>
-                </div>
-              </div>
-
-              {/* Preview */}
-              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
-                <div>
-                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Preview</span>
-                  <span className="font-mono font-bold text-slate-900 text-base">
-                    {formatCurrency(18500.5, currency)}
-                  </span>
-                </div>
-                <span className="text-emerald-700 bg-emerald-100 font-semibold px-2 py-0.5 rounded-md text-[10px]">
-                  Applied Everywhere
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ============================================================== */}
-        {/* SUB-PAGE 3: BUDGET & LIMITS                                    */}
-        {/* ============================================================== */}
-        {currentSubPage === 'budget' && (
-          <div className="space-y-4 animate-in fade-in duration-150">
-            <form onSubmit={handleSaveBudget} className="bg-white rounded-3xl border border-slate-200/90 p-5 shadow-xs space-y-4">
-              <h3 className="text-sm font-bold text-slate-900">Budget Limits</h3>
-
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Monthly Expense Budget ({currency})
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={budgetForm.monthlyBudget || ''}
-                    onChange={(e) => setBudgetForm({ ...budgetForm, monthlyBudget: parseFloat(e.target.value) || 0 })}
-                    placeholder="e.g. 50000"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-900 focus:outline-hidden bg-slate-50"
-                  />
-                  <span className="text-[10px] text-slate-400 mt-1 block">Set 0 to disable monthly budget tracking.</span>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Low Cash Wallet Alert ({currency})
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={budgetForm.lowCashThreshold || ''}
-                    onChange={(e) => setBudgetForm({ ...budgetForm, lowCashThreshold: parseFloat(e.target.value) || 0 })}
-                    placeholder="e.g. 1000"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-900 focus:outline-hidden bg-slate-50"
-                  />
-                  <span className="text-[10px] text-slate-400 mt-1 block">Warns when cash in wallet drops below this amount.</span>
-                </div>
-
-                <div className="pt-2">
-                  <label className="flex items-center gap-2.5 cursor-pointer">
+                  <label className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 cursor-pointer">
+                    <span>
+                      <span className="block text-xs font-bold text-slate-800 dark:text-slate-100">Enable automatic alerts</span>
+                      <span className="block text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Only new saved transactions send an alert.</span>
+                    </span>
                     <input
                       type="checkbox"
-                      checked={budgetForm.notifyOnLimit}
-                      onChange={(e) => setBudgetForm({ ...budgetForm, notifyOnLimit: e.target.checked })}
+                      checked={telegramForm.enabled}
+                      onChange={(event) => setTelegramForm((current) => ({ ...current, enabled: event.target.checked }))}
                       className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500"
                     />
-                    <span className="text-xs font-bold text-slate-800">
-                      Show alert banners when exceeding limits
-                    </span>
                   </label>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">Telegram Chat ID</label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={telegramForm.chatId}
+                      onChange={(event) => setTelegramForm((current) => ({ ...current, chatId: event.target.value.replace(/\s/g, '') }))}
+                      placeholder="Example: 123456789"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-mono text-slate-900 dark:text-white focus:outline-hidden bg-slate-50 dark:bg-slate-800"
+                    />
+                    <p className="text-[10px] leading-relaxed text-slate-500 dark:text-slate-400 mt-1.5">Open the bot, send <span className="font-mono">/start</span>, then paste its numeric chat ID here. This is not your phone number.</p>
+                  </div>
+
+                  <div className="rounded-2xl border border-amber-200 dark:border-amber-900/60 bg-amber-50/70 dark:bg-amber-950/30 p-3 text-[11px] leading-relaxed text-amber-900 dark:text-amber-200">
+                    The bot token stays on the secure server and is never saved in this device. Test Alert requires a signed-in Google account.
+                  </div>
+
+                  <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end pt-1">
+                    <button type="button" onClick={handleTestTelegramAlert} disabled={isTestingTelegram} className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold cursor-pointer disabled:opacity-60 disabled:cursor-wait hover:bg-slate-50 dark:hover:bg-slate-800">
+                      {isTestingTelegram ? 'Sending test…' : 'Send Test Alert'}
+                    </button>
+                    <button type="button" onClick={handleSaveTelegramAlerts} className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer shadow-xs transition-colors">
+                      Save Telegram Settings
+                    </button>
+                  </div>
                 </div>
               </div>
+            )}
 
-              <div className="pt-2 flex justify-end">
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer"
-                >
-                  Save Budget
-                </button>
-              </div>
-            </form>
-          </div>
-        )}
+            {/* ============================================================== */}
+            {/* SUB-PAGE 3: APP THEME & APPEARANCE                             */}
+            {/* ============================================================== */}
+            {/* SUB-PAGE 4: DATA MANAGEMENT & BACKUPS                          */}
+            {/* ============================================================== */}
+            {currentSubPage === 'data' && (
+              <div className="space-y-4 animate-in fade-in duration-150">
+                <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/90 dark:border-slate-800 p-5 shadow-xs space-y-4">
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">Export &amp; Bank Statement</h3>
 
-        {/* SUB-PAGE: DATA MANAGEMENT & BACKUPS */}
-        {currentSubPage === 'data' && (
-          <div className="space-y-4 animate-in fade-in duration-150">
-            <div className="bg-white rounded-3xl border border-slate-200/90 p-5 shadow-xs space-y-4">
-              <h3 className="text-sm font-bold text-slate-900">Export &amp; Backups</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {/* Official PDF Bank Statement */}
+                    <button
+                      type="button"
+                      onClick={handleExportPdfStatement}
+                      className="p-4 rounded-2xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50/50 dark:bg-emerald-950/40 text-left hover:bg-emerald-100/60 dark:hover:bg-emerald-900/40 transition-colors cursor-pointer space-y-1 group"
+                    >
+                      <FileText className="w-5 h-5 text-emerald-700 dark:text-emerald-400 group-hover:scale-110 transition-transform" />
+                      <span className="font-bold text-xs text-slate-900 dark:text-white block">Official Bank Statement (PDF)</span>
+                      <span className="text-[11px] text-slate-500 dark:text-slate-400 block">Printable detailed audit report</span>
+                    </button>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={onExportCSV}
-                  className="p-4 rounded-2xl border border-slate-200 bg-slate-50 text-left hover:bg-slate-100 transition-colors cursor-pointer space-y-1"
-                >
-                  <Download className="w-4 h-4 text-emerald-600" />
-                  <span className="font-bold text-xs text-slate-900 block">Export CSV File</span>
-                  <span className="text-[11px] text-slate-500 block">Spreadsheet for Excel &amp; Numbers</span>
-                </button>
+                    {/* CSV Export */}
+                    <button
+                      type="button"
+                      onClick={onExportCSV}
+                      className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 text-left hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer space-y-1"
+                    >
+                      <Download className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                      <span className="font-bold text-xs text-slate-900 dark:text-white block">Export CSV File</span>
+                      <span className="text-[11px] text-slate-500 dark:text-slate-400 block">Spreadsheet for Excel &amp; Numbers</span>
+                    </button>
 
-                <button
-                  type="button"
-                  onClick={handleDownloadBackup}
-                  className="p-4 rounded-2xl border border-slate-200 bg-slate-50 text-left hover:bg-slate-100 transition-colors cursor-pointer space-y-1"
-                >
-                  <HardDrive className="w-4 h-4 text-indigo-600" />
-                  <span className="font-bold text-xs text-slate-900 block">Download Full JSON</span>
-                  <span className="text-[11px] text-slate-500 block">Complete backup of all data &amp; settings</span>
-                </button>
-              </div>
+                    {/* JSON Full Backup */}
+                    <button
+                      type="button"
+                      onClick={handleDownloadBackup}
+                      className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 text-left hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer space-y-1"
+                    >
+                      <HardDrive className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                      <span className="font-bold text-xs text-slate-900 dark:text-white block">Download Full JSON</span>
+                      <span className="text-[11px] text-slate-500 dark:text-slate-400 block">Backup of all data &amp; settings</span>
+                    </button>
+                  </div>
 
-              {/* Restore */}
-              <div className="pt-2 border-t border-slate-100">
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={handleFileChange}
-                  accept=".json"
-                  className="hidden"
-                />
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="w-full py-2.5 rounded-xl border border-slate-300 text-xs font-bold text-slate-800 hover:bg-slate-50 cursor-pointer flex items-center justify-center gap-2"
-                >
-                  <Upload className="w-4 h-4" />
-                  <span>Restore from JSON Backup File</span>
-                </button>
-              </div>
+                  {/* Restore */}
+                  <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleFileChange}
+                      accept=".json"
+                      className="hidden"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="w-full py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      <Upload className="w-4 h-4" />
+                      <span>Restore from JSON Backup File</span>
+                    </button>
+                  </div>
 
-              {/* Danger */}
-              <div className="pt-4 border-t border-rose-200">
-                <button
-                  type="button"
-                  onClick={() => setShowResetDataConfirm(true)}
-                  className="w-full py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold cursor-pointer"
-                >
-                  Clear All Transaction Records
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ============================================================== */}
-        {/* SUB-PAGE 6: ABOUT & PRIVACY                                    */}
-        {/* ============================================================== */}
-        {currentSubPage === 'about' && (
-          <div className="space-y-4 animate-in fade-in duration-150">
-            <div className="bg-white rounded-3xl border border-slate-200/90 p-5 shadow-xs space-y-4">
-              <div className="flex items-center gap-2 text-slate-900 font-bold text-sm">
-                <Lock className="w-4 h-4 text-emerald-600" />
-                <span>100% Local-First Privacy</span>
-              </div>
-              <p className="text-xs text-slate-600 leading-relaxed">
-                SpendDesk operates offline-first. Your financial data, debts, and categories never leave your browser storage unless you choose to sync with your personal Google Sheets account.
-              </p>
-
-              <div className="grid grid-cols-2 gap-3 pt-2">
-                <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 text-center">
-                  <span className="text-[10px] text-slate-400 block uppercase font-bold">Storage Used</span>
-                  <span className="text-sm font-bold text-slate-900 font-mono">{storageUsageKb} KB</span>
-                </div>
-                <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 text-center">
-                  <span className="text-[10px] text-slate-400 block uppercase font-bold">App Version</span>
-                  <span className="text-sm font-bold text-slate-900 font-mono">v3.2 PRO</span>
+                  {/* Danger */}
+                  <div className="pt-4 border-t border-rose-200 dark:border-rose-900">
+                    <button
+                      type="button"
+                      onClick={() => setShowResetDataConfirm(true)}
+                      className="w-full py-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 text-xs font-bold cursor-pointer"
+                    >
+                      Clear All Transaction Records
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          </div>
-        )}
+            )}
+
+            {/* ============================================================== */}
+            {/* SUB-PAGE 5: ABOUT & PRIVACY                                    */}
+            {/* ============================================================== */}
+            {currentSubPage === 'about' && (
+              <div className="space-y-4 animate-in fade-in duration-150">
+                <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/90 dark:border-slate-800 p-5 shadow-xs space-y-4">
+                  <div className="flex items-center gap-2 text-slate-900 dark:text-white font-bold text-sm">
+                    <Lock className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                    <span>100% Local-First Privacy</span>
+                  </div>
+                  <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                    SpendDesk operates offline-first. Your financial data, debts, and categories never leave your browser storage unless you choose to sync with your personal Google Sheets account.
+                  </p>
+
+                  <div className="grid grid-cols-2 gap-3 pt-2">
+                    <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-center">
+                      <span className="text-[10px] text-slate-400 block uppercase font-bold">Storage Used</span>
+                      <span className="text-sm font-bold text-slate-900 dark:text-white font-mono">{storageUsageKb} KB</span>
+                    </div>
+                    <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-center">
+                      <span className="text-[10px] text-slate-400 block uppercase font-bold">App Version</span>
+                      <span className="text-sm font-bold text-slate-900 dark:text-white font-mono">v3.2 PRO</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </motion.div>
         </AnimatePresence>
       </div>
@@ -1421,20 +1535,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       {/* Clear All Data Confirm */}
       {showResetDataConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
-          <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl border border-rose-200 space-y-3">
-            <div className="flex items-center gap-2 text-rose-600">
+          <div className="w-full max-w-sm bg-white dark:bg-slate-900 rounded-3xl p-5 shadow-2xl border border-rose-200 dark:border-rose-900 space-y-3">
+            <div className="flex items-center gap-2 text-rose-600 dark:text-rose-400">
               <AlertTriangle className="w-5 h-5" />
-              <h3 className="font-bold text-sm text-rose-900">Wipe All Records?</h3>
+              <h3 className="font-bold text-sm text-rose-900 dark:text-rose-200">Wipe All Records?</h3>
             </div>
-            <p className="text-xs text-slate-600">
-              Type <strong className="font-mono text-rose-700">RESET</strong> to permanently delete all {transactions.length} transactions.
+            <p className="text-xs text-slate-600 dark:text-slate-300">
+              Type <strong className="font-mono text-rose-700 dark:text-rose-400">RESET</strong> to permanently delete all {transactions.length} transactions.
             </p>
             <input
               type="text"
               value={resetConfirmInput}
               onChange={(e) => setResetConfirmInput(e.target.value)}
               placeholder="Type RESET"
-              className="w-full px-3 py-2 rounded-xl border border-rose-300 font-mono text-xs focus:outline-hidden"
+              className="w-full px-3 py-2 rounded-xl border border-rose-300 dark:border-rose-800 font-mono text-xs focus:outline-hidden bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
             />
             <div className="flex justify-end gap-2 pt-2">
               <button
@@ -1443,7 +1557,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   setShowResetDataConfirm(false);
                   setResetConfirmInput('');
                 }}
-                className="px-3.5 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold cursor-pointer"
+                className="px-3.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold cursor-pointer text-slate-700 dark:text-slate-300"
               >
                 Cancel
               </button>
@@ -1463,33 +1577,33 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       {/* Unsaved Changes Confirmation Modal */}
       {showUnsavedConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-100">
-          <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl border border-slate-200 space-y-3">
-            <div className="flex items-center gap-2 text-amber-600">
+          <div className="w-full max-w-sm bg-white dark:bg-slate-900 rounded-3xl p-5 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-3">
+            <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
               <AlertTriangle className="w-5 h-5 text-amber-500" />
-              <h3 className="font-bold text-sm text-slate-900">Unsaved Changes</h3>
+              <h3 className="font-bold text-sm text-slate-900 dark:text-white">Unsaved Changes</h3>
             </div>
-            <p className="text-xs text-slate-600 leading-relaxed">
+            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
               You have unsaved changes. Do you want to discard your edits and leave, or save them before leaving?
             </p>
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2 pt-2">
               <button
                 type="button"
                 onClick={() => setShowUnsavedConfirm(false)}
-                className="px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-50 cursor-pointer text-center"
+                className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer text-center"
               >
                 Keep Editing
               </button>
               <button
                 type="button"
                 onClick={handleDiscardAndLeave}
-                className="px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold cursor-pointer transition-colors text-center"
+                className="px-3 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 text-rose-700 dark:text-rose-300 text-xs font-bold cursor-pointer transition-colors text-center"
               >
                 Discard &amp; Leave
               </button>
               <button
                 type="button"
                 onClick={(e) => handleSaveAndLeave(e)}
-                className="px-4 py-2 rounded-xl bg-[#116b4e] hover:bg-[#0d5940] text-white text-xs font-bold cursor-pointer transition-colors shadow-xs text-center"
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer transition-colors shadow-xs text-center"
               >
                 Save Changes
               </button>

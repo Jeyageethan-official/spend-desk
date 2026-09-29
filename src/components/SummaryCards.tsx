@@ -60,25 +60,11 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
       {/* 1. Main Hero Wallet Card - Mobile First */}
       <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-950 text-white rounded-3xl p-5 sm:p-6 shadow-md border border-slate-700/60 relative overflow-hidden">
         <div className="relative z-10">
-          <div className="flex items-center justify-between gap-2 mb-2">
+          <div className="flex items-center gap-2 mb-2">
             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
               <Wallet className="w-3 h-3" />
               Cash Wallet
             </span>
-
-            {isBalanceNegative ? (
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
-                Negative Cash
-              </span>
-            ) : isBalanceLow ? (
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                Low Cash
-              </span>
-            ) : (
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                Healthy
-              </span>
-            )}
           </div>
 
           <p className="text-[11px] uppercase tracking-wider text-slate-300 font-semibold">
@@ -87,6 +73,22 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
 
           <div className="mt-1 text-2xl sm:text-4xl font-extrabold tracking-tight text-white flex items-baseline gap-2">
             <span>{formatCurrency(safeSummary.currentCashBalance, currency)}</span>
+          </div>
+
+          <div className="mt-1.5">
+            {isBalanceNegative ? (
+              <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                Negative Cash
+              </span>
+            ) : isBalanceLow ? (
+              <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                Low Cash
+              </span>
+            ) : (
+              <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                Healthy
+              </span>
+            )}
           </div>
 
           {/* Quick Action Buttons: Cash In, Spend, and sleek SMS Icon Button */}

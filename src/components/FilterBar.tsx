@@ -127,7 +127,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
               placeholder="Search transactions, notes, merchant..."
               value={filter.searchQuery || ''}
               onChange={(e) => onFilterChange({ ...filter, searchQuery: e.target.value })}
-              className="w-full pl-9.5 pr-8 py-2 text-xs bg-slate-50/80 hover:bg-slate-50 border border-slate-200/90 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-hidden focus:bg-white focus:border-slate-400 focus:ring-2 focus:ring-slate-900/5 transition-all"
+              className="w-full pl-10 pr-8 py-2 text-xs bg-slate-50/80 hover:bg-slate-50 border border-slate-200/90 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-hidden focus:bg-white focus:border-slate-400 focus:ring-2 focus:ring-slate-900/5 transition-all"
             />
             {filter.searchQuery && (
               <button

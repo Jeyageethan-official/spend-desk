@@ -10,4 +10,12 @@
     --color-spenddesk-light: #188663;
     --color-spenddesk-bg: #eaf5f0;
   }
+
+  html, body {
+    color-scheme: light;
+    touch-action: manipulation;
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: none;
+  }
 }

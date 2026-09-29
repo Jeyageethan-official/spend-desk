@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { motion } from 'motion/react';
 import { 
   X, 
   ArrowDownLeft, 
@@ -36,6 +37,7 @@ interface TransactionModalProps {
   defaultAlertPhone?: string;
   onOpenSmsReader?: () => void;
   onOpenSettingsCategories?: () => void;
+  storageEmail?: string | null;
 }
 
 export const TransactionModal: React.FC<TransactionModalProps> = ({
@@ -46,6 +48,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   defaultType = 'cash_expense',
   defaultAlertPhone = '',
   onOpenSettingsCategories,
+  storageEmail,
 }) => {
   const [type, setType] = useState<TransactionType>(defaultType);
   const [amountStr, setAmountStr] = useState<string>('');
@@ -56,7 +59,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   const [receiptImage, setReceiptImage] = useState<string | undefined>(undefined);
   
   // Unified categories state loaded from storage
-  const [categoryDefs, setCategoryDefs] = useState<CategoryDef[]>(() => loadStoredCategoryDefs());
+  const [categoryDefs, setCategoryDefs] = useState<CategoryDef[]>(() => loadStoredCategoryDefs(storageEmail));
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
 
   const handleClose = () => {
@@ -69,6 +72,8 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
 
   const amountInputRef = useRef<HTMLInputElement>(null);
   const receiptFileRef = useRef<HTMLInputElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
 
   const handleReceiptUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -108,13 +113,13 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   // Reload categories when modal opens
   useEffect(() => {
     if (isOpen) {
-      const stored = loadStoredCategoryDefs();
+      const stored = loadStoredCategoryDefs(storageEmail);
       setCategoryDefs(stored);
       if (!editingTransaction && stored.length > 0 && !stored.some(c => c.name === category)) {
         setCategory(stored[0].name);
       }
     }
-  }, [isOpen]);
+  }, [isOpen, storageEmail]);
 
   useEffect(() => {
     if (editingTransaction) {
@@ -155,14 +160,51 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
     }
   }, [isOpen]);
 
+  // Lock body scroll when modal is open to prevent page movement/shift
+  useEffect(() => {
+    if (isOpen) {
+      const scrollY = window.scrollY;
+      const previousHtmlOverflow = document.documentElement.style.overflow;
+      const previousBodyOverflow = document.body.style.overflow;
+      const previousBodyPosition = document.body.style.position;
+      const previousBodyTop = document.body.style.top;
+      const previousBodyWidth = document.body.style.width;
+
+      // On mobile Safari, overflow:hidden alone still permits the page behind a
+      // bottom sheet to rubber-band. Fix the document in place while this sheet is open.
+      document.documentElement.style.overflow = 'hidden';
+      document.body.style.overflow = 'hidden';
+      document.body.style.position = 'fixed';
+      document.body.style.top = `-${scrollY}px`;
+      document.body.style.width = '100%';
+
+      // Prevent a swipe on the sheet header/backdrop from moving the page behind
+      // the modal. The form itself keeps normal vertical scrolling.
+      const blockBackgroundTouch = (event: TouchEvent) => {
+        if (!formRef.current?.contains(event.target as Node)) {
+          event.preventDefault();
+        }
+      };
+      const overlay = overlayRef.current;
+      overlay?.addEventListener('touchmove', blockBackgroundTouch, { passive: false });
+
+      return () => {
+        overlay?.removeEventListener('touchmove', blockBackgroundTouch);
+        document.documentElement.style.overflow = previousHtmlOverflow;
+        document.body.style.overflow = previousBodyOverflow;
+        document.body.style.position = previousBodyPosition;
+        document.body.style.top = previousBodyTop;
+        document.body.style.width = previousBodyWidth;
+        window.scrollTo(0, scrollY);
+      };
+    }
+  }, [isOpen]);
+
   const handleTypeChange = (newType: TransactionType) => {
     setType(newType);
     if (newType === 'cash_added') {
       setCategory('Income / Top-up');
       setPaymentMethod('Cash');
-    } else if (newType === 'card_expense') {
-      if (category === 'Income / Top-up') setCategory('Shopping');
-      setPaymentMethod('Card');
     } else {
       if (category === 'Income / Top-up') setCategory('Food');
       setPaymentMethod('Cash');
@@ -206,6 +248,16 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
 
   const currentAmountNum = parseFloat(amountStr) || 0;
 
+  // Both payment choices intentionally share the same neutral interaction state.
+  // Payment method is data, not a visual status, so Card must not turn blue on hover.
+  const paymentModeButtonClass = (method: 'Cash' | 'Card') => (
+    `py-2 px-3 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+      paymentMethod === method
+        ? 'bg-slate-900 text-white shadow-xs font-black'
+        : 'text-slate-600 hover:bg-slate-200/80 hover:text-slate-900'
+    }`
+  );
+
   // Build combined categories from unified list
   const allCategories = categoryDefs.map(c => ({
     label: c.name,
@@ -213,9 +265,12 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   }));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-150">
-      <div 
-        className="w-full sm:max-w-md bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200 overflow-hidden max-h-[94vh] flex flex-col transition-all"
+    <div ref={overlayRef} className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/70 backdrop-blur-xs overscroll-none animate-in fade-in duration-150">
+      <motion.div
+        initial={{ opacity: 0, y: 48 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+        className="w-full sm:max-w-md bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200 overflow-hidden max-h-[94vh] flex flex-col touch-pan-y"
         role="dialog"
         aria-modal="true"
       >
@@ -234,44 +289,32 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
         </div>
 
         {/* Modal Form Content */}
-        <form id="transaction-form" onSubmit={handleSubmit} className="p-5 overflow-y-auto flex-1 space-y-4 text-xs sm:text-sm">
-          {/* 1. Transaction Type Toggle */}
-          <div className="grid grid-cols-3 gap-1 p-1 bg-slate-100 rounded-2xl">
+        <form ref={formRef} id="transaction-form" onSubmit={handleSubmit} className="p-5 overflow-y-auto overscroll-contain flex-1 space-y-4 text-xs sm:text-sm touch-pan-y">
+          {/* 1. Transaction Type Toggle (2 Tabs: Spend vs Add Cash) */}
+          <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-100 rounded-2xl">
             <button
               type="button"
               onClick={() => handleTypeChange('cash_expense')}
-              className={`py-2 px-1 rounded-xl text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${
+              className={`py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                 type === 'cash_expense'
-                  ? 'bg-white text-rose-700 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-white text-rose-700 shadow-sm font-extrabold'
+                  : 'text-slate-600 hover:bg-slate-200/70 hover:text-slate-900'
               }`}
             >
-              <ArrowDownLeft className="w-3.5 h-3.5 text-rose-600" />
-              <span>Cash Out</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleTypeChange('card_expense')}
-              className={`py-2 px-1 rounded-xl text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${
-                type === 'card_expense'
-                  ? 'bg-white text-blue-700 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <CreditCard className="w-3.5 h-3.5 text-blue-600" />
-              <span>Card / Bank</span>
+              <ArrowDownLeft className="w-4 h-4 text-rose-600" />
+              <span>Spend / Cash Out</span>
             </button>
             <button
               type="button"
               onClick={() => handleTypeChange('cash_added')}
-              className={`py-2 px-1 rounded-xl text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${
+              className={`py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                 type === 'cash_added'
-                  ? 'bg-white text-emerald-700 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-white text-emerald-700 shadow-sm font-extrabold'
+                  : 'text-slate-600 hover:bg-slate-200/70 hover:text-slate-900'
               }`}
             >
-              <ArrowUpRight className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Add Cash</span>
+              <ArrowUpRight className="w-4 h-4 text-emerald-600" />
+              <span>Add Cash / Income</span>
             </button>
           </div>
 
@@ -392,12 +435,12 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                 Date
               </label>
               <div className="relative">
-                <Calendar className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <Calendar className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type="date"
                   value={date}
                   onChange={(e) => setDate(e.target.value)}
-                  className="w-full pl-8 pr-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-hidden focus:bg-white"
+                  className="w-full pl-8 pr-2.5 py-2 text-xs text-left font-medium bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-hidden focus:bg-white"
                 />
               </div>
             </div>
@@ -406,24 +449,20 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
               <label className="text-[10px] font-bold uppercase text-slate-400 block mb-1">
                 Payment Mode
               </label>
-              <div className="grid grid-cols-2 gap-1 bg-slate-100 p-0.5 rounded-xl">
+              <div className="grid grid-cols-2 gap-1 bg-slate-100 p-1 rounded-xl">
                 <button
                   type="button"
                   onClick={() => setPaymentMethod('Cash')}
-                  className={`py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                    paymentMethod === 'Cash' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600'
-                  }`}
+                  className={paymentModeButtonClass('Cash')}
                 >
                   Cash
                 </button>
                 <button
                   type="button"
                   onClick={() => setPaymentMethod('Card')}
-                  className={`py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                    paymentMethod === 'Card' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600'
-                  }`}
+                  className={paymentModeButtonClass('Card')}
                 >
-                  Card/Bank
+                  Card
                 </button>
               </div>
             </div>
@@ -517,9 +556,9 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
             type="submit"
             form="transaction-form"
             disabled={currentAmountNum <= 0}
-            className="w-full py-3.5 px-4 bg-slate-900 hover:bg-slate-800 active:scale-[0.99] text-white rounded-2xl font-bold text-sm shadow-md cursor-pointer disabled:opacity-40 transition-all flex items-center justify-center gap-2"
+            className="w-full py-3.5 px-4 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 active:scale-[0.99] text-white rounded-2xl font-black text-sm shadow-md cursor-pointer disabled:opacity-40 transition-all flex items-center justify-center gap-2"
           >
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 stroke-[2.5]" />
+            <CheckCircle2 className="w-4.5 h-4.5 text-emerald-200 stroke-[2.5]" />
             <span>{editingTransaction ? 'Save Changes' : 'Save Transaction'}</span>
           </button>
         </div>
@@ -554,7 +593,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
             </div>
           </div>
         )}
-      </div>
+      </motion.div>
     </div>
   );
 };

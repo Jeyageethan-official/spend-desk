@@ -16,13 +16,18 @@ import {
   Search,
   CheckCircle2,
   ShieldCheck,
-  Unlink
+  Unlink,
+  Clock3,
+  Table2,
+  HandCoins,
+  Palette
 } from 'lucide-react';
-import { GoogleSheetMeta } from '../types/finance';
+import { GoogleSheetMeta, LendItem, Transaction } from '../types/finance';
 import { 
   listUserSpreadsheets, 
   createMoneyTrackerSpreadsheet, 
   requestGoogleAccessToken,
+  applySpendDeskSheetDesign,
   DriveSpreadsheetItem,
   GOOGLE_APPS_SCRIPT_TEMPLATE
 } from '../lib/sheetsApi';
@@ -36,13 +41,15 @@ interface SheetManagerViewProps {
   accessToken: string | null;
   activeSheet: GoogleSheetMeta | null;
   onSetActiveSheet: (sheet: GoogleSheetMeta | null) => void;
-  onPushToSheet: () => Promise<void>;
-  onPullFromSheet: () => Promise<void>;
-  onSignInDirect: () => void;
-  onExportCSV: () => void;
-  isSyncing: boolean;
+  onPushToSheet: () => Promise<unknown>;
+  onPullFromSheet: () => Promise<unknown>;
+  onSignInDirect?: () => void;
+  onExportCSV?: () => void;
+  isSyncing?: boolean;
   totalTransactionsCount?: number;
   totalLendCount?: number;
+  transactions?: Transaction[];
+  lendItems?: LendItem[];
   onNotification?: (msg: string, type?: 'success' | 'info' | 'error') => void;
 }
 
@@ -55,11 +62,13 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
   onSetActiveSheet,
   onPushToSheet,
   onPullFromSheet,
-  onSignInDirect,
-  onExportCSV,
-  isSyncing,
+  onSignInDirect = () => undefined,
+  onExportCSV = () => undefined,
+  isSyncing = false,
   totalTransactionsCount = 0,
   totalLendCount = 0,
+  transactions = [],
+  lendItems = [],
   onNotification,
 }) => {
   const [activeTab, setActiveTab] = useState<SheetMenuTab>('sheets');
@@ -68,6 +77,7 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
   const [loadingList, setLoadingList] = useState(false);
   const [newTitle, setNewTitle] = useState('SpendDesk - Cash & Card');
   const [isCreating, setIsCreating] = useState(false);
+  const [isApplyingDesign, setIsApplyingDesign] = useState(false);
   const [webhookInput, setWebhookInput] = useState(() => loadStoredWebhookUrl());
   const [copiedScript, setCopiedScript] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -192,9 +202,34 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
     onNotification?.('Google Sheet disconnected.', 'info');
   };
 
+  const handleApplySheetDesign = async () => {
+    if (!activeSheet) return;
+    setIsApplyingDesign(true);
+    setErrorMsg('');
+    setSuccessMsg('');
+    try {
+      let token = accessToken;
+      if (!token || token === 'local_token' || token.length < 30) {
+        token = await requestGoogleAccessToken();
+      }
+      await applySpendDeskSheetDesign(token, activeSheet.id);
+      const message = 'New SpendDesk design applied to Dashboard, Transactions and Lend & Borrow.';
+      setSuccessMsg(message);
+      onNotification?.(message, 'success');
+    } catch (err: any) {
+      console.error('Failed to apply Google Sheet design:', err);
+      setErrorMsg(err?.message || 'Could not apply the spreadsheet design. Please sign in again and retry.');
+    } finally {
+      setIsApplyingDesign(false);
+    }
+  };
+
   const filteredDriveSheets = spreadsheets.filter((s) =>
     s.name.toLowerCase().includes(driveSearch.toLowerCase())
   );
+  const recentTransactions = [...transactions].sort((a, b) => b.createdAt - a.createdAt).slice(0, 8);
+  const recentLends = [...lendItems].sort((a, b) => b.createdAt - a.createdAt).slice(0, 6);
+  const formatAmount = (amount: number) => `Rs ${Math.abs(amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   return (
     <div className="min-h-screen bg-slate-50/60 pb-24 animate-in fade-in duration-200">
@@ -223,8 +258,8 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
       <div className="max-w-2xl md:max-w-4xl mx-auto px-4 pt-6 space-y-6">
         {/* Main Card */}
         <div className="bg-white rounded-3xl border border-slate-200/90 shadow-xs flex flex-col min-h-[580px] overflow-hidden">
-          {/* Top Status Banner */}
-          <div className="p-5 border-b border-slate-100 bg-gradient-to-r from-slate-50 via-white to-slate-50 flex items-center justify-between">
+          {/* Connected spreadsheet header */}
+          <div className="p-5 border-b border-slate-100 bg-slate-50/80 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-2xl bg-emerald-100/70 text-emerald-800 flex items-center justify-center shrink-0">
                 <FileSpreadsheet className="w-5 h-5" />
@@ -237,10 +272,10 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                   {activeSheet ? (
                     <span className="text-emerald-700 font-semibold flex items-center gap-1.5">
                       <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                      Live Sync Active · Last synced: {activeSheet.lastSyncedAt || 'Just now'}
+                      Connected · Last saved: {activeSheet.lastSyncedAt || 'Not yet'}
                     </span>
                   ) : (
-                    'Connect a Google Sheet to enable 2-way cloud synchronization'
+                    'Choose a Google Sheet as your personal backup ledger'
                   )}
                 </p>
               </div>
@@ -365,37 +400,10 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                   {/* Connected Sheet Controls */}
                   {activeSheet ? (
                     <div className="space-y-4">
-                      <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-3">
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider block">
-                              Connected Spreadsheet
-                            </span>
-                            <h4 className="font-bold text-sm text-slate-900 mt-0.5">
-                              {activeSheet.name}
-                            </h4>
-                          </div>
-                          <a
-                            href={activeSheet.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="p-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 hover:text-emerald-700 shadow-2xs"
-                            title="Open in Google Sheets"
-                          >
-                            <ExternalLink className="w-4 h-4" />
-                          </a>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-slate-200">
-                          <div>
-                            <span className="text-slate-400 block text-[10px]">Local Transactions</span>
-                            <span className="font-bold text-slate-800">{totalTransactionsCount} items</span>
-                          </div>
-                          <div>
-                            <span className="text-slate-400 block text-[10px]">Lend/Borrow</span>
-                            <span className="font-bold text-slate-800">{totalLendCount} items</span>
-                          </div>
-                        </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 border border-slate-200 rounded-2xl overflow-hidden bg-white divide-x divide-slate-100">
+                        <div className="p-3.5"><span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Transactions</span><span className="mt-1 block text-lg font-black text-slate-900">{totalTransactionsCount}</span></div>
+                        <div className="p-3.5"><span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Lend / Borrow</span><span className="mt-1 block text-lg font-black text-slate-900">{totalLendCount}</span></div>
+                        <div className="hidden sm:block p-3.5"><span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Sync status</span><span className="mt-1 flex items-center gap-1 text-xs font-bold text-emerald-700"><CheckCircle2 className="w-3.5 h-3.5" /> Ready</span></div>
                       </div>
 
                       {/* Push & Pull Buttons */}
@@ -420,6 +428,16 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                           <span>Pull from Sheet</span>
                         </button>
                       </div>
+
+                      <button
+                        type="button"
+                        onClick={handleApplySheetDesign}
+                        disabled={isApplyingDesign || isSyncing}
+                        className="w-full p-3.5 rounded-2xl border border-indigo-200 bg-indigo-50/70 hover:bg-indigo-100 text-indigo-900 font-bold text-xs flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 transition-colors"
+                      >
+                        <Palette className={`w-4 h-4 text-indigo-600 ${isApplyingDesign ? 'animate-pulse' : ''}`} />
+                        <span>{isApplyingDesign ? 'Applying table design…' : 'Apply premium design to all 3 tabs'}</span>
+                      </button>
 
                       <div className="pt-1 flex items-center justify-between">
                         <button
@@ -667,4 +685,3 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
     </div>
   );
 };
-

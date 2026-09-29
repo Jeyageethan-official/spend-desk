@@ -147,7 +147,10 @@ export const signUpWithEmailSupabase = async (email: string, password: string): 
 export const signOutSupabase = async () => {
   try {
     const supabase = getSupabase();
-    await supabase.auth.signOut();
+    // Default Supabase sign-out revokes every session for this account. SpendDesk
+    // deliberately signs out this browser/device only; other signed-in devices
+    // keep their own active session and continue receiving realtime updates.
+    await supabase.auth.signOut({ scope: 'local' });
   } catch (e) {
     console.warn('Signout warning:', e);
   }

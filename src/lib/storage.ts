@@ -6,6 +6,7 @@ const BUDGET_CONFIG_KEY = 'money_tracker_budget_config_v2';
 const WEBHOOK_URL_KEY = 'money_tracker_webhook_url_v2';
 const LEND_STORAGE_KEY = 'money_tracker_lend_items_v2';
 const ALERT_PHONE_KEY = 'money_tracker_alert_phone_v2';
+const TELEGRAM_ALERT_KEY = 'money_tracker_telegram_alert_v1';
 const CUSTOM_CATEGORIES_KEY = 'money_tracker_custom_categories_v2';
 const UNIFIED_CATEGORIES_KEY = 'money_tracker_unified_categories_v3';
 const PROFILE_NAME_KEY = 'money_tracker_profile_name';
@@ -18,34 +19,45 @@ export interface UserProfile {
   avatar: string | null;
 }
 
-export const loadStoredProfile = (): UserProfile => {
+const getScopedKey = (baseKey: string, email?: string | null): string => {
+  if (!email || !email.trim()) return `${baseKey}_guest`;
+  return `${baseKey}_${email.trim().toLowerCase()}`;
+};
+
+export const loadStoredProfile = (email?: string | null): UserProfile => {
   try {
-    let name = localStorage.getItem(PROFILE_NAME_KEY);
+    const nameKey = getScopedKey(PROFILE_NAME_KEY, email);
+    const avatarKey = getScopedKey(CUSTOM_AVATAR_KEY, email);
+    const emailKey = getScopedKey(PROFILE_EMAIL_KEY, email);
+
+    let name = localStorage.getItem(nameKey);
     if (!name || name === 'Jeyaram Tech') {
-      name = 'My Wallet';
+      name = email ? email.split('@')[0] : 'My Wallet';
     }
-    const avatar = localStorage.getItem(CUSTOM_AVATAR_KEY) || null;
-    let email = localStorage.getItem(PROFILE_EMAIL_KEY);
-    if (!email || email === 'jeyaramantech05@gmail.com') {
-      email = '';
-    }
-    return { name, avatar, email };
+    const avatar = localStorage.getItem(avatarKey);
+    const storedEmail = localStorage.getItem(emailKey) || email || '';
+    return { name, avatar, email: storedEmail };
   } catch {
-    return { name: 'My Wallet', avatar: null, email: '' };
+    return { name: email ? email.split('@')[0] : 'My Wallet', avatar: null, email: email || '' };
   }
 };
 
-export const saveStoredProfile = (profile: Partial<UserProfile>) => {
+export const saveStoredProfile = (profile: Partial<UserProfile>, email?: string | null) => {
   try {
-    if (profile.name !== undefined) localStorage.setItem(PROFILE_NAME_KEY, profile.name);
+    const userEmail = email || profile.email || null;
+    const nameKey = getScopedKey(PROFILE_NAME_KEY, userEmail);
+    const avatarKey = getScopedKey(CUSTOM_AVATAR_KEY, userEmail);
+    const emailKey = getScopedKey(PROFILE_EMAIL_KEY, userEmail);
+
+    if (profile.name !== undefined) localStorage.setItem(nameKey, profile.name);
     if (profile.avatar !== undefined) {
       if (profile.avatar) {
-        localStorage.setItem(CUSTOM_AVATAR_KEY, profile.avatar);
+        localStorage.setItem(avatarKey, profile.avatar);
       } else {
-        localStorage.removeItem(CUSTOM_AVATAR_KEY);
+        localStorage.removeItem(avatarKey);
       }
     }
-    if (profile.email !== undefined) localStorage.setItem(PROFILE_EMAIL_KEY, profile.email);
+    if (profile.email !== undefined) localStorage.setItem(emailKey, profile.email);
   } catch (e) {
     console.error('Failed to save profile to storage', e);
   }
@@ -70,9 +82,10 @@ export const DEFAULT_INITIAL_CATEGORIES: CategoryDef[] = [
   { id: 'cat-other', name: 'Other', iconName: 'MoreHorizontal', color: '#64748b' },
 ];
 
-export const loadStoredCategoryDefs = (): CategoryDef[] => {
+export const loadStoredCategoryDefs = (email?: string | null): CategoryDef[] => {
   try {
-    const raw = localStorage.getItem(UNIFIED_CATEGORIES_KEY);
+    const key = getScopedKey(UNIFIED_CATEGORIES_KEY, email);
+    const raw = localStorage.getItem(key);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
@@ -81,7 +94,7 @@ export const loadStoredCategoryDefs = (): CategoryDef[] => {
     }
 
     // Migration from legacy custom categories if exists
-    const legacyRaw = localStorage.getItem(CUSTOM_CATEGORIES_KEY);
+    const legacyRaw = !email || !email.trim() ? localStorage.getItem(CUSTOM_CATEGORIES_KEY) : null;
     const legacyDefs: CategoryDef[] = [];
     if (legacyRaw) {
       const parsedLegacy = JSON.parse(legacyRaw);
@@ -104,7 +117,7 @@ export const loadStoredCategoryDefs = (): CategoryDef[] => {
       }
     });
 
-    localStorage.setItem(UNIFIED_CATEGORIES_KEY, JSON.stringify(initial));
+    localStorage.setItem(key, JSON.stringify(initial));
     return initial;
   } catch (e) {
     console.error('Failed to load category definitions:', e);
@@ -112,19 +125,19 @@ export const loadStoredCategoryDefs = (): CategoryDef[] => {
   }
 };
 
-export const saveStoredCategoryDefs = (categories: CategoryDef[]) => {
+export const saveStoredCategoryDefs = (categories: CategoryDef[], email?: string | null) => {
   try {
-    localStorage.setItem(UNIFIED_CATEGORIES_KEY, JSON.stringify(categories));
-    // Keep custom categories in sync for backwards compatibility
-    localStorage.setItem(CUSTOM_CATEGORIES_KEY, JSON.stringify(categories));
+    const key = getScopedKey(UNIFIED_CATEGORIES_KEY, email);
+    localStorage.setItem(key, JSON.stringify(categories));
   } catch (e) {
     console.error('Failed to save category definitions:', e);
   }
 };
 
-export const resetToDefaultCategoryDefs = (): CategoryDef[] => {
+export const resetToDefaultCategoryDefs = (email?: string | null): CategoryDef[] => {
   try {
-    localStorage.setItem(UNIFIED_CATEGORIES_KEY, JSON.stringify(DEFAULT_INITIAL_CATEGORIES));
+    const key = getScopedKey(UNIFIED_CATEGORIES_KEY, email);
+    localStorage.setItem(key, JSON.stringify(DEFAULT_INITIAL_CATEGORIES));
   } catch (e) {
     console.error('Failed to reset categories:', e);
   }
@@ -141,9 +154,13 @@ export const DEFAULT_BUDGET_CONFIG: BudgetConfig = {
 
 export const INITIAL_SAMPLE_TRANSACTIONS: Transaction[] = [];
 
-export const loadStoredTransactions = (): Transaction[] => {
+export const loadStoredTransactions = (email?: string | null): Transaction[] => {
   try {
-    const raw = localStorage.getItem(TX_STORAGE_KEY);
+    const key = getScopedKey(TX_STORAGE_KEY, email);
+    let raw = localStorage.getItem(key);
+    if (!raw && (!email || !email.trim())) {
+      raw = localStorage.getItem(TX_STORAGE_KEY);
+    }
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
@@ -156,17 +173,22 @@ export const loadStoredTransactions = (): Transaction[] => {
   return [];
 };
 
-export const saveStoredTransactions = (transactions: Transaction[]) => {
+export const saveStoredTransactions = (transactions: Transaction[], email?: string | null) => {
   try {
-    localStorage.setItem(TX_STORAGE_KEY, JSON.stringify(transactions));
+    const key = getScopedKey(TX_STORAGE_KEY, email);
+    localStorage.setItem(key, JSON.stringify(transactions));
   } catch (e) {
     console.error('Failed to store transactions:', e);
   }
 };
 
-export const loadStoredLendItems = (): LendItem[] => {
+export const loadStoredLendItems = (email?: string | null): LendItem[] => {
   try {
-    const raw = localStorage.getItem(LEND_STORAGE_KEY);
+    const key = getScopedKey(LEND_STORAGE_KEY, email);
+    let raw = localStorage.getItem(key);
+    if (!raw && (!email || !email.trim())) {
+      raw = localStorage.getItem(LEND_STORAGE_KEY);
+    }
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
@@ -179,33 +201,73 @@ export const loadStoredLendItems = (): LendItem[] => {
   return [];
 };
 
-export const saveStoredLendItems = (items: LendItem[]) => {
+export const saveStoredLendItems = (items: LendItem[], email?: string | null) => {
   try {
-    localStorage.setItem(LEND_STORAGE_KEY, JSON.stringify(items));
+    const key = getScopedKey(LEND_STORAGE_KEY, email);
+    localStorage.setItem(key, JSON.stringify(items));
   } catch (e) {
     console.error('Failed to save lend items:', e);
   }
 };
 
-export const loadStoredAlertPhone = (): string => {
+export const loadStoredAlertPhone = (email?: string | null): string => {
   try {
-    return localStorage.getItem(ALERT_PHONE_KEY) || '';
+    return localStorage.getItem(getScopedKey(ALERT_PHONE_KEY, email)) || '';
   } catch (e) {
     return '';
   }
 };
 
-export const saveStoredAlertPhone = (phone: string) => {
+export const saveStoredAlertPhone = (phone: string, email?: string | null) => {
   try {
-    localStorage.setItem(ALERT_PHONE_KEY, phone);
+    localStorage.setItem(getScopedKey(ALERT_PHONE_KEY, email), phone);
   } catch (e) {
     console.error('Failed to save alert phone:', e);
   }
 };
 
-export const loadStoredSheetMeta = (): GoogleSheetMeta | null => {
+export interface TelegramAlertConfig {
+  enabled: boolean;
+  chatId: string;
+}
+
+const DEFAULT_TELEGRAM_ALERT_CONFIG: TelegramAlertConfig = {
+  enabled: false,
+  chatId: '',
+};
+
+export const loadStoredTelegramAlertConfig = (email?: string | null): TelegramAlertConfig => {
   try {
-    const raw = localStorage.getItem(SHEET_META_KEY);
+    const raw = localStorage.getItem(getScopedKey(TELEGRAM_ALERT_KEY, email));
+    if (!raw) return DEFAULT_TELEGRAM_ALERT_CONFIG;
+    const parsed = JSON.parse(raw);
+    return {
+      enabled: Boolean(parsed?.enabled),
+      chatId: typeof parsed?.chatId === 'string' ? parsed.chatId.trim() : '',
+    };
+  } catch {
+    return DEFAULT_TELEGRAM_ALERT_CONFIG;
+  }
+};
+
+export const saveStoredTelegramAlertConfig = (config: TelegramAlertConfig, email?: string | null) => {
+  try {
+    localStorage.setItem(
+      getScopedKey(TELEGRAM_ALERT_KEY, email),
+      JSON.stringify({ enabled: Boolean(config.enabled), chatId: config.chatId.trim() })
+    );
+  } catch (e) {
+    console.error('Failed to save Telegram alert settings:', e);
+  }
+};
+
+export const loadStoredSheetMeta = (email?: string | null): GoogleSheetMeta | null => {
+  try {
+    const key = getScopedKey(SHEET_META_KEY, email);
+    let raw = localStorage.getItem(key);
+    if (!raw && (!email || !email.trim())) {
+      raw = localStorage.getItem(SHEET_META_KEY);
+    }
     if (raw) return JSON.parse(raw);
   } catch (e) {
     console.error('Failed to parse sheet meta:', e);
@@ -213,15 +275,101 @@ export const loadStoredSheetMeta = (): GoogleSheetMeta | null => {
   return null;
 };
 
-export const saveStoredSheetMeta = (meta: GoogleSheetMeta | null) => {
+export const saveStoredSheetMeta = (meta: GoogleSheetMeta | null, email?: string | null) => {
   try {
+    const key = getScopedKey(SHEET_META_KEY, email);
     if (meta) {
-      localStorage.setItem(SHEET_META_KEY, JSON.stringify(meta));
+      localStorage.setItem(key, JSON.stringify(meta));
     } else {
-      localStorage.removeItem(SHEET_META_KEY);
+      localStorage.removeItem(key);
     }
   } catch (e) {
     console.error('Failed to save sheet meta:', e);
+  }
+};
+
+export const mergeGuestDataIntoUser = (
+  userEmail: string
+): { txCount: number; lendCount: number; mergedTxs: Transaction[]; mergedLends: LendItem[] } => {
+  try {
+    if (!userEmail || !userEmail.trim()) {
+      return { txCount: 0, lendCount: 0, mergedTxs: [], mergedLends: [] };
+    }
+
+    // Only merge unassigned guest & legacy root data created while signed out
+    const guestTxs = loadStoredTransactions('guest');
+    const legacyTxs = loadStoredTransactions(null);
+    const offlineTxsToMerge = [...guestTxs, ...legacyTxs];
+
+    const guestLends = loadStoredLendItems('guest');
+    const legacyLends = loadStoredLendItems(null);
+    const offlineLendsToMerge = [...guestLends, ...legacyLends];
+
+    const existingUserTxs = loadStoredTransactions(userEmail);
+    const existingUserLends = loadStoredLendItems(userEmail);
+
+    const txMap = new Map<string, Transaction>();
+    existingUserTxs.forEach(t => { if (t && t.id) txMap.set(t.id, t); });
+    let newTxCount = 0;
+    offlineTxsToMerge.forEach(t => {
+      if (t && t.id && !txMap.has(t.id)) {
+        txMap.set(t.id, t);
+        newTxCount++;
+      }
+    });
+    const finalMergedTxs = Array.from(txMap.values());
+
+    const lendMap = new Map<string, LendItem>();
+    existingUserLends.forEach(l => { if (l && l.id) lendMap.set(l.id, l); });
+    let newLendCount = 0;
+    offlineLendsToMerge.forEach(l => {
+      if (l && l.id && !lendMap.has(l.id)) {
+        lendMap.set(l.id, l);
+        newLendCount++;
+      }
+    });
+    const finalMergedLends = Array.from(lendMap.values());
+
+    saveStoredTransactions(finalMergedTxs, userEmail);
+    saveStoredLendItems(finalMergedLends, userEmail);
+
+    // Clear guest and root legacy keys after successful merge so next user doesn't get old guest data
+    try {
+      saveStoredTransactions([], 'guest');
+      saveStoredLendItems([], 'guest');
+      localStorage.removeItem(TX_STORAGE_KEY);
+      localStorage.removeItem(LEND_STORAGE_KEY);
+    } catch (e) {}
+
+    return {
+      txCount: newTxCount,
+      lendCount: newLendCount,
+      mergedTxs: finalMergedTxs,
+      mergedLends: finalMergedLends
+    };
+  } catch (e) {
+    console.error('Failed to merge guest data into user storage:', e);
+    return { txCount: 0, lendCount: 0, mergedTxs: [], mergedLends: [] };
+  }
+};
+
+export const loadStoredBudgetConfig = (email?: string | null): BudgetConfig => {
+  try {
+    const key = getScopedKey(BUDGET_CONFIG_KEY, email);
+    const raw = localStorage.getItem(key);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {
+    console.error('Failed to parse budget config:', e);
+  }
+  return DEFAULT_BUDGET_CONFIG;
+};
+
+export const saveStoredBudgetConfig = (config: BudgetConfig, email?: string | null) => {
+  try {
+    const key = getScopedKey(BUDGET_CONFIG_KEY, email);
+    localStorage.setItem(key, JSON.stringify(config));
+  } catch (e) {
+    console.error('Failed to save budget config:', e);
   }
 };
 
@@ -245,23 +393,6 @@ export const saveStoredWebhookUrl = (url: string) => {
   }
 };
 
-export const loadStoredBudgetConfig = (): BudgetConfig => {
-  try {
-    const raw = localStorage.getItem(BUDGET_CONFIG_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch (e) {
-    console.error('Failed to parse budget config:', e);
-  }
-  return DEFAULT_BUDGET_CONFIG;
-};
-
-export const saveStoredBudgetConfig = (config: BudgetConfig) => {
-  try {
-    localStorage.setItem(BUDGET_CONFIG_KEY, JSON.stringify(config));
-  } catch (e) {
-    console.error('Failed to save budget config:', e);
-  }
-};
 
 export interface CustomCategoryDef {
   name: string;
@@ -320,39 +451,39 @@ export interface FullAppDataBackup {
   alertPhone: string;
 }
 
-export const exportFullBackupJson = (): string => {
+export const exportFullBackupJson = (email?: string | null): string => {
   const data: FullAppDataBackup = {
     version: '3.0.0',
     exportedAt: new Date().toISOString(),
-    transactions: loadStoredTransactions(),
-    lendItems: loadStoredLendItems(),
-    categories: loadStoredCategoryDefs(),
-    budgetConfig: loadStoredBudgetConfig(),
-    alertPhone: loadStoredAlertPhone(),
+    transactions: loadStoredTransactions(email),
+    lendItems: loadStoredLendItems(email),
+    categories: loadStoredCategoryDefs(email),
+    budgetConfig: loadStoredBudgetConfig(email),
+    alertPhone: loadStoredAlertPhone(email),
   };
   return JSON.stringify(data, null, 2);
 };
 
-export const importFullBackupJson = (jsonString: string): { success: boolean; message: string; count?: number } => {
+export const importFullBackupJson = (jsonString: string, email?: string | null): { success: boolean; message: string; count?: number } => {
   try {
     const data = JSON.parse(jsonString);
     if (!data || typeof data !== 'object') {
       return { success: false, message: 'Invalid JSON format.' };
     }
     if (Array.isArray(data.transactions)) {
-      saveStoredTransactions(data.transactions);
+      saveStoredTransactions(data.transactions, email);
     }
     if (Array.isArray(data.lendItems)) {
-      saveStoredLendItems(data.lendItems);
+      saveStoredLendItems(data.lendItems, email);
     }
     if (Array.isArray(data.categories) && data.categories.length > 0) {
-      saveStoredCategoryDefs(data.categories);
+      saveStoredCategoryDefs(data.categories, email);
     }
     if (data.budgetConfig && typeof data.budgetConfig === 'object') {
-      saveStoredBudgetConfig(data.budgetConfig);
+      saveStoredBudgetConfig(data.budgetConfig, email);
     }
     if (typeof data.alertPhone === 'string') {
-      saveStoredAlertPhone(data.alertPhone);
+      saveStoredAlertPhone(data.alertPhone, email);
     }
     const txCount = Array.isArray(data.transactions) ? data.transactions.length : 0;
     return { success: true, message: `Successfully restored ${txCount} transactions and system settings.`, count: txCount };

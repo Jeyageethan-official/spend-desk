@@ -25,6 +25,11 @@ import {
   saveStoredLendItems,
   loadStoredAlertPhone,
   saveStoredAlertPhone,
+  loadStoredTelegramAlertConfig,
+  saveStoredTelegramAlertConfig,
+  TelegramAlertConfig,
+  loadStoredCategoryDefs,
+  saveStoredCategoryDefs,
   loadStoredProfile,
   saveStoredProfile,
   UserProfile
@@ -46,6 +51,10 @@ import {
   syncViaWebhook
 } from './lib/sheetsApi';
 import { generateTransactionSmsText, triggerDeviceSms } from './lib/smsAlert';
+import { generateTransactionTelegramAlert, sendTelegramAlert } from './lib/telegramAlert';
+import { CloudWorkspace, fetchCloudWorkspace, saveCloudWorkspace, subscribeToCloudWorkspace, unsubscribeFromCloudWorkspace } from './lib/cloudWorkspace';
+import { clearPendingSync, hasPendingSync, loadPendingSync, markLendDelete, markLendUpsert, markSettingsDirty, markTransactionDelete, markTransactionUpsert, mergePendingWorkspace, stageWorkspaceForReplay } from './lib/pendingSync';
+import { clearSignedOutWorkspace, loadSignedOutWorkspace, saveSignedOutWorkspace } from './lib/signedOutWorkspace';
 import { Header } from './components/Header';
 import { SummaryCards } from './components/SummaryCards';
 import { BudgetAlerts } from './components/BudgetAlerts';
@@ -66,8 +75,30 @@ import {
   AlertCircle, 
   Download,
   Sparkles,
-  HandCoins
+  HandCoins,
+  WifiOff
 } from 'lucide-react';
+
+const LAST_OFFLINE_WORKSPACE_KEY = 'money_tracker_last_offline_workspace_v1';
+const PENDING_SHEET_PUSH_KEY = 'spenddesk_pending_sheet_push_v1';
+
+const loadPendingSheetPushEmail = (): string | null => {
+  try {
+    const stored = localStorage.getItem(PENDING_SHEET_PUSH_KEY)?.trim().toLowerCase();
+    return stored || null;
+  } catch {
+    return null;
+  }
+};
+
+const loadLastOfflineWorkspace = (): string | null => {
+  try {
+    const stored = localStorage.getItem(LAST_OFFLINE_WORKSPACE_KEY)?.trim().toLowerCase();
+    return stored || null;
+  } catch {
+    return null;
+  }
+};
 
 export default function App() {
   const [user, setUser] = useState<any>(() => {
@@ -85,6 +116,10 @@ export default function App() {
       return null;
     }
   });
+  // After sign-out, keep the last account's offline workspace visible. This is
+  // intentionally persisted so a refresh also retains the user's local ledger.
+  // A later Google sign-in always replaces it with that Google account's scope.
+  const [offlineWorkspaceEmail, setOfflineWorkspaceEmail] = useState<string | null>(loadLastOfflineWorkspace);
 
   // App Navigation Tab (Mobile-first & Full-screen SPA)
   const [activeTab, setActiveTab] = useState<AppTab>('dashboard');
@@ -93,17 +128,12 @@ export default function App() {
   // Transactions, Debt & Config State
   const [transactions, setTransactions] = useState<Transaction[]>(() => loadStoredTransactions());
   const [lendItems, setLendItems] = useState<LendItem[]>(() => loadStoredLendItems());
-  const [alertPhone, setAlertPhone] = useState<string>(() => loadStoredAlertPhone());
+  const [alertPhone, setAlertPhone] = useState<string>(() => loadStoredAlertPhone('guest'));
+  const [telegramAlertConfig, setTelegramAlertConfig] = useState<TelegramAlertConfig>(() => loadStoredTelegramAlertConfig('guest'));
   const [activeSheet, setActiveSheet] = useState<GoogleSheetMeta | null>(() => loadStoredSheetMeta());
   const [budgetConfig, setBudgetConfig] = useState<BudgetConfig>(() => loadStoredBudgetConfig());
   const [currency, setCurrency] = useState<string>('Rs');
   const [userProfile, setUserProfile] = useState<UserProfile>(() => loadStoredProfile());
-
-  const handleUpdateProfile = (updated: Partial<UserProfile>) => {
-    const nextProfile = { ...userProfile, ...updated };
-    setUserProfile(nextProfile);
-    saveStoredProfile(nextProfile);
-  };
 
   const overallSummary = useMemo(() => calculateSummary(transactions, transactions), [transactions]);
 
@@ -127,10 +157,17 @@ export default function App() {
   const [isSignOutConfirmOpen, setIsSignOutConfirmOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<'main' | 'categories' | 'preferences' | 'budget' | 'cloud' | 'data' | 'about' | 'profile'>('main');
   const [deleteCandidate, setDeleteCandidate] = useState<Transaction | null>(null);
+  const [selectedTransactionIds, setSelectedTransactionIds] = useState<string[]>([]);
 
   // Status & Syncing
   const [isSyncing, setIsSyncing] = useState(false);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
+  const [cloudSyncReady, setCloudSyncReady] = useState(false);
+  const [cloudWorkspaceRevision, setCloudWorkspaceRevision] = useState(0);
+  const [pendingSheetPushEmail, setPendingSheetPushEmail] = useState<string | null>(loadPendingSheetPushEmail);
+  const cloudVersionRef = useRef(0);
+  const cloudSyncTimerRef = useRef<number | null>(null);
+  const suppressNextCloudSyncRef = useRef(false);
 
   const showNotification = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
     setNotification({ message, type });
@@ -145,6 +182,8 @@ export default function App() {
       (authedUser, token) => {
         setUser(authedUser);
         setAccessToken(token);
+        setOfflineWorkspaceEmail(null);
+        try { localStorage.removeItem(LAST_OFFLINE_WORKSPACE_KEY); } catch {}
         if (window.location.hash && window.location.hash.includes('access_token')) {
           try {
             if (window.history && window.history.replaceState) {
@@ -179,37 +218,87 @@ export default function App() {
     }
   }, []);
 
-  // Auto-sync User Profile details (Name, Email, Google Avatar) when signed in
-  useEffect(() => {
-    if (user) {
-      setUserProfile((prev) => {
-        const next = {
-          ...prev,
-          name: user.displayName || prev.name,
-          email: user.email || prev.email,
-          avatar: user.photoURL || prev.avatar,
-        };
-        saveStoredProfile(next);
-        return next;
-      });
-    }
-  }, [user]);
+  // Network Connectivity State for Offline Mode & Auto-Sync
+  const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true);
 
-  // Save transactions to local storage whenever they change
-  useEffect(() => {
-    saveStoredTransactions(transactions);
-  }, [transactions]);
+  const currentUserEmail = user?.email || offlineWorkspaceEmail || null;
+  const currentStorageScope = currentUserEmail || 'guest';
+  const [loadedStorageScope, setLoadedStorageScope] = useState<string>('');
+  const isPendingSignedOutReplay = Boolean(
+    user?.email && pendingSheetPushEmail && user.email.trim().toLowerCase() === pendingSheetPushEmail
+  );
+  const isSignedOutLocalMode = Boolean(!user?.email && offlineWorkspaceEmail);
 
-  // Save lend items to local storage
+  // Realtime Online / Offline Listener & Reconnect Auto-Sync
   useEffect(() => {
-    saveStoredLendItems(lendItems);
-  }, [lendItems]);
+    const handleOnline = () => {
+      setIsOnline(true);
+      if (activeSheet?.id && accessToken && accessToken !== 'local_token') {
+        handlePushToSheet({ silent: true });
+        if (!isPendingSignedOutReplay) handlePullFromSheet(activeSheet.id, accessToken);
+      }
+    };
+
+    const handleOffline = () => {
+      setIsOnline(false);
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [activeSheet?.id, accessToken, isPendingSignedOutReplay]);
+
+  // Load a clean, strictly account-scoped workspace on every identity change.
+  // Guest data is never merged into an account: signing out then using a different
+  // Google account must never expose the previous user's records.
+  useEffect(() => {
+    const scope = currentUserEmail || 'guest';
+    setLoadedStorageScope('');
+    setSelectedTransactionIds([]);
+    setTransactions(loadStoredTransactions(scope));
+    setLendItems(loadStoredLendItems(scope));
+    setAlertPhone(loadStoredAlertPhone(scope));
+    setTelegramAlertConfig(loadStoredTelegramAlertConfig(scope));
+    setActiveSheet(loadStoredSheetMeta(scope));
+    setBudgetConfig(loadStoredBudgetConfig(scope));
+    setUserProfile(loadStoredProfile(scope));
+    setLoadedStorageScope(scope);
+  }, [currentUserEmail]);
+
+  const handleUpdateProfile = (updated: Partial<UserProfile>) => {
+    markSettingsDirty(currentUserEmail);
+    const nextProfile = { ...userProfile, ...updated };
+    setUserProfile(nextProfile);
+    saveStoredProfile(nextProfile, currentUserEmail);
+  };
+
+  // Save transactions to user-scoped local storage whenever they change
+  useEffect(() => {
+    if (loadedStorageScope !== currentStorageScope) return;
+    saveStoredTransactions(transactions, currentUserEmail);
+  }, [transactions, currentUserEmail, currentStorageScope, loadedStorageScope]);
+
+  // Save lend items to user-scoped local storage
+  useEffect(() => {
+    if (loadedStorageScope !== currentStorageScope) return;
+    saveStoredLendItems(lendItems, currentUserEmail);
+  }, [lendItems, currentUserEmail, currentStorageScope, loadedStorageScope]);
+
+  // Save active sheet meta to user-scoped local storage
+  useEffect(() => {
+    if (loadedStorageScope !== currentStorageScope) return;
+    saveStoredSheetMeta(activeSheet, currentUserEmail);
+  }, [activeSheet, currentUserEmail, currentStorageScope, loadedStorageScope]);
 
   const lastSyncedHashRef = useRef<string>('');
 
   // Automatic background push to connected Google Sheet ONLY when data actually changes
   useEffect(() => {
-    if (!activeSheet || !accessToken || accessToken === 'local_token') return;
+    if (!activeSheet || !accessToken || accessToken === 'local_token' || !isOnline) return;
 
     const currentHash = JSON.stringify({
       tCount: transactions.length,
@@ -229,11 +318,11 @@ export default function App() {
 
     const timer = setTimeout(() => {
       lastSyncedHashRef.current = currentHash;
-      handlePushToSheet();
+      handlePushToSheet({ silent: true });
     }, 3000);
 
     return () => clearTimeout(timer);
-  }, [transactions, lendItems, activeSheet?.id, accessToken]);
+  }, [transactions, lendItems, activeSheet?.id, accessToken, isOnline]);
 
   // Scroll to top whenever activeTab changes
   useEffect(() => {
@@ -243,26 +332,192 @@ export default function App() {
 
   // Save budget configuration
   const handleUpdateBudgetConfig = (config: BudgetConfig) => {
+    markSettingsDirty(currentUserEmail);
     setBudgetConfig(config);
-    saveStoredBudgetConfig(config);
+    saveStoredBudgetConfig(config, currentUserEmail);
     showNotification('Budget & limits saved.', 'success');
   };
 
   // Update alert phone
   const handleUpdateAlertPhone = (phone: string) => {
+    markSettingsDirty(currentUserEmail);
     setAlertPhone(phone);
-    saveStoredAlertPhone(phone);
+    saveStoredAlertPhone(phone, currentUserEmail);
     showNotification(phone ? `Alert number set: ${phone}` : 'Alert number cleared', 'info');
+  };
+
+  const handleUpdateTelegramAlertConfig = (config: TelegramAlertConfig) => {
+    markSettingsDirty(currentUserEmail);
+    const nextConfig = { enabled: Boolean(config.enabled && config.chatId.trim()), chatId: config.chatId.trim() };
+    setTelegramAlertConfig(nextConfig);
+    saveStoredTelegramAlertConfig(nextConfig, currentUserEmail);
+    showNotification(nextConfig.enabled ? 'Telegram transaction alerts enabled.' : 'Telegram transaction alerts saved but disabled.', 'success');
+  };
+
+  const buildCloudWorkspace = useCallback((updatedAt: number): CloudWorkspace => ({
+    version: 1,
+    updatedAt,
+    transactions,
+    lendItems,
+    categories: loadStoredCategoryDefs(currentUserEmail),
+    budgetConfig,
+    alertPhone,
+    telegramAlertConfig,
+    activeSheet,
+    profile: userProfile,
+    currency,
+  }), [transactions, lendItems, budgetConfig, alertPhone, telegramAlertConfig, activeSheet, userProfile, currency, currentUserEmail]);
+
+  // Signed-out use is treated exactly like offline use. Keep a complete local
+  // workspace snapshot current after every transaction/settings change so a
+  // later login restores the user's final local state before any remote pull.
+  useEffect(() => {
+    if (!isSignedOutLocalMode || !offlineWorkspaceEmail) return;
+    saveSignedOutWorkspace(offlineWorkspaceEmail, buildCloudWorkspace(Date.now()));
+  }, [isSignedOutLocalMode, offlineWorkspaceEmail, buildCloudWorkspace]);
+
+  const applyCloudWorkspace = useCallback((workspace: CloudWorkspace) => {
+    if (!workspace || workspace.version !== 1 || !Number.isFinite(workspace.updatedAt)) return;
+    if (workspace.updatedAt <= cloudVersionRef.current) return;
+    suppressNextCloudSyncRef.current = true;
+    cloudVersionRef.current = workspace.updatedAt;
+    const scope = currentUserEmail;
+    const nextTransactions = Array.isArray(workspace.transactions) ? workspace.transactions : [];
+    const nextLends = Array.isArray(workspace.lendItems) ? workspace.lendItems : [];
+    setTransactions(nextTransactions);
+    saveStoredTransactions(nextTransactions, scope);
+    setLendItems(nextLends);
+    saveStoredLendItems(nextLends, scope);
+    if (Array.isArray(workspace.categories) && workspace.categories.length > 0) {
+      saveStoredCategoryDefs(workspace.categories, scope);
+    }
+    const nextBudget = workspace.budgetConfig || loadStoredBudgetConfig(scope);
+    setBudgetConfig(nextBudget);
+    saveStoredBudgetConfig(nextBudget, scope);
+    const nextPhone = typeof workspace.alertPhone === 'string' ? workspace.alertPhone : '';
+    setAlertPhone(nextPhone);
+    saveStoredAlertPhone(nextPhone, scope);
+    const nextTelegram = workspace.telegramAlertConfig || { enabled: false, chatId: '' };
+    setTelegramAlertConfig(nextTelegram);
+    saveStoredTelegramAlertConfig(nextTelegram, scope);
+    setActiveSheet(workspace.activeSheet || null);
+    saveStoredSheetMeta(workspace.activeSheet || null, scope);
+    const nextProfile = workspace.profile || loadStoredProfile(scope);
+    setUserProfile(nextProfile);
+    saveStoredProfile(nextProfile, scope);
+    if (typeof workspace.currency === 'string' && workspace.currency.trim()) setCurrency(workspace.currency);
+    setCloudWorkspaceRevision((revision) => revision + 1);
+  }, [currentUserEmail]);
+
+  const queueCloudSync = useCallback(() => {
+    if (!user?.email || !cloudSyncReady) return;
+    if (cloudSyncTimerRef.current) window.clearTimeout(cloudSyncTimerRef.current);
+    cloudSyncTimerRef.current = window.setTimeout(() => {
+      const nextVersion = Math.max(Date.now(), cloudVersionRef.current + 1);
+      cloudVersionRef.current = nextVersion;
+      void saveCloudWorkspace(buildCloudWorkspace(nextVersion))
+        .then(() => clearPendingSync(currentUserEmail))
+        .catch((error) => console.error('Cloud workspace sync failed:', error));
+    }, 700);
+  }, [user?.email, cloudSyncReady, buildCloudWorkspace]);
+
+  useEffect(() => {
+    if (!user?.email || !accessToken || !isOnline) {
+      setCloudSyncReady(false);
+      return;
+    }
+    // Signed-out local edits have higher priority than any remote pull. They
+    // must reach the linked Sheet first; otherwise a stale pull can erase them.
+    if (isPendingSignedOutReplay) {
+      setCloudSyncReady(false);
+      return;
+    }
+    let active = true;
+    let channel: Awaited<ReturnType<typeof subscribeToCloudWorkspace>> = null;
+    void (async () => {
+      try {
+        const signedOutSnapshot = loadSignedOutWorkspace(user.email);
+        if (signedOutSnapshot) {
+          // Highest-priority restore: this device's signed-out final state wins
+          // over a stale cloud read. It is then saved to cloud and Sheet.
+          const restored = { ...signedOutSnapshot, updatedAt: Date.now() };
+          applyCloudWorkspace(restored);
+          await saveCloudWorkspace(restored);
+          setCloudSyncReady(true);
+          channel = await subscribeToCloudWorkspace((workspace) => {
+            if (workspace.updatedAt > cloudVersionRef.current) applyCloudWorkspace(workspace);
+          });
+          return;
+        }
+        const remoteWorkspace = await fetchCloudWorkspace();
+        if (!active) return;
+        const hasPending = hasPendingSync(currentUserEmail);
+        if (remoteWorkspace && hasPending) {
+          // Reconnect/sign-in path: remote is pulled first, then only the
+          // durable offline operations are replayed before one fast push.
+          const merged = mergePendingWorkspace(
+            remoteWorkspace,
+            buildCloudWorkspace(Date.now()),
+            loadPendingSync(currentUserEmail),
+            Math.max(Date.now(), remoteWorkspace.updatedAt + 1)
+          );
+          applyCloudWorkspace(merged);
+          await saveCloudWorkspace(merged);
+          clearPendingSync(currentUserEmail);
+        } else if (remoteWorkspace) {
+          applyCloudWorkspace(remoteWorkspace);
+        } else if (hasPending) {
+          const local = buildCloudWorkspace(Date.now());
+          await saveCloudWorkspace(local);
+          clearPendingSync(currentUserEmail);
+        }
+        setCloudSyncReady(true);
+        channel = await subscribeToCloudWorkspace((workspace) => {
+          if (workspace.updatedAt > cloudVersionRef.current) {
+            applyCloudWorkspace(workspace);
+          }
+        });
+      } catch (error) {
+        console.error('Cloud workspace initialization failed:', error);
+      }
+    })();
+    return () => {
+      active = false;
+      if (cloudSyncTimerRef.current) window.clearTimeout(cloudSyncTimerRef.current);
+      unsubscribeFromCloudWorkspace(channel);
+    };
+  }, [user?.email, accessToken, isOnline, isPendingSignedOutReplay, applyCloudWorkspace, buildCloudWorkspace, currentUserEmail]);
+
+  useEffect(() => {
+    if (!user?.email || !cloudSyncReady) return;
+    if (suppressNextCloudSyncRef.current) {
+      suppressNextCloudSyncRef.current = false;
+      return;
+    }
+    queueCloudSync();
+  }, [transactions, lendItems, budgetConfig, alertPhone, telegramAlertConfig, activeSheet, userProfile, currency, user?.email, cloudSyncReady, queueCloudSync]);
+
+  const handleSendTelegramTest = async (chatId: string) => {
+    if (!user?.email || !chatId.trim()) {
+      throw new Error('Sign in with Google and enter a Telegram chat ID first.');
+    }
+    await sendTelegramAlert({
+      chatId: chatId.trim(),
+      title: 'SpendDesk test alert',
+      message: 'Telegram is connected. New transactions will alert you here automatically.',
+    });
   };
 
   // Save active sheet metadata
   const handleSetActiveSheet = (meta: GoogleSheetMeta | null) => {
+    markSettingsDirty(currentUserEmail);
     setActiveSheet(meta);
-    saveStoredSheetMeta(meta);
+    saveStoredSheetMeta(meta, currentUserEmail);
   };
 
-  // Pull Data from Connected Google Sheet
+  // Pull Data from Connected Google Sheet & Merge Cleanly with Local Storage
   const handlePullFromSheet = useCallback(async (targetSheetId?: string, targetToken?: string) => {
+    if (isPendingSignedOutReplay) return;
     const sId = targetSheetId || activeSheet?.id;
     const token = targetToken || accessToken;
     if (!sId || !token || token === 'local_token') return;
@@ -271,23 +526,15 @@ export default function App() {
       const remoteTxs = await fetchAllTransactionsFromSheet(token, sId);
       const remoteLends = await fetchAllLendItemsFromSheet(token, sId);
 
-      if (remoteTxs.length > 0) {
-        setTransactions(remoteTxs);
-        saveStoredTransactions(remoteTxs);
-      }
-      if (remoteLends.length > 0) {
-        setLendItems(remoteLends);
-        saveStoredLendItems(remoteLends);
-      }
-
-      const totalCount = remoteTxs.length + remoteLends.length;
-      if (totalCount > 0) {
-        showNotification(`Loaded ${remoteTxs.length} transactions & ${remoteLends.length} lend items from Google Sheets!`, 'success');
-      } else {
-        showNotification('No transaction records found in Google Sheet yet.', 'info');
-      }
+      // Google Sheet is authoritative for a pull. Do not merge stale local rows
+      // back into it: that previously resurrected records deleted on another
+      // device. Offline mutations are handled by the durable pending-sync queue.
+      setTransactions(remoteTxs);
+      saveStoredTransactions(remoteTxs, currentUserEmail);
+      setLendItems(remoteLends);
+      saveStoredLendItems(remoteLends, currentUserEmail);
     } catch (err: any) {
-      console.error('Failed to fetch from sheet:', err);
+      console.error('Failed to fetch from sheet silently:', err);
       const raw = String(err?.message || err);
       const is401 = raw.includes('401') || 
                     raw.includes('UNAUTHENTICATED') || 
@@ -298,23 +545,50 @@ export default function App() {
       if (is401) {
         try { localStorage.removeItem('money_tracker_access_token'); } catch (e) {}
         setAccessToken(null);
-        showNotification('Google login session expired. Please click "Sign In" to reconnect & sync live data.', 'error');
-      } else {
-        showNotification('Could not read from sheet. Please check your network connection.', 'error');
       }
     } finally {
       setIsSyncing(false);
     }
-  }, [activeSheet?.id, accessToken]);
+  }, [activeSheet?.id, accessToken, currentUserEmail, isPendingSignedOutReplay]);
 
   // Initial Auto-Pull on App Load when connected sheet exists
   const hasInitialAutoPulledRef = useRef(false);
   useEffect(() => {
-    if (activeSheet?.id && accessToken && accessToken !== 'local_token' && !hasInitialAutoPulledRef.current) {
+    if (!isPendingSignedOutReplay && activeSheet?.id && accessToken && accessToken !== 'local_token' && !hasInitialAutoPulledRef.current) {
       hasInitialAutoPulledRef.current = true;
       handlePullFromSheet(activeSheet.id, accessToken);
     }
   }, [activeSheet?.id, accessToken, handlePullFromSheet]);
+
+  const handleBulkDeleteTransactions = (txIds: string[]) => {
+    txIds.forEach((id) => markTransactionDelete(id, currentUserEmail));
+    setTransactions(prev => {
+      const updated = prev.filter(t => !txIds.includes(t.id));
+      saveStoredTransactions(updated, currentUserEmail);
+      return updated;
+    });
+    showNotification(`Deleted ${txIds.length} transactions.`, 'info');
+  };
+
+  // Real-time silent multi-device polling & window focus sync (Every 12s when connected and online)
+  useEffect(() => {
+    if (isPendingSignedOutReplay || !activeSheet?.id || !accessToken || accessToken === 'local_token' || !isOnline) return;
+
+    const syncInterval = setInterval(() => {
+      handlePullFromSheet(activeSheet.id, accessToken);
+    }, 12000);
+
+    const handleFocus = () => {
+      handlePullFromSheet(activeSheet.id, accessToken);
+    };
+
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      clearInterval(syncInterval);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [activeSheet?.id, accessToken, isOnline, isPendingSignedOutReplay, handlePullFromSheet]);
 
   // Auto-discover Drive Sheet if logged in but no active sheet is set
   useEffect(() => {
@@ -369,40 +643,59 @@ export default function App() {
   };
 
   const handleSignOut = async () => {
+    // Never write the in-memory state during sign-out. A user can sign out just
+    // after saving a record, before React has committed that state update. Each
+    // mutation is persisted immediately, so this avoids replacing a new Gmail
+    // record with an older in-memory snapshot.
+    // Keep this exact Gmail scope as the signed-out, local-only workspace.
+    // Its records were already synchronously written on every mutation.
+    const signedOutScope = currentUserEmail;
+    if (signedOutScope) {
+      // Make every current record and setting durable for the next login.
+      // This is deliberately local-only and does not sign out other devices.
+      stageWorkspaceForReplay(transactions, lendItems, signedOutScope);
+      saveSignedOutWorkspace(signedOutScope, buildCloudWorkspace(Date.now()));
+      setOfflineWorkspaceEmail(signedOutScope);
+      try {
+        localStorage.setItem(LAST_OFFLINE_WORKSPACE_KEY, signedOutScope);
+        // Re-login must push this device's local ledger to the linked Sheet
+        // before normal background sync takes over.
+        localStorage.setItem(PENDING_SHEET_PUSH_KEY, signedOutScope);
+        setPendingSheetPushEmail(signedOutScope.trim().toLowerCase());
+      } catch {}
+    }
+
     await logout();
     setUser(null);
     setAccessToken(null);
-    setActiveSheet(null);
-    const defaultProfile: UserProfile = { name: 'My Wallet', email: '', avatar: null };
-    setUserProfile(defaultProfile);
-    saveStoredProfile(defaultProfile);
     try {
       localStorage.removeItem('money_tracker_user');
       localStorage.removeItem('money_tracker_user_info');
       localStorage.removeItem('money_tracker_access_token');
-      localStorage.removeItem('money_tracker_profile_name');
-      localStorage.removeItem('money_tracker_profile_email');
-      localStorage.removeItem('money_tracker_custom_avatar');
-      localStorage.removeItem('money_tracker_active_sheet_v2');
     } catch (e) {}
-    showNotification('Signed out successfully. Profile cleared.', 'info');
+    showNotification('Signed out. Your local records remain available on this device.', 'info');
   };
 
-  // Push Data to Connected Google Sheet (Transactions, Lend/Borrow, and Dashboard KPIs)
-  const handlePushToSheet = useCallback(async () => {
-    if (!activeSheet || !accessToken) return;
+  // Push Data to Connected Google Sheet (Transactions, Lend/Borrow, and Dashboard KPIs) - Silent by default
+  const handlePushToSheet = useCallback(async (
+    options: { silent?: boolean } = { silent: true },
+    snapshot?: { transactions: Transaction[]; lendItems: LendItem[] }
+  ): Promise<boolean> => {
+    if (!activeSheet || !accessToken || accessToken === 'local_token') return false;
+    const transactionsToPush = snapshot?.transactions ?? transactions;
+    const lendsToPush = snapshot?.lendItems ?? lendItems;
     setIsSyncing(true);
     try {
-      // 1. Push Transactions
-      await overwriteTransactionsInSheet(accessToken, activeSheet.id, transactions);
+      // 1. Push Transactions & Lend side-by-side to Transactions sheet
+      await overwriteTransactionsInSheet(accessToken, activeSheet.id, transactionsToPush, lendsToPush);
       
-      // 2. Push Lend & Borrow records
-      await overwriteLendItemsInSheet(accessToken, activeSheet.id, lendItems);
+      // 2. Push Lend & Borrow backup tab records
+      await overwriteLendItemsInSheet(accessToken, activeSheet.id, lendsToPush);
 
       // 3. Push Dashboard KPI Totals & Trends
-      const allSummary = calculateSummary(transactions, transactions);
-      const catSummary = calculateCategoryBreakdown(transactions);
-      const { dayTotals } = calculateWeeklyDailyTrend(transactions);
+      const allSummary = calculateSummary(transactionsToPush, transactionsToPush);
+      const catSummary = calculateCategoryBreakdown(transactionsToPush);
+      const { dayTotals } = calculateWeeklyDailyTrend(transactionsToPush);
       await syncDashboardStats(accessToken, activeSheet.id, allSummary, catSummary, dayTotals);
 
       const updatedMeta: GoogleSheetMeta = {
@@ -410,7 +703,10 @@ export default function App() {
         lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
       handleSetActiveSheet(updatedMeta);
-      showNotification(`Synced all records to "${activeSheet.name}"!`, 'success');
+      if (!options.silent) {
+        showNotification(`Synced all records to "${activeSheet.name}"!`, 'success');
+      }
+      return true;
     } catch (err: any) {
       console.error('Failed to sync to Google Sheet:', err);
       const raw = String(err?.message || err);
@@ -423,24 +719,44 @@ export default function App() {
       if (is401) {
         try { localStorage.removeItem('money_tracker_access_token'); } catch (e) {}
         setAccessToken(null);
-        showNotification('Google login session expired. Please sign in to reconnect & sync.', 'error');
-      } else {
+        if (!options.silent) {
+          showNotification('Google login session expired. Please sign in to reconnect & sync.', 'error');
+        }
+      } else if (!options.silent) {
         showNotification('Could not sync to Google Sheet: ' + (err.message || 'Network error'), 'error');
       }
+      return false;
     } finally {
       setIsSyncing(false);
     }
   }, [activeSheet, accessToken, transactions, lendItems]);
 
+  // A sign-out workspace gets priority on the next login: after local/offline
+  // data has been reconciled, overwrite the linked Google Sheet once. The
+  // marker is removed only after that push succeeds, so retries are automatic.
+  useEffect(() => {
+    if (!isPendingSignedOutReplay || !user?.email || !accessToken || !activeSheet || !isOnline) return;
+    void handlePushToSheet({ silent: true }).then((success) => {
+      if (success) {
+        try { localStorage.removeItem(PENDING_SHEET_PUSH_KEY); } catch {}
+        clearSignedOutWorkspace(user.email);
+        setPendingSheetPushEmail(null);
+      }
+    });
+  }, [isPendingSignedOutReplay, user?.email, accessToken, activeSheet, isOnline, handlePushToSheet]);
+
   // Add / Edit Transaction Handler with SMS Notification
   const handleSaveTransaction = (data: Omit<Transaction, 'id' | 'createdAt'> & { id?: string; sendSmsTo?: string }) => {
     const { sendSmsTo, ...txData } = data;
+    const isNewTransaction = !txData.id;
     let updatedTxs: Transaction[];
     let recordedTx: Transaction;
 
     if (txData.id) {
       updatedTxs = transactions.map((t) => (t.id === txData.id ? { ...t, ...txData } : t));
       recordedTx = { ...txData, id: txData.id, createdAt: Date.now() };
+      markTransactionUpsert(recordedTx, currentUserEmail);
+      saveStoredTransactions(updatedTxs, currentUserEmail);
       setTransactions(updatedTxs);
       showNotification('Transaction updated.', 'success');
     } else {
@@ -450,6 +766,8 @@ export default function App() {
         createdAt: Date.now(),
       };
       updatedTxs = [recordedTx, ...transactions];
+      markTransactionUpsert(recordedTx, currentUserEmail);
+      saveStoredTransactions(updatedTxs, currentUserEmail);
       setTransactions(updatedTxs);
       showNotification('Transaction recorded.', 'success');
     }
@@ -458,16 +776,23 @@ export default function App() {
     if (sendSmsTo) {
       handleUpdateAlertPhone(sendSmsTo);
       const currentSum = calculateSummary(updatedTxs, updatedTxs);
-      const smsBody = generateTransactionSmsText(recordedTx, currentSum.currentCashBalance, 'Rs');
+      const smsBody = generateTransactionSmsText(recordedTx, currentSum.currentCashBalance, currency);
       triggerDeviceSms(sendSmsTo, smsBody);
+      showNotification('SMS message is ready to send.', 'info');
+    }
+
+    if (isNewTransaction && telegramAlertConfig.enabled && telegramAlertConfig.chatId) {
+      const telegramAlert = generateTransactionTelegramAlert(recordedTx, currency);
+      void sendTelegramAlert({ ...telegramAlert, chatId: telegramAlertConfig.chatId })
+        .then(() => showNotification('Telegram alert delivered.', 'success'))
+        .catch((error) => {
+          console.error('Telegram alert failed:', error);
+          showNotification('Transaction saved, but Telegram alert was not delivered. Check Settings → Alerts.', 'error');
+        });
     }
 
     if (activeSheet && accessToken) {
-      setTimeout(() => {
-        getAccessToken().then((token) => {
-          if (token) handlePushToSheet().catch(console.error);
-        });
-      }, 500);
+      void handlePushToSheet({ silent: true }, { transactions: updatedTxs, lendItems }).catch(console.error);
     }
 
     const webhookUrl = loadStoredWebhookUrl();
@@ -485,13 +810,15 @@ export default function App() {
   const confirmDelete = () => {
     if (!deleteCandidate) return;
     const remaining = transactions.filter((t) => t.id !== deleteCandidate.id);
+    markTransactionDelete(deleteCandidate.id, currentUserEmail);
+    saveStoredTransactions(remaining, currentUserEmail);
     setTransactions(remaining);
     setDeleteCandidate(null);
     showNotification('Transaction deleted.', 'info');
 
     if (activeSheet && accessToken) {
       setTimeout(() => {
-        handlePushToSheet().catch(console.error);
+        handlePushToSheet({ silent: true }, { transactions: remaining, lendItems }).catch(console.error);
       }, 500);
     }
 
@@ -510,11 +837,13 @@ export default function App() {
       createdAt: Date.now(),
     };
     const updated = [newItem, ...lendItems];
+    markLendUpsert(newItem, currentUserEmail);
+    saveStoredLendItems(updated, currentUserEmail);
     setLendItems(updated);
     showNotification(`${data.type === 'lent' ? 'Money Lent' : 'Money Borrowed'} saved.`, 'success');
 
     if (activeSheet && accessToken) {
-      overwriteLendItemsInSheet(accessToken, activeSheet.id, updated).catch(console.error);
+      void handlePushToSheet({ silent: true }, { transactions, lendItems: updated }).catch(console.error);
     }
     const webhookUrl = loadStoredWebhookUrl();
     if (webhookUrl) {
@@ -535,11 +864,14 @@ export default function App() {
       }
       return item;
     });
+    saveStoredLendItems(updated, currentUserEmail);
+    const changedItem = updated.find((item) => item.id === id);
+    if (changedItem) markLendUpsert(changedItem, currentUserEmail);
     setLendItems(updated);
     showNotification('Status updated.', 'info');
 
     if (activeSheet && accessToken) {
-      overwriteLendItemsInSheet(accessToken, activeSheet.id, updated).catch(console.error);
+      void handlePushToSheet({ silent: true }, { transactions, lendItems: updated }).catch(console.error);
     }
     const webhookUrl = loadStoredWebhookUrl();
     if (webhookUrl) {
@@ -550,11 +882,13 @@ export default function App() {
 
   const handleDeleteLendItem = (id: string) => {
     const updated = lendItems.filter((i) => i.id !== id);
+    markLendDelete(id, currentUserEmail);
+    saveStoredLendItems(updated, currentUserEmail);
     setLendItems(updated);
     showNotification('Record deleted.', 'info');
 
     if (activeSheet && accessToken) {
-      overwriteLendItemsInSheet(accessToken, activeSheet.id, updated).catch(console.error);
+      void handlePushToSheet({ silent: true }, { transactions, lendItems: updated }).catch(console.error);
     }
     const webhookUrl = loadStoredWebhookUrl();
     if (webhookUrl) {
@@ -617,6 +951,25 @@ export default function App() {
     return lendItems.filter((i) => i.status === 'pending').length;
   }, [lendItems]);
 
+  const selectedTransactions = useMemo(
+    () => transactions.filter((tx) => selectedTransactionIds.includes(tx.id)),
+    [transactions, selectedTransactionIds]
+  );
+
+  const handleEditSelectedTransaction = () => {
+    const [selected] = selectedTransactions;
+    if (!selected) return;
+    setEditingTransaction(selected);
+    setSelectedTransactionIds([]);
+    setIsTxModalOpen(true);
+  };
+
+  const handleDeleteSelectedTransactions = () => {
+    if (selectedTransactionIds.length === 0) return;
+    handleBulkDeleteTransactions(selectedTransactionIds);
+    setSelectedTransactionIds([]);
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans flex flex-col antialiased pb-20 md:pb-8">
       {/* App Header - Hidden when on Settings page or Google Sheets manager page */}
@@ -652,7 +1005,19 @@ export default function App() {
             setSettingsSection('profile');
             setActiveTab('settings');
           }}
+          selectionCount={selectedTransactionIds.length}
+          onCancelSelection={() => setSelectedTransactionIds([])}
+          onEditSelection={handleEditSelectedTransaction}
+          onDeleteSelection={handleDeleteSelectedTransactions}
         />
+      )}
+
+      {/* Offline Status Warning Banner */}
+      {!isOnline && (
+        <div className="bg-amber-500/10 border-b border-amber-500/20 text-amber-700 px-4 py-2 flex items-center justify-center gap-2 text-xs sm:text-sm font-medium">
+          <WifiOff className="w-4 h-4 text-amber-600 animate-pulse" />
+          <span>You are offline. Operating seamlessly in Local Storage mode. Data will auto-sync when online.</span>
+        </div>
       )}
 
       {/* Dynamic Island Floating Pill Toast (Matching user reference screenshot) */}
@@ -811,15 +1176,20 @@ export default function App() {
               isSyncing={isSyncing}
               totalTransactionsCount={transactions.length}
               totalLendCount={lendItems.length}
+              transactions={transactions}
+              lendItems={lendItems}
               onNotification={showNotification}
             />
           )}
 
           {activeTab === 'settings' && (
             <SettingsView
+              user={user}
+              storageEmail={currentUserEmail}
               onBack={() => setActiveTab('dashboard')}
               currency={currency}
               onUpdateCurrency={(c) => {
+                markSettingsDirty(currentUserEmail);
                 setCurrency(c);
                 showNotification(`Currency updated to ${c}`, 'success');
               }}
@@ -827,6 +1197,14 @@ export default function App() {
               onUpdateBudgetConfig={handleUpdateBudgetConfig}
               alertPhone={alertPhone}
               onUpdateAlertPhone={handleUpdateAlertPhone}
+              telegramAlertConfig={telegramAlertConfig}
+              onUpdateTelegramAlertConfig={handleUpdateTelegramAlertConfig}
+              onSendTelegramTest={handleSendTelegramTest}
+              onCloudSyncRequested={() => {
+                markSettingsDirty(currentUserEmail);
+                queueCloudSync();
+              }}
+              cloudWorkspaceRevision={cloudWorkspaceRevision}
               activeSheet={activeSheet}
               onOpenSyncModal={() => {
                 setSheetsSourceTab('settings');
@@ -843,8 +1221,8 @@ export default function App() {
                 showNotification('All local transaction records cleared.', 'info');
               }}
               onRestoreTransactions={() => {
-                setTransactions(loadStoredTransactions());
-                setLendItems(loadStoredLendItems());
+                setTransactions(loadStoredTransactions(currentUserEmail));
+                setLendItems(loadStoredLendItems(currentUserEmail));
                 showNotification('Data restored successfully.', 'success');
               }}
               initialSection={settingsSection}
@@ -922,6 +1300,8 @@ export default function App() {
                     setIsTxModalOpen(true);
                   }}
                   onDelete={handleDeleteTransaction}
+                  selectedTxIds={selectedTransactionIds}
+                  onSelectedTxIdsChange={setSelectedTransactionIds}
                 />
               </div>
             </main>
@@ -953,6 +1333,8 @@ export default function App() {
                   setIsTxModalOpen(true);
                 }}
                 onDelete={handleDeleteTransaction}
+                selectedTxIds={selectedTransactionIds}
+                onSelectedTxIdsChange={setSelectedTransactionIds}
               />
             </main>
           )}
@@ -1008,6 +1390,7 @@ export default function App() {
       {/* Transaction Add / Edit Modal */}
       <TransactionModal
         isOpen={isTxModalOpen}
+        storageEmail={currentUserEmail}
         onClose={() => {
           setIsTxModalOpen(false);
           setEditingTransaction(null);

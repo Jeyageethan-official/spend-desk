@@ -73,12 +73,15 @@ export const calculateSummary = (
   const allTxs = Array.isArray(allTransactions) ? allTransactions : [];
   const filtTxs = Array.isArray(filteredTransactions) ? filteredTransactions : [];
 
+  const isCashPayment = (method?: string) => !method || method.toLowerCase() === 'cash';
+  const isCardOrBankPayment = (method?: string) => method && (method.toLowerCase() === 'card' || method.toLowerCase() === 'bank' || method.toLowerCase().includes('transfer'));
+
   const allCashAdded = allTxs
     .filter((tx) => tx && tx.type === 'cash_added')
     .reduce((sum, tx) => sum + (tx.amount || 0), 0);
 
   const allCashSpent = allTxs
-    .filter((tx) => tx && tx.type === 'cash_expense')
+    .filter((tx) => tx && tx.type === 'cash_expense' && isCashPayment(tx.paymentMethod))
     .reduce((sum, tx) => sum + (tx.amount || 0), 0);
 
   const currentCashBalance = allCashAdded - allCashSpent;
@@ -88,11 +91,11 @@ export const calculateSummary = (
     .reduce((sum, tx) => sum + (tx.amount || 0), 0);
 
   const cashSpent = filtTxs
-    .filter((tx) => tx && tx.type === 'cash_expense')
+    .filter((tx) => tx && tx.type === 'cash_expense' && isCashPayment(tx.paymentMethod))
     .reduce((sum, tx) => sum + (tx.amount || 0), 0);
 
   const cardSpend = filtTxs
-    .filter((tx) => tx && tx.type === 'card_expense')
+    .filter((tx) => tx && (tx.type === 'card_expense' || (tx.type === 'cash_expense' && isCardOrBankPayment(tx.paymentMethod))))
     .reduce((sum, tx) => sum + (tx.amount || 0), 0);
 
   const totalSpend = cashSpent + cardSpend;

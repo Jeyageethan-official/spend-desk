@@ -13,7 +13,9 @@ import {
   ChevronDown,
   ShieldCheck,
   Tag,
-  Sliders
+  Sliders,
+  X,
+  Trash2
 } from 'lucide-react';
 import { GoogleSheetMeta } from '../types/finance';
 import { UserProfile } from '../lib/storage';
@@ -39,6 +41,10 @@ interface HeaderProps {
   onOpenSettings: (tab?: 'main' | 'categories' | 'preferences' | 'budget' | 'cloud' | 'data' | 'about' | 'profile') => void;
   onOpenProfileEdit?: () => void;
   onGoHome?: () => void;
+  selectionCount?: number;
+  onCancelSelection?: () => void;
+  onEditSelection?: () => void;
+  onDeleteSelection?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -59,6 +65,10 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenSettings,
   onOpenProfileEdit,
   onGoHome,
+  selectionCount = 0,
+  onCancelSelection,
+  onEditSelection,
+  onDeleteSelection,
 }) => {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -97,6 +107,42 @@ export const Header: React.FC<HeaderProps> = ({
     }
   };
 
+  if (selectionCount > 0) {
+    return (
+      <header className="bg-white/95 backdrop-blur-md border-b border-slate-200 sticky top-0 z-30 shadow-xs">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-14 sm:h-16 gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <button
+                type="button"
+                onClick={onCancelSelection}
+                className="p-2 rounded-xl text-slate-500 hover:bg-slate-100 hover:text-slate-900 active:scale-95 transition-all cursor-pointer"
+                title="Cancel selection"
+                aria-label="Cancel selection"
+              >
+                <X className="w-5 h-5" />
+              </button>
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-800 whitespace-nowrap">
+                {selectionCount} selected
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              {selectionCount === 1 && (
+                <button type="button" onClick={onEditSelection} className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold active:scale-95 transition-all cursor-pointer">
+                  Edit
+                </button>
+              )}
+              <button type="button" onClick={onDeleteSelection} className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center gap-1.5 active:scale-95 transition-all cursor-pointer">
+                <Trash2 className="w-3.5 h-3.5" />
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      </header>
+    );
+  }
+
   return (
     <header className="bg-white/95 backdrop-blur-md border-b border-slate-200 sticky top-0 z-30 shadow-xs">
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
@@ -111,7 +157,7 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <SpendDeskLogo size="md" />
             <div className="hidden sm:block">
-              <span className="inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold bg-[#eaf5f0] text-[#116b4e] border border-[#116b4e]/25">
+              <span className="inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold bg-[#e8f8f3] text-[#10B77F] border border-[#10B77F]/30">
                 Cash &amp; Card Spending
               </span>
             </div>
@@ -329,4 +375,3 @@ export const Header: React.FC<HeaderProps> = ({
     </header>
   );
 };
-

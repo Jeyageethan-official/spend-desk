@@ -36,22 +36,28 @@ export const BudgetAlerts: React.FC<BudgetAlertsProps> = ({
   const currentDay = now.getDate();
   const daysRemaining = Math.max(1, daysInMonth - currentDay);
 
+  const hasMonthlyBudget = budgetConfig.monthlyBudget > 0;
+
   // Remaining budget calculations
-  const remainingBudget = Math.max(0, budgetConfig.monthlyBudget - summary.totalSpend);
-  const safeDailySpend = Math.round(remainingBudget / daysRemaining);
-  const budgetUsedPercent = Math.min(100, (summary.totalSpend / Math.max(budgetConfig.monthlyBudget, 1)) * 100);
+  const remainingBudget = hasMonthlyBudget ? Math.max(0, budgetConfig.monthlyBudget - summary.totalSpend) : 0;
+  const safeDailySpend = hasMonthlyBudget ? Math.round(remainingBudget / daysRemaining) : 0;
+  const budgetUsedPercent = hasMonthlyBudget ? Math.min(100, (summary.totalSpend / budgetConfig.monthlyBudget) * 100) : 0;
 
   // Alert triggers
-  const isCashLow = summary.currentCashBalance <= budgetConfig.lowCashThreshold;
+  const isCashLow = budgetConfig.lowCashThreshold > 0 && summary.currentCashBalance <= budgetConfig.lowCashThreshold;
   const isDailyLimitExceeded = budgetConfig.dailySpendLimit > 0 && todaySpend > budgetConfig.dailySpendLimit;
-  const isBudgetNearlyFinished = budgetUsedPercent >= 85;
+  const isBudgetNearlyFinished = hasMonthlyBudget && budgetUsedPercent >= 85;
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
+    const mbVal = monthlyBudgetInput.trim() === '' ? 0 : Math.max(0, parseFloat(monthlyBudgetInput) || 0);
+    const lcVal = lowCashInput.trim() === '' ? 0 : Math.max(0, parseFloat(lowCashInput) || 0);
+    const dlVal = dailyLimitInput.trim() === '' ? 0 : Math.max(0, parseFloat(dailyLimitInput) || 0);
+
     onUpdateConfig({
-      monthlyBudget: parseFloat(monthlyBudgetInput) || 50000,
-      lowCashThreshold: parseFloat(lowCashInput) || 1500,
-      dailySpendLimit: parseFloat(dailyLimitInput) || 3000,
+      monthlyBudget: mbVal,
+      lowCashThreshold: lcVal,
+      dailySpendLimit: dlVal,
       notifyOnLimit: true,
     });
     setIsEditing(false);
