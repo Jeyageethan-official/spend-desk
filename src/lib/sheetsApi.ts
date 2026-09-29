@@ -30,7 +30,7 @@ export const requestGoogleAccessToken = (): Promise<string> => {
 
       const client = google.accounts.oauth2.initTokenClient({
         client_id: clientId,
-        scope: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file',
+        scope: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file openid email profile',
         callback: (response: any) => {
           if (response.error) {
             reject(new Error(response.error_description || response.error));
@@ -54,6 +54,61 @@ export const requestGoogleAccessToken = (): Promise<string> => {
       reject(e);
     }
   });
+};
+
+/**
+ * Fetch Google User Info using OAuth access token
+ */
+export const fetchGoogleUserInfo = async (accessToken: string): Promise<{
+  sub: string;
+  name?: string;
+  email?: string;
+  picture?: string;
+}> => {
+  const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+  if (!res.ok) {
+    throw new Error('Failed to fetch Google user profile.');
+  }
+  return await res.json();
+};
+
+/**
+ * Helper to extract Google Spreadsheet ID from either a full URL or a raw ID string.
+ */
+export const extractSpreadsheetId = (input: string): string => {
+  const trimmed = input.trim();
+  const match = trimmed.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+  if (match && match[1]) {
+    return match[1];
+  }
+  if (/^[a-zA-Z0-9-_]{15,}$/.test(trimmed)) {
+    return trimmed;
+  }
+  return '';
+};
+
+/**
+ * Fetch Google Spreadsheet Title to verify access and get clean display name
+ */
+export const fetchSpreadsheetTitle = async (accessToken: string, spreadsheetId: string): Promise<string> => {
+  try {
+    const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=properties.title`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return data?.properties?.title || 'Google Sheet';
+    }
+  } catch (e) {
+    console.warn('Could not fetch spreadsheet title:', e);
+  }
+  return 'Google Sheet';
 };
 
 const parseGoogleApiError = (status: number, errorText: string, defaultContext: string): Error => {
@@ -247,7 +302,7 @@ export const initializeSheetLayout = async (accessToken: string, spreadsheetId: 
     ['Other', 'Rs 0.00', '', '', '', '', '', '', '', '', '', '', '', ''],
   ];
 
-  await fetch(
+  const writeResponse = await fetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Dashboard!A1:N20?valueInputOption=USER_ENTERED`,
     {
       method: 'PUT',
@@ -556,7 +611,7 @@ export const fetchAllLendItemsFromSheet = async (
         amount: parseFloat(String(row[4] || '0').replace(/[^0-9.-]+/g, '')) || 0,
         date: String(row[5] || ''),
         dueDate: String(row[6] || ''),
-        status: (row[7] as any) === 'returned' ? 'returned' : 'pending',
+        status: (row[7] as any) === 'returned' || (row[7] as any) === 'settled' ? 'settled' : 'pending',
         phone: String(row[8] || ''),
         createdAt: Date.now(),
       }));

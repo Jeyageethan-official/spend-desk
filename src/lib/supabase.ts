@@ -167,6 +167,17 @@ export const initSupabaseAuth = (
 ) => {
   const supabase = getSupabase();
 
+  // If provider_token is directly in the URL hash, capture it
+  if (typeof window !== 'undefined' && window.location.hash) {
+    try {
+      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+      const pToken = hashParams.get('provider_token');
+      if (pToken) {
+        localStorage.setItem(TOKEN_STORAGE_KEY, pToken);
+      }
+    } catch {}
+  }
+
   // Check current session
   supabase.auth.getSession().then(({ data: { session } }) => {
     if (session?.user) {

@@ -28,7 +28,9 @@ import {
   requestGoogleAccessToken,
   deleteUserSpreadsheet,
   DriveSpreadsheetItem,
-  GOOGLE_APPS_SCRIPT_TEMPLATE
+  GOOGLE_APPS_SCRIPT_TEMPLATE,
+  extractSpreadsheetId,
+  fetchSpreadsheetTitle
 } from '../lib/sheetsApi';
 import { 
   loadStoredWebhookUrl, 
@@ -78,6 +80,8 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
   const [isCreating, setIsCreating] = useState(false);
   const [deletingSheetId, setDeletingSheetId] = useState<string | null>(null);
   const [webhookInput, setWebhookInput] = useState(() => loadStoredWebhookUrl());
+  const [linkUrlInput, setLinkUrlInput] = useState('');
+  const [isLinkingUrl, setIsLinkingUrl] = useState(false);
   const [copiedScript, setCopiedScript] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
@@ -199,6 +203,48 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
     onSetActiveSheet(null);
     setSuccessMsg('Google Sheet disconnected.');
     onNotification?.('Google Sheet disconnected.', 'info');
+  };
+
+  const handleLinkSheetByUrl = async () => {
+    const raw = linkUrlInput.trim();
+    if (!raw) return;
+    const sheetId = extractSpreadsheetId(raw);
+    if (!sheetId) {
+      setErrorMsg('Invalid Google Sheet link or ID. Please paste a valid link like https://docs.google.com/spreadsheets/d/.../edit');
+      return;
+    }
+
+    setIsLinkingUrl(true);
+    setErrorMsg('');
+    setSuccessMsg('');
+
+    try {
+      let token = accessToken;
+      let title = 'Linked Google Sheet';
+
+      if (token && token !== 'local_token' && token.length > 20) {
+        try {
+          title = await fetchSpreadsheetTitle(token, sheetId);
+        } catch {}
+      }
+
+      const meta: GoogleSheetMeta = {
+        id: sheetId,
+        name: title,
+        url: `https://docs.google.com/spreadsheets/d/${sheetId}/edit`,
+        lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+
+      onSetActiveSheet(meta);
+      setLinkUrlInput('');
+      const msg = `Connected to "${title}"!`;
+      setSuccessMsg(msg);
+      onNotification?.(msg, 'success');
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Could not connect spreadsheet.');
+    } finally {
+      setIsLinkingUrl(false);
+    }
   };
 
   const handleDeleteDriveSheet = async (item: DriveSpreadsheetItem) => {
@@ -483,6 +529,34 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                         className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-2xs cursor-pointer disabled:opacity-50 whitespace-nowrap"
                       >
                         {isCreating ? 'Creating...' : 'Create & Link'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Link Existing Sheet by URL / ID Block */}
+                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-3">
+                    <h4 className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
+                      <Link className="w-3.5 h-3.5 text-slate-600" />
+                      <span>Link Existing Google Sheet via URL or ID</span>
+                    </h4>
+                    <p className="text-[11px] text-slate-500">
+                      Already have a spreadsheet? Paste its link or Spreadsheet ID below to connect it directly.
+                    </p>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <input
+                        type="text"
+                        value={linkUrlInput}
+                        onChange={(e) => setLinkUrlInput(e.target.value)}
+                        placeholder="Paste https://docs.google.com/spreadsheets/d/.../edit"
+                        className="flex-1 px-3 py-2 rounded-xl border border-slate-300 bg-white text-xs font-medium text-slate-900 focus:outline-hidden"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleLinkSheetByUrl}
+                        disabled={isLinkingUrl || !linkUrlInput.trim()}
+                        className="px-4 py-2 bg-slate-900 hover:bg-black text-white font-bold text-xs rounded-xl shadow-2xs cursor-pointer disabled:opacity-40 whitespace-nowrap"
+                      >
+                        {isLinkingUrl ? 'Connecting...' : 'Connect Sheet'}
                       </button>
                     </div>
                   </div>

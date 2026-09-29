@@ -48,6 +48,7 @@ import {
   fetchAllLendItemsFromSheet,
   listUserSpreadsheets,
   requestGoogleAccessToken,
+  fetchGoogleUserInfo,
   syncViaWebhook
 } from './lib/sheetsApi';
 import { generateTransactionSmsText, triggerDeviceSms } from './lib/smsAlert';
@@ -204,17 +205,28 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Clean URL hash fragment on OAuth redirect return
+  // Process URL hash fragment on OAuth redirect return
   useEffect(() => {
-    if (window.location.hash && (window.location.hash.includes('access_token=') || window.location.hash.includes('error='))) {
-      const timer = setTimeout(() => {
-        try {
-          if (window.history && window.history.replaceState) {
-            window.history.replaceState(null, '', window.location.pathname + window.location.search);
-          }
-        } catch (e) {}
-      }, 500);
-      return () => clearTimeout(timer);
+    if (!window.location.hash) return;
+    try {
+      const hash = window.location.hash.replace(/^#/, '');
+      const params = new URLSearchParams(hash);
+      const errorParam = params.get('error_description') || params.get('error');
+      if (errorParam) {
+        showNotification(`Sign-in notice: ${decodeURIComponent(errorParam)}`, 'error');
+        if (window.history && window.history.replaceState) {
+          window.history.replaceState(null, '', window.location.pathname + window.location.search);
+        }
+        return;
+      }
+
+      const providerToken = params.get('provider_token');
+      if (providerToken) {
+        setAccessToken(providerToken);
+        try { localStorage.setItem('money_tracker_access_token', providerToken); } catch {}
+      }
+    } catch (e) {
+      console.warn('Hash parse error:', e);
     }
   }, []);
 
@@ -565,22 +577,58 @@ export default function App() {
       showNotification('Opening Google Sign-In...', 'info');
       try { localStorage.removeItem('money_tracker_google_client_id'); } catch (e) {}
 
+      // 1. Try modern Google Identity Services popup (stays on page, reliable in all browser contexts)
+      try {
+        const token = await requestGoogleAccessToken();
+        if (token) {
+          setAccessToken(token);
+          try {
+            const profile = await fetchGoogleUserInfo(token);
+            if (profile && profile.email) {
+              const userObj = {
+                id: profile.sub || 'google-' + Date.now(),
+                email: profile.email,
+                displayName: profile.name || profile.email.split('@')[0],
+                photoURL: profile.picture,
+              };
+              localStorage.setItem('money_tracker_user_info', JSON.stringify({
+                id: userObj.id,
+                email: userObj.email,
+                name: userObj.displayName,
+                picture: userObj.photoURL,
+              }));
+              localStorage.setItem('money_tracker_user', JSON.stringify(userObj));
+              setUser(userObj);
+              showNotification(`Signed in as ${userObj.displayName}!`, 'success');
+              return;
+            }
+          } catch (profileErr) {
+            console.warn('Failed to fetch user profile:', profileErr);
+            const fallbackUser = {
+              displayName: 'Google User',
+              email: 'google-user@gmail.com',
+            };
+            setUser(fallbackUser);
+            showNotification('Connected to Google!', 'success');
+            return;
+          }
+        }
+      } catch (gisErr: any) {
+        console.warn('GIS popup not completed:', gisErr);
+        if (gisErr?.message?.includes('closed') || gisErr?.message?.includes('canceled') || gisErr?.message?.includes('dialog closed')) {
+          showNotification('Sign-in cancelled.', 'info');
+          return;
+        }
+      }
+
+      // 2. Fall back to Supabase OAuth redirect if GIS was unavailable
       const res = await googleSignIn();
       if (res && !res.success && res.errorMessage) {
-        console.warn('Primary OAuth notice:', res.errorMessage);
-        try {
-          const token = await requestGoogleAccessToken();
-          if (token) {
-            setAccessToken(token);
-            showNotification('Signed in to Google!', 'success');
-          }
-        } catch (gisErr) {
-          showNotification('Google Sign-In canceled.', 'info');
-        }
+        showNotification(res.errorMessage || 'Sign-in failed. Please try again.', 'error');
       }
     } catch (err: any) {
       console.warn('Google Sign-In Exception:', err);
-      showNotification('Google Sign-In canceled or failed.', 'info');
+      showNotification('Google Sign-In cancelled or failed.', 'info');
     }
   };
 
@@ -711,8 +759,10 @@ export default function App() {
     let recordedTx: Transaction;
 
     if (txData.id) {
-      updatedTxs = transactions.map((t) => (t.id === txData.id ? { ...t, ...txData } : t));
-      recordedTx = { ...txData, id: txData.id, createdAt: Date.now() };
+      const existing = transactions.find((t) => t.id === txData.id);
+      const createdAt = existing ? existing.createdAt : Date.now();
+      recordedTx = { ...txData, id: txData.id, createdAt } as Transaction;
+      updatedTxs = transactions.map((t) => (t.id === txData.id ? recordedTx : t));
       markTransactionUpsert(recordedTx, currentUserEmail);
       saveStoredTransactions(updatedTxs, currentUserEmail);
       setTransactions(updatedTxs);
@@ -1370,7 +1420,7 @@ export default function App() {
         isOpen={isSmsModalOpen}
         onClose={() => setIsSmsModalOpen(false)}
         onAddTransaction={handleSaveTransaction}
-        currency="Rs"
+        currency={currency}
       />
 
       {/* Google Sign-in Help & Local Mode Modal */}

@@ -21,7 +21,8 @@ import {
   Paperclip,
   X,
   CheckSquare,
-  Square
+  Square,
+  Pencil
 } from 'lucide-react';
 import { Transaction, Category, FilterState } from '../types/finance';
 import { formatCurrency } from '../lib/calculations';
@@ -115,6 +116,8 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
     }
     if (isSelectionMode) {
       toggleSelectTx(tx.id);
+    } else {
+      onEdit(tx);
     }
   };
 
@@ -544,6 +547,21 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
                         {tx.paymentMethod}
                       </span>
                     </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onEdit(tx);
+                      }}
+                      onTouchStart={(e) => e.stopPropagation()}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      className="p-1.5 rounded-lg text-slate-400 hover:bg-emerald-50 hover:text-emerald-700 active:scale-95 transition-all cursor-pointer"
+                      title={`Edit ${tx.notes || tx.category}`}
+                      aria-label={`Edit ${tx.notes || tx.category}`}
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
                     <button
                       type="button"
                       onClick={(e) => {

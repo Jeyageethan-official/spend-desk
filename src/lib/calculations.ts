@@ -35,7 +35,7 @@ export const filterTransactions = (
     if (!tx || typeof tx !== 'object') return false;
     const date = tx.date || '';
     const category = tx.category || 'Other';
-    const paymentMethod = tx.paymentMethod || 'cash';
+    const paymentMethod = tx.paymentMethod || 'Cash';
     const notes = tx.notes || '';
     const amount = tx.amount || 0;
 
@@ -49,7 +49,7 @@ export const filterTransactions = (
     }
 
     // Payment method filter
-    if (filter?.paymentMethod && filter.paymentMethod !== 'All' && paymentMethod !== filter.paymentMethod) {
+    if (filter?.paymentMethod && filter.paymentMethod !== 'All' && paymentMethod.toLowerCase() !== filter.paymentMethod.toLowerCase()) {
       return false;
     }
 
