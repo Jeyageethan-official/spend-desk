@@ -12,7 +12,12 @@ localStorage.setItem('spenddesk_theme', 'light');
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.getRegistrations().then((registrations) =>
-      Promise.all(registrations.map((registration) => registration.unregister()))
+      Promise.all(registrations.map(async (registration) => {
+        // Safari can continue serving an old worker until it explicitly checks
+        // for an update. Force that check before removing the legacy cache.
+        try { await registration.update(); } catch {}
+        return registration.unregister();
+      }))
     ).then(() => caches.keys()).then((keys) =>
       Promise.all(keys.map((key) => caches.delete(key)))
     ).catch((err) => console.warn('Cache cleanup failed:', err));

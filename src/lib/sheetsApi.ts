@@ -101,6 +101,17 @@ export const listUserSpreadsheets = async (accessToken: string): Promise<DriveSp
   return data.files || [];
 };
 
+/** Permanently deletes a spreadsheet from this user's Google Drive. */
+export const deleteUserSpreadsheet = async (accessToken: string, spreadsheetId: string): Promise<void> => {
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(spreadsheetId)}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok && res.status !== 404) {
+    throw parseGoogleApiError(res.status, await res.text(), 'Failed to delete the spreadsheet');
+  }
+};
+
 export const createMoneyTrackerSpreadsheet = async (
   accessToken: string,
   customTitle: string = 'SpendDesk - Cash & Card'

@@ -595,12 +595,18 @@ export default function App() {
 
   // Push Data to Connected Google Sheet (Transactions, Lend/Borrow, and Dashboard KPIs) - Silent by default
   const handlePushToSheet = useCallback(async (
-    options: { silent?: boolean } = { silent: true },
+    options: { silent?: boolean; interactive?: boolean } = { silent: true },
     snapshot?: { transactions: Transaction[]; lendItems: LendItem[] }
   ): Promise<boolean> => {
     if (!activeSheet) return false;
     let sheetToken = accessToken;
-    if (!sheetToken || sheetToken === 'local_token') {
+    // Supabase's session JWT (`eyJ…`) authenticates SpendDesk cloud sync but
+    // cannot call Google APIs. A Google OAuth token is required separately.
+    const hasGoogleSheetsToken = Boolean(sheetToken && sheetToken !== 'local_token' && !sheetToken.startsWith('eyJ'));
+    if (!hasGoogleSheetsToken) {
+      // Safari blocks account-selection popups unless they come directly from
+      // a tap. Background saves stay local and retry after a user taps Push.
+      if (!options.interactive) return false;
       try {
         sheetToken = await requestGoogleAccessToken();
         setAccessToken(sheetToken);
@@ -1096,7 +1102,7 @@ export default function App() {
               accessToken={accessToken}
               activeSheet={activeSheet}
               onSetActiveSheet={handleSetActiveSheet}
-              onPushToSheet={handlePushToSheet}
+              onPushToSheet={() => handlePushToSheet({ silent: false, interactive: true })}
               onPullFromSheet={handlePullFromSheet}
               onSignInDirect={handleSignIn}
               onExportCSV={handleExportCSV}

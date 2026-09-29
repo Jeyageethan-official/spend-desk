@@ -18,13 +18,15 @@ import {
   ShieldCheck,
   Unlink,
   Table2,
-  HandCoins
+  HandCoins,
+  Trash2
 } from 'lucide-react';
 import { GoogleSheetMeta, LendItem, Transaction } from '../types/finance';
 import { 
   listUserSpreadsheets, 
   createMoneyTrackerSpreadsheet, 
   requestGoogleAccessToken,
+  deleteUserSpreadsheet,
   DriveSpreadsheetItem,
   GOOGLE_APPS_SCRIPT_TEMPLATE
 } from '../lib/sheetsApi';
@@ -74,6 +76,7 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
   const [loadingList, setLoadingList] = useState(false);
   const [newTitle, setNewTitle] = useState('SpendDesk - Cash & Card');
   const [isCreating, setIsCreating] = useState(false);
+  const [deletingSheetId, setDeletingSheetId] = useState<string | null>(null);
   const [webhookInput, setWebhookInput] = useState(() => loadStoredWebhookUrl());
   const [copiedScript, setCopiedScript] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -196,6 +199,26 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
     onSetActiveSheet(null);
     setSuccessMsg('Google Sheet disconnected.');
     onNotification?.('Google Sheet disconnected.', 'info');
+  };
+
+  const handleDeleteDriveSheet = async (item: DriveSpreadsheetItem) => {
+    if (!window.confirm(`Permanently delete "${item.name}" from Google Drive? This cannot be undone.`)) return;
+    setDeletingSheetId(item.id);
+    setErrorMsg('');
+    try {
+      let token = accessToken;
+      if (!token || token === 'local_token') token = await requestGoogleAccessToken();
+      await deleteUserSpreadsheet(token, item.id);
+      setSpreadsheets((current) => current.filter((sheet) => sheet.id !== item.id));
+      if (activeSheet?.id === item.id) onSetActiveSheet(null);
+      const message = `Deleted "${item.name}" from Google Drive.`;
+      setSuccessMsg(message);
+      onNotification?.(message, 'success');
+    } catch (error: any) {
+      setErrorMsg(error?.message || 'Could not delete this spreadsheet.');
+    } finally {
+      setDeletingSheetId(null);
+    }
   };
 
   const filteredDriveSheets = spreadsheets.filter((s) =>
@@ -384,7 +407,7 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <button
                           type="button"
-                          onClick={onPushToSheet}
+                          onClick={() => void onPushToSheet()}
                           disabled={isSyncing}
                           className="p-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 transition-colors"
                         >
@@ -536,20 +559,27 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                                     </span>
                                   </div>
 
-                                  {isConnected ? (
-                                    <span className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold inline-flex items-center gap-1 shrink-0">
-                                      <CheckCircle2 className="w-3.5 h-3.5" />
-                                      Active
-                                    </span>
-                                  ) : (
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    {isConnected ? (
+                                      <span className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold inline-flex items-center gap-1">
+                                        <CheckCircle2 className="w-3.5 h-3.5" /> Active
+                                      </span>
+                                    ) : (
+                                      <button type="button" onClick={() => handleSelectExisting(item)} className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-emerald-600 hover:text-white text-slate-700 text-xs font-bold cursor-pointer transition-colors">
+                                        Connect
+                                      </button>
+                                    )}
                                     <button
                                       type="button"
-                                      onClick={() => handleSelectExisting(item)}
-                                      className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-emerald-600 hover:text-white text-slate-700 text-xs font-bold cursor-pointer transition-colors shrink-0"
+                                      onClick={() => void handleDeleteDriveSheet(item)}
+                                      disabled={deletingSheetId === item.id}
+                                      title={`Delete ${item.name}`}
+                                      aria-label={`Delete ${item.name}`}
+                                      className="p-2 rounded-lg text-rose-600 hover:bg-rose-50 cursor-pointer disabled:opacity-50"
                                     >
-                                      Connect
+                                      <Trash2 className="w-4 h-4" />
                                     </button>
-                                  )}
+                                  </div>
                                 </div>
                               );
                             })

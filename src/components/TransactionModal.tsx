@@ -216,7 +216,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
     setAmountStr((num + addVal).toString());
   };
 
-  const handleSubmit = (e?: React.FormEvent) => {
+  const handleSubmit = (e?: React.FormEvent | React.MouseEvent) => {
     if (e) e.preventDefault();
     const parsed = parseFloat(amountStr);
     if (isNaN(parsed) || parsed <= 0) {
@@ -553,8 +553,8 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
         {/* Fixed Sticky Bottom Bar */}
         <div className="p-4 bg-white/95 backdrop-blur-md border-t border-slate-200/90 shrink-0 shadow-xs">
           <button
-            type="submit"
-            form="transaction-form"
+            type="button"
+            onClick={handleSubmit}
             disabled={currentAmountNum <= 0}
             className="w-full py-3.5 px-4 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 active:scale-[0.99] text-white rounded-2xl font-black text-sm shadow-md cursor-pointer disabled:opacity-40 transition-all flex items-center justify-center gap-2"
           >
