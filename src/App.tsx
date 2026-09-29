@@ -32,6 +32,7 @@ import {
   saveStoredCategoryDefs,
   loadStoredProfile,
   saveStoredProfile,
+  mergeGuestDataIntoUser,
   UserProfile
 } from './lib/storage';
 import { 
@@ -127,12 +128,13 @@ export default function App() {
   const [sheetsSourceTab, setSheetsSourceTab] = useState<AppTab>('settings');
 
   // Transactions, Debt & Config State
-  const [transactions, setTransactions] = useState<Transaction[]>(() => loadStoredTransactions());
-  const [lendItems, setLendItems] = useState<LendItem[]>(() => loadStoredLendItems());
-  const [alertPhone, setAlertPhone] = useState<string>(() => loadStoredAlertPhone('guest'));
-  const [telegramAlertConfig, setTelegramAlertConfig] = useState<TelegramAlertConfig>(() => loadStoredTelegramAlertConfig('guest'));
-  const [activeSheet, setActiveSheet] = useState<GoogleSheetMeta | null>(() => loadStoredSheetMeta());
-  const [budgetConfig, setBudgetConfig] = useState<BudgetConfig>(() => loadStoredBudgetConfig());
+  const initialScope = (user?.email || loadLastOfflineWorkspace() || 'guest').trim().toLowerCase();
+  const [transactions, setTransactions] = useState<Transaction[]>(() => loadStoredTransactions(initialScope));
+  const [lendItems, setLendItems] = useState<LendItem[]>(() => loadStoredLendItems(initialScope));
+  const [alertPhone, setAlertPhone] = useState<string>(() => loadStoredAlertPhone(initialScope));
+  const [telegramAlertConfig, setTelegramAlertConfig] = useState<TelegramAlertConfig>(() => loadStoredTelegramAlertConfig(initialScope));
+  const [activeSheet, setActiveSheet] = useState<GoogleSheetMeta | null>(() => loadStoredSheetMeta(initialScope));
+  const [budgetConfig, setBudgetConfig] = useState<BudgetConfig>(() => loadStoredBudgetConfig(initialScope));
   const [currency, setCurrency] = useState<string>('Rs');
   const [userProfile, setUserProfile] = useState<UserProfile>(() => loadStoredProfile());
 
@@ -264,17 +266,51 @@ export default function App() {
   }, []);
 
   // Load a clean, strictly account-scoped workspace on every identity change.
-  // Guest data is never merged into an account: signing out then using a different
-  // Google account must never expose the previous user's records.
+  // Guest and offline data are cleanly merged so newly recorded transactions or
+  // sheet connections are never erased on login.
   useEffect(() => {
     const scope = currentUserEmail || 'guest';
     setLoadedStorageScope('');
     setSelectedTransactionIds([]);
-    setTransactions(loadStoredTransactions(scope));
-    setLendItems(loadStoredLendItems(scope));
+
+    if (currentUserEmail) {
+      try {
+        mergeGuestDataIntoUser(currentUserEmail);
+      } catch (e) {
+        console.warn('Guest data merge warning:', e);
+      }
+    }
+
+    const storedTxs = loadStoredTransactions(scope);
+    setTransactions((prev) => {
+      if (storedTxs && storedTxs.length > 0) return storedTxs;
+      if (prev.length > 0) {
+        saveStoredTransactions(prev, scope);
+        return prev;
+      }
+      return [];
+    });
+
+    const storedLends = loadStoredLendItems(scope);
+    setLendItems((prev) => {
+      if (storedLends && storedLends.length > 0) return storedLends;
+      if (prev.length > 0) {
+        saveStoredLendItems(prev, scope);
+        return prev;
+      }
+      return [];
+    });
+
     setAlertPhone(loadStoredAlertPhone(scope));
     setTelegramAlertConfig(loadStoredTelegramAlertConfig(scope));
-    setActiveSheet(loadStoredSheetMeta(scope));
+
+    const storedSheet = loadStoredSheetMeta(scope);
+    setActiveSheet((prev) => {
+      const sheet = storedSheet || prev;
+      if (sheet) saveStoredSheetMeta(sheet, scope);
+      return sheet;
+    });
+
     setBudgetConfig(loadStoredBudgetConfig(scope));
     setUserProfile(loadStoredProfile(scope));
     setLoadedStorageScope(scope);
@@ -365,12 +401,39 @@ export default function App() {
     suppressNextCloudSyncRef.current = true;
     cloudVersionRef.current = workspace.updatedAt;
     const scope = currentUserEmail;
-    const nextTransactions = Array.isArray(workspace.transactions) ? workspace.transactions : [];
-    const nextLends = Array.isArray(workspace.lendItems) ? workspace.lendItems : [];
-    setTransactions(nextTransactions);
-    saveStoredTransactions(nextTransactions, scope);
-    setLendItems(nextLends);
-    saveStoredLendItems(nextLends, scope);
+    const remoteTxs = Array.isArray(workspace.transactions) ? workspace.transactions : [];
+    const remoteLends = Array.isArray(workspace.lendItems) ? workspace.lendItems : [];
+
+    setTransactions((prev) => {
+      if (remoteTxs.length === 0 && prev.length > 0) {
+        saveStoredTransactions(prev, scope);
+        return prev;
+      }
+      const txMap = new Map<string, Transaction>();
+      remoteTxs.forEach((t) => txMap.set(t.id, t));
+      prev.forEach((t) => {
+        if (!txMap.has(t.id)) txMap.set(t.id, t);
+      });
+      const merged = Array.from(txMap.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      saveStoredTransactions(merged, scope);
+      return merged;
+    });
+
+    setLendItems((prev) => {
+      if (remoteLends.length === 0 && prev.length > 0) {
+        saveStoredLendItems(prev, scope);
+        return prev;
+      }
+      const lendMap = new Map<string, LendItem>();
+      remoteLends.forEach((l) => lendMap.set(l.id, l));
+      prev.forEach((l) => {
+        if (!lendMap.has(l.id)) lendMap.set(l.id, l);
+      });
+      const merged = Array.from(lendMap.values());
+      saveStoredLendItems(merged, scope);
+      return merged;
+    });
+
     if (Array.isArray(workspace.categories) && workspace.categories.length > 0) {
       saveStoredCategoryDefs(workspace.categories, scope);
     }
@@ -383,8 +446,13 @@ export default function App() {
     const nextTelegram = workspace.telegramAlertConfig || { enabled: false, chatId: '' };
     setTelegramAlertConfig(nextTelegram);
     saveStoredTelegramAlertConfig(nextTelegram, scope);
-    setActiveSheet(workspace.activeSheet || null);
-    saveStoredSheetMeta(workspace.activeSheet || null, scope);
+
+    setActiveSheet((prev) => {
+      const sheet = workspace.activeSheet || prev;
+      if (sheet) saveStoredSheetMeta(sheet, scope);
+      return sheet;
+    });
+
     const nextProfile = workspace.profile || loadStoredProfile(scope);
     setUserProfile(nextProfile);
     saveStoredProfile(nextProfile, scope);
@@ -571,57 +639,50 @@ export default function App() {
     showNotification(`Deleted ${txIds.length} transactions.`, 'info');
   };
 
-  // Google Login handler via working OAuth flow (Stays on live domain, 0 double popups)
+  // Google Login handler via working OAuth flow with Account Chooser
   const handleSignIn = async () => {
     try {
       showNotification('Opening Google Sign-In...', 'info');
-      try { localStorage.removeItem('money_tracker_google_client_id'); } catch (e) {}
 
-      // 1. Try modern Google Identity Services popup (stays on page, reliable in all browser contexts)
-      try {
-        const token = await requestGoogleAccessToken();
-        if (token) {
-          setAccessToken(token);
-          try {
-            const profile = await fetchGoogleUserInfo(token);
-            if (profile && profile.email) {
-              const userObj = {
-                id: profile.sub || 'google-' + Date.now(),
-                email: profile.email,
-                displayName: profile.name || profile.email.split('@')[0],
-                photoURL: profile.picture,
-              };
-              localStorage.setItem('money_tracker_user_info', JSON.stringify({
-                id: userObj.id,
-                email: userObj.email,
-                name: userObj.displayName,
-                picture: userObj.photoURL,
-              }));
-              localStorage.setItem('money_tracker_user', JSON.stringify(userObj));
-              setUser(userObj);
-              showNotification(`Signed in as ${userObj.displayName}!`, 'success');
-              return;
+      // 1. Check if user configured a custom authorized Google Client ID
+      const customClientId = localStorage.getItem('money_tracker_google_client_id');
+      if (customClientId && !customClientId.includes('403491523597')) {
+        try {
+          const token = await requestGoogleAccessToken();
+          if (token) {
+            setAccessToken(token);
+            try {
+              const profile = await fetchGoogleUserInfo(token);
+              if (profile && profile.email) {
+                const userObj = {
+                  id: profile.sub || 'google-' + Date.now(),
+                  email: profile.email,
+                  displayName: profile.name || profile.email.split('@')[0],
+                  photoURL: profile.picture,
+                };
+                localStorage.setItem('money_tracker_user_info', JSON.stringify({
+                  id: userObj.id,
+                  email: userObj.email,
+                  name: userObj.displayName,
+                  picture: userObj.photoURL,
+                }));
+                localStorage.setItem('money_tracker_user', JSON.stringify(userObj));
+                setUser(userObj);
+                showNotification(`Signed in as ${userObj.displayName}!`, 'success');
+                return;
+              }
+            } catch (profileErr) {
+              console.warn('Failed to fetch user profile:', profileErr);
             }
-          } catch (profileErr) {
-            console.warn('Failed to fetch user profile:', profileErr);
-            const fallbackUser = {
-              displayName: 'Google User',
-              email: 'google-user@gmail.com',
-            };
-            setUser(fallbackUser);
-            showNotification('Connected to Google!', 'success');
-            return;
           }
-        }
-      } catch (gisErr: any) {
-        console.warn('GIS popup not completed:', gisErr);
-        if (gisErr?.message?.includes('closed') || gisErr?.message?.includes('canceled') || gisErr?.message?.includes('dialog closed')) {
-          showNotification('Sign-in cancelled.', 'info');
-          return;
+        } catch (gisErr: any) {
+          console.warn('Custom GIS popup not completed:', gisErr);
         }
       }
 
-      // 2. Fall back to Supabase OAuth redirect if GIS was unavailable
+      // 2. Primary OAuth flow: Uses Supabase Google OAuth with prompt='select_account consent'
+      // This displays the full Google Account Chooser list (all logged-in Gmail accounts + 'Use another account')
+      // and eliminates Error 400: origin_mismatch on GitHub Pages / custom domains.
       const res = await googleSignIn();
       if (res && !res.success && res.errorMessage) {
         showNotification(res.errorMessage || 'Sign-in failed. Please try again.', 'error');

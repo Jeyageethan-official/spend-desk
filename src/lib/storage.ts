@@ -158,12 +158,14 @@ export const loadStoredTransactions = (email?: string | null): Transaction[] => 
   try {
     const key = getScopedKey(TX_STORAGE_KEY, email);
     let raw = localStorage.getItem(key);
-    if (!raw && (!email || !email.trim())) {
+    if (!raw && email) {
+      raw = localStorage.getItem(getScopedKey(TX_STORAGE_KEY, 'guest')) || localStorage.getItem(TX_STORAGE_KEY);
+    } else if (!raw) {
       raw = localStorage.getItem(TX_STORAGE_KEY);
     }
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
+      if (Array.isArray(parsed) && parsed.length > 0) {
         return parsed;
       }
     }
@@ -176,7 +178,12 @@ export const loadStoredTransactions = (email?: string | null): Transaction[] => 
 export const saveStoredTransactions = (transactions: Transaction[], email?: string | null) => {
   try {
     const key = getScopedKey(TX_STORAGE_KEY, email);
-    localStorage.setItem(key, JSON.stringify(transactions));
+    const serialized = JSON.stringify(transactions);
+    localStorage.setItem(key, serialized);
+    localStorage.setItem(TX_STORAGE_KEY, serialized);
+    if (!email || email === 'guest') {
+      localStorage.setItem(getScopedKey(TX_STORAGE_KEY, 'guest'), serialized);
+    }
   } catch (e) {
     console.error('Failed to store transactions:', e);
   }
@@ -186,12 +193,14 @@ export const loadStoredLendItems = (email?: string | null): LendItem[] => {
   try {
     const key = getScopedKey(LEND_STORAGE_KEY, email);
     let raw = localStorage.getItem(key);
-    if (!raw && (!email || !email.trim())) {
+    if (!raw && email) {
+      raw = localStorage.getItem(getScopedKey(LEND_STORAGE_KEY, 'guest')) || localStorage.getItem(LEND_STORAGE_KEY);
+    } else if (!raw) {
       raw = localStorage.getItem(LEND_STORAGE_KEY);
     }
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
+      if (Array.isArray(parsed) && parsed.length > 0) {
         return parsed;
       }
     }
@@ -204,7 +213,12 @@ export const loadStoredLendItems = (email?: string | null): LendItem[] => {
 export const saveStoredLendItems = (items: LendItem[], email?: string | null) => {
   try {
     const key = getScopedKey(LEND_STORAGE_KEY, email);
-    localStorage.setItem(key, JSON.stringify(items));
+    const serialized = JSON.stringify(items);
+    localStorage.setItem(key, serialized);
+    localStorage.setItem(LEND_STORAGE_KEY, serialized);
+    if (!email || email === 'guest') {
+      localStorage.setItem(getScopedKey(LEND_STORAGE_KEY, 'guest'), serialized);
+    }
   } catch (e) {
     console.error('Failed to save lend items:', e);
   }
@@ -265,7 +279,9 @@ export const loadStoredSheetMeta = (email?: string | null): GoogleSheetMeta | nu
   try {
     const key = getScopedKey(SHEET_META_KEY, email);
     let raw = localStorage.getItem(key);
-    if (!raw && (!email || !email.trim())) {
+    if (!raw && email) {
+      raw = localStorage.getItem(getScopedKey(SHEET_META_KEY, 'guest')) || localStorage.getItem(SHEET_META_KEY);
+    } else if (!raw) {
       raw = localStorage.getItem(SHEET_META_KEY);
     }
     if (raw) return JSON.parse(raw);
@@ -279,9 +295,14 @@ export const saveStoredSheetMeta = (meta: GoogleSheetMeta | null, email?: string
   try {
     const key = getScopedKey(SHEET_META_KEY, email);
     if (meta) {
-      localStorage.setItem(key, JSON.stringify(meta));
+      const serialized = JSON.stringify(meta);
+      localStorage.setItem(key, serialized);
+      localStorage.setItem(SHEET_META_KEY, serialized);
+      localStorage.setItem(getScopedKey(SHEET_META_KEY, 'guest'), serialized);
     } else {
       localStorage.removeItem(key);
+      localStorage.removeItem(SHEET_META_KEY);
+      localStorage.removeItem(getScopedKey(SHEET_META_KEY, 'guest'));
     }
   } catch (e) {
     console.error('Failed to save sheet meta:', e);
