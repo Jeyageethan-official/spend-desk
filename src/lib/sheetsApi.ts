@@ -1,6 +1,8 @@
 import { Transaction, SpendingSummary, CategorySummary, LendItem } from '../types/finance';
 
-export const GOOGLE_OAUTH_CLIENT_ID = '377806164433-ftqbldc3ul9jfenp00hcgveeonoifdjs.apps.googleusercontent.com';
+// The earlier client was deleted in Google Cloud and caused `invalid_client`
+// before the account chooser could appear.
+export const GOOGLE_OAUTH_CLIENT_ID = '403491523597-qdt2hjm4qi2nhggb25u1oihvivklq3lh.apps.googleusercontent.com';
 
 export const getGoogleClientId = (): string => {
   try {
@@ -47,7 +49,7 @@ export const requestGoogleAccessToken = (): Promise<string> => {
           reject(new Error(nonOAuthError?.message || 'Google Auth dialog closed.'));
         }
       });
-      client.requestAccessToken({ prompt: 'consent' });
+      client.requestAccessToken({ prompt: 'select_account consent' });
     } catch (e: any) {
       reject(e);
     }
@@ -175,7 +177,7 @@ export const initializeSheetLayout = async (accessToken: string, spreadsheetId: 
     ],
   };
 
-  await fetch(
+  const txHeaderResponse = await fetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Transactions!A1:I1?valueInputOption=USER_ENTERED`,
     {
       method: 'PUT',
@@ -186,6 +188,9 @@ export const initializeSheetLayout = async (accessToken: string, spreadsheetId: 
       body: JSON.stringify(txHeaderBody),
     }
   );
+  if (!txHeaderResponse.ok) {
+    throw parseGoogleApiError(txHeaderResponse.status, await txHeaderResponse.text(), 'Failed to create transaction headers');
+  }
 
   // Set up Lend_Borrow headers
   const lendHeaderBody = {
@@ -194,7 +199,7 @@ export const initializeSheetLayout = async (accessToken: string, spreadsheetId: 
     ],
   };
 
-  await fetch(
+  const lendHeaderResponse = await fetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Lend_Borrow!A1:I1?valueInputOption=USER_ENTERED`,
     {
       method: 'PUT',
@@ -242,6 +247,9 @@ export const initializeSheetLayout = async (accessToken: string, spreadsheetId: 
       body: JSON.stringify({ values: dashboardValues }),
     }
   );
+  if (!writeResponse.ok) {
+    throw parseGoogleApiError(writeResponse.status, await writeResponse.text(), 'Failed to save transactions');
+  }
 };
 
 export const syncDashboardStats = async (
@@ -311,7 +319,7 @@ export const syncDashboardStats = async (
     },
   ];
 
-  await fetch(
+  const statsResponse = await fetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchUpdate`,
     {
       method: 'POST',
@@ -325,6 +333,9 @@ export const syncDashboardStats = async (
       }),
     }
   );
+  if (!statsResponse.ok) {
+    throw parseGoogleApiError(statsResponse.status, await statsResponse.text(), 'Failed to update dashboard totals');
+  }
 };
 
 export const appendTransactionRow = async (
@@ -408,7 +419,7 @@ export const overwriteTransactionsInSheet = async (
   transactions: Transaction[]
 ) => {
   // Clear existing transactions
-  await fetch(
+  const clearResponse = await fetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Transactions!A2:I1000:clear`,
     {
       method: 'POST',
@@ -418,6 +429,9 @@ export const overwriteTransactionsInSheet = async (
       },
     }
   );
+  if (!clearResponse.ok) {
+    throw parseGoogleApiError(clearResponse.status, await clearResponse.text(), 'Failed to clear old transactions');
+  }
 
   if (transactions.length === 0) return;
 
@@ -433,7 +447,7 @@ export const overwriteTransactionsInSheet = async (
     new Date(tx.createdAt).toISOString(),
   ]);
 
-  await fetch(
+  const writeResponse = await fetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Transactions!A2?valueInputOption=USER_ENTERED`,
     {
       method: 'PUT',
@@ -446,6 +460,9 @@ export const overwriteTransactionsInSheet = async (
       }),
     }
   );
+  if (!writeResponse.ok) {
+    throw parseGoogleApiError(writeResponse.status, await writeResponse.text(), 'Failed to save transactions');
+  }
 };
 
 export const overwriteLendItemsInSheet = async (
@@ -453,7 +470,7 @@ export const overwriteLendItemsInSheet = async (
   spreadsheetId: string,
   lendItems: LendItem[]
 ) => {
-  await fetch(
+  const clearResponse = await fetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Lend_Borrow!A2:I500:clear`,
     {
       method: 'POST',
@@ -463,6 +480,9 @@ export const overwriteLendItemsInSheet = async (
       },
     }
   );
+  if (!clearResponse.ok) {
+    throw parseGoogleApiError(clearResponse.status, await clearResponse.text(), 'Failed to clear old lend records');
+  }
 
   if (lendItems.length === 0) return;
 
@@ -478,7 +498,7 @@ export const overwriteLendItemsInSheet = async (
     item.phone || '',
   ]);
 
-  await fetch(
+  const writeResponse = await fetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Lend_Borrow!A2?valueInputOption=USER_ENTERED`,
     {
       method: 'PUT',
@@ -491,6 +511,9 @@ export const overwriteLendItemsInSheet = async (
       }),
     }
   );
+  if (!writeResponse.ok) {
+    throw parseGoogleApiError(writeResponse.status, await writeResponse.text(), 'Failed to save lend records');
+  }
 };
 
 export const fetchAllLendItemsFromSheet = async (

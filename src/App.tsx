@@ -234,8 +234,9 @@ export default function App() {
     const handleOnline = () => {
       setIsOnline(true);
       if (activeSheet?.id && accessToken && accessToken !== 'local_token') {
+        // The local ledger is the source of truth after an offline period. Do
+        // not pull an old/empty Sheet response in parallel and erase it.
         handlePushToSheet({ silent: true });
-        if (!isPendingSignedOutReplay) handlePullFromSheet(activeSheet.id, accessToken);
       }
     };
 
@@ -295,34 +296,6 @@ export default function App() {
   }, [activeSheet, currentUserEmail, currentStorageScope, loadedStorageScope]);
 
   const lastSyncedHashRef = useRef<string>('');
-
-  // Automatic background push to connected Google Sheet ONLY when data actually changes
-  useEffect(() => {
-    if (!activeSheet || !accessToken || accessToken === 'local_token' || !isOnline) return;
-
-    const currentHash = JSON.stringify({
-      tCount: transactions.length,
-      lCount: lendItems.length,
-      firstTx: transactions[0]?.id || '',
-      firstTxAmt: transactions[0]?.amount || 0,
-      firstLend: lendItems[0]?.id || '',
-    });
-
-    if (lastSyncedHashRef.current === currentHash) return;
-
-    // Set initial hash on mount without firing push
-    if (!lastSyncedHashRef.current) {
-      lastSyncedHashRef.current = currentHash;
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      lastSyncedHashRef.current = currentHash;
-      handlePushToSheet({ silent: true });
-    }, 3000);
-
-    return () => clearTimeout(timer);
-  }, [transactions, lendItems, activeSheet?.id, accessToken, isOnline]);
 
   // Scroll to top whenever activeTab changes
   useEffect(() => {
@@ -551,15 +524,6 @@ export default function App() {
     }
   }, [activeSheet?.id, accessToken, currentUserEmail, isPendingSignedOutReplay]);
 
-  // Initial Auto-Pull on App Load when connected sheet exists
-  const hasInitialAutoPulledRef = useRef(false);
-  useEffect(() => {
-    if (!isPendingSignedOutReplay && activeSheet?.id && accessToken && accessToken !== 'local_token' && !hasInitialAutoPulledRef.current) {
-      hasInitialAutoPulledRef.current = true;
-      handlePullFromSheet(activeSheet.id, accessToken);
-    }
-  }, [activeSheet?.id, accessToken, handlePullFromSheet]);
-
   const handleBulkDeleteTransactions = (txIds: string[]) => {
     txIds.forEach((id) => markTransactionDelete(id, currentUserEmail));
     setTransactions(prev => {
@@ -569,53 +533,6 @@ export default function App() {
     });
     showNotification(`Deleted ${txIds.length} transactions.`, 'info');
   };
-
-  // Real-time silent multi-device polling & window focus sync (Every 12s when connected and online)
-  useEffect(() => {
-    if (isPendingSignedOutReplay || !activeSheet?.id || !accessToken || accessToken === 'local_token' || !isOnline) return;
-
-    const syncInterval = setInterval(() => {
-      handlePullFromSheet(activeSheet.id, accessToken);
-    }, 12000);
-
-    const handleFocus = () => {
-      handlePullFromSheet(activeSheet.id, accessToken);
-    };
-
-    window.addEventListener('focus', handleFocus);
-
-    return () => {
-      clearInterval(syncInterval);
-      window.removeEventListener('focus', handleFocus);
-    };
-  }, [activeSheet?.id, accessToken, isOnline, isPendingSignedOutReplay, handlePullFromSheet]);
-
-  // Auto-discover Drive Sheet if logged in but no active sheet is set
-  useEffect(() => {
-    const autoDiscoverDriveSheet = async () => {
-      if (accessToken && accessToken !== 'local_token' && !activeSheet) {
-        try {
-          const driveSheets = await listUserSpreadsheets(accessToken);
-          if (driveSheets.length > 0) {
-            const targetSheet = driveSheets.find(s => s.name.toLowerCase().includes('spenddesk')) || driveSheets[0];
-            if (targetSheet) {
-              const meta: GoogleSheetMeta = {
-                id: targetSheet.id,
-                name: targetSheet.name,
-                url: targetSheet.webViewLink || `https://docs.google.com/spreadsheets/d/${targetSheet.id}/edit`,
-                lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              };
-              handleSetActiveSheet(meta);
-              await handlePullFromSheet(targetSheet.id, accessToken);
-            }
-          }
-        } catch (e) {
-          console.warn('Startup drive discover error:', e);
-        }
-      }
-    };
-    autoDiscoverDriveSheet();
-  }, [accessToken, activeSheet, handlePullFromSheet]);
 
   // Google Login handler via working OAuth flow (Stays on live domain, 0 double popups)
   const handleSignIn = async () => {
@@ -681,22 +598,32 @@ export default function App() {
     options: { silent?: boolean } = { silent: true },
     snapshot?: { transactions: Transaction[]; lendItems: LendItem[] }
   ): Promise<boolean> => {
-    if (!activeSheet || !accessToken || accessToken === 'local_token') return false;
+    if (!activeSheet) return false;
+    let sheetToken = accessToken;
+    if (!sheetToken || sheetToken === 'local_token') {
+      try {
+        sheetToken = await requestGoogleAccessToken();
+        setAccessToken(sheetToken);
+      } catch (error: any) {
+        if (!options.silent) showNotification(error?.message || 'Google Sheet permission is required.', 'error');
+        return false;
+      }
+    }
     const transactionsToPush = snapshot?.transactions ?? transactions;
     const lendsToPush = snapshot?.lendItems ?? lendItems;
     setIsSyncing(true);
     try {
       // 1. Push Transactions & Lend side-by-side to Transactions sheet
-      await overwriteTransactionsInSheet(accessToken, activeSheet.id, transactionsToPush, lendsToPush);
+      await overwriteTransactionsInSheet(sheetToken, activeSheet.id, transactionsToPush);
       
       // 2. Push Lend & Borrow backup tab records
-      await overwriteLendItemsInSheet(accessToken, activeSheet.id, lendsToPush);
+      await overwriteLendItemsInSheet(sheetToken, activeSheet.id, lendsToPush);
 
       // 3. Push Dashboard KPI Totals & Trends
       const allSummary = calculateSummary(transactionsToPush, transactionsToPush);
       const catSummary = calculateCategoryBreakdown(transactionsToPush);
       const { dayTotals } = calculateWeeklyDailyTrend(transactionsToPush);
-      await syncDashboardStats(accessToken, activeSheet.id, allSummary, catSummary, dayTotals);
+      await syncDashboardStats(sheetToken, activeSheet.id, allSummary, catSummary, dayTotals);
 
       const updatedMeta: GoogleSheetMeta = {
         ...activeSheet,
@@ -791,7 +718,7 @@ export default function App() {
         });
     }
 
-    if (activeSheet && accessToken) {
+    if (activeSheet) {
       void handlePushToSheet({ silent: true }, { transactions: updatedTxs, lendItems }).catch(console.error);
     }
 
@@ -816,7 +743,7 @@ export default function App() {
     setDeleteCandidate(null);
     showNotification('Transaction deleted.', 'info');
 
-    if (activeSheet && accessToken) {
+    if (activeSheet) {
       setTimeout(() => {
         handlePushToSheet({ silent: true }, { transactions: remaining, lendItems }).catch(console.error);
       }, 500);
@@ -842,7 +769,7 @@ export default function App() {
     setLendItems(updated);
     showNotification(`${data.type === 'lent' ? 'Money Lent' : 'Money Borrowed'} saved.`, 'success');
 
-    if (activeSheet && accessToken) {
+    if (activeSheet) {
       void handlePushToSheet({ silent: true }, { transactions, lendItems: updated }).catch(console.error);
     }
     const webhookUrl = loadStoredWebhookUrl();
@@ -870,7 +797,7 @@ export default function App() {
     setLendItems(updated);
     showNotification('Status updated.', 'info');
 
-    if (activeSheet && accessToken) {
+    if (activeSheet) {
       void handlePushToSheet({ silent: true }, { transactions, lendItems: updated }).catch(console.error);
     }
     const webhookUrl = loadStoredWebhookUrl();
@@ -887,7 +814,7 @@ export default function App() {
     setLendItems(updated);
     showNotification('Record deleted.', 'info');
 
-    if (activeSheet && accessToken) {
+    if (activeSheet) {
       void handlePushToSheet({ silent: true }, { transactions, lendItems: updated }).catch(console.error);
     }
     const webhookUrl = loadStoredWebhookUrl();
