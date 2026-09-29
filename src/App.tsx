@@ -233,11 +233,9 @@ export default function App() {
   useEffect(() => {
     const handleOnline = () => {
       setIsOnline(true);
-      if (activeSheet?.id && accessToken && accessToken !== 'local_token') {
-        // The local ledger is the source of truth after an offline period. Do
-        // not pull an old/empty Sheet response in parallel and erase it.
-        handlePushToSheet({ silent: true });
-      }
+      // Reconnecting must never start an OAuth dialog or overwrite a local
+      // mutation in the background. Local/cloud sync has its own durable
+      // queue; Google Sheets is synced only from an explicit user action.
     };
 
     const handleOffline = () => {
@@ -251,7 +249,7 @@ export default function App() {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
-  }, [activeSheet?.id, accessToken, isPendingSignedOutReplay]);
+  }, []);
 
   // Load a clean, strictly account-scoped workspace on every identity change.
   // Guest data is never merged into an account: signing out then using a different
@@ -489,11 +487,30 @@ export default function App() {
   };
 
   // Pull Data from Connected Google Sheet & Merge Cleanly with Local Storage
-  const handlePullFromSheet = useCallback(async (targetSheetId?: string, targetToken?: string) => {
+  const handlePullFromSheet = useCallback(async (
+    targetSheetId?: string,
+    targetToken?: string,
+    options: { interactive?: boolean; silent?: boolean } = { interactive: false, silent: true },
+  ) => {
     if (isPendingSignedOutReplay) return;
     const sId = targetSheetId || activeSheet?.id;
-    const token = targetToken || accessToken;
-    if (!sId || !token || token === 'local_token') return;
+    let token = targetToken || accessToken;
+    if (!sId) {
+      if (!options.silent) showNotification('Connect a Google Sheet first.', 'info');
+      return;
+    }
+
+    const hasGoogleSheetsToken = Boolean(token && token !== 'local_token' && !token.startsWith('eyJ'));
+    if (!hasGoogleSheetsToken) {
+      if (!options.interactive) return;
+      try {
+        token = await requestGoogleAccessToken();
+        setAccessToken(token);
+      } catch (error: any) {
+        if (!options.silent) showNotification(error?.message || 'Google Sheet permission is required.', 'error');
+        return;
+      }
+    }
     setIsSyncing(true);
     try {
       const remoteTxs = await fetchAllTransactionsFromSheet(token, sId);
@@ -507,7 +524,7 @@ export default function App() {
       setLendItems(remoteLends);
       saveStoredLendItems(remoteLends, currentUserEmail);
     } catch (err: any) {
-      console.error('Failed to fetch from sheet silently:', err);
+      console.error('Failed to fetch from sheet:', err);
       const raw = String(err?.message || err);
       const is401 = raw.includes('401') || 
                     raw.includes('UNAUTHENTICATED') || 
@@ -519,10 +536,18 @@ export default function App() {
         try { localStorage.removeItem('money_tracker_access_token'); } catch (e) {}
         setAccessToken(null);
       }
+      if (!options.silent) {
+        showNotification(err?.message || 'Could not pull records from Google Sheet.', 'error');
+      }
     } finally {
       setIsSyncing(false);
     }
   }, [activeSheet?.id, accessToken, currentUserEmail, isPendingSignedOutReplay]);
+
+  const handleManualPullFromSheet = useCallback(
+    () => handlePullFromSheet(undefined, undefined, { interactive: true, silent: false }),
+    [handlePullFromSheet],
+  );
 
   const handleBulkDeleteTransactions = (txIds: string[]) => {
     txIds.forEach((id) => markTransactionDelete(id, currentUserEmail));
@@ -928,7 +953,7 @@ export default function App() {
             setIsTxModalOpen(true);
           }}
           onOpenSmsModal={() => setIsSmsModalOpen(true)}
-          onQuickSync={() => handlePullFromSheet()}
+          onQuickSync={handleManualPullFromSheet}
           onOpenAuthHelp={() => setIsAuthHelpOpen(true)}
           onOpenSettings={(tab) => {
             setSettingsSection((tab as any) || 'main');
@@ -1103,7 +1128,7 @@ export default function App() {
               activeSheet={activeSheet}
               onSetActiveSheet={handleSetActiveSheet}
               onPushToSheet={() => handlePushToSheet({ silent: false, interactive: true })}
-              onPullFromSheet={handlePullFromSheet}
+              onPullFromSheet={handleManualPullFromSheet}
               onSignInDirect={handleSignIn}
               onExportCSV={handleExportCSV}
               isSyncing={isSyncing}
