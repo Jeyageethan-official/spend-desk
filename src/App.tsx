@@ -437,11 +437,9 @@ export default function App() {
       return finalCfg;
     });
 
-    setActiveSheet((prev) => {
-      const sheet = workspace.activeSheet || prev;
-      if (sheet) saveStoredSheetMeta(sheet, scope);
-      return sheet;
-    });
+    const nextSheet = workspace.activeSheet ?? null;
+    setActiveSheet(nextSheet);
+    saveStoredSheetMeta(nextSheet, scope);
 
     const nextProfile = workspace.profile || loadStoredProfile(scope);
     setUserProfile(nextProfile);
@@ -562,12 +560,6 @@ export default function App() {
     markSettingsDirty(currentUserEmail);
     setActiveSheet(meta);
     saveStoredSheetMeta(meta, currentUserEmail);
-    if (meta?.id) {
-      const cachedTxs = loadSheetTransactions(meta.id);
-      const cachedLends = loadSheetLendItems(meta.id);
-      if (cachedTxs !== null) setTransactions(cachedTxs);
-      if (cachedLends !== null) setLendItems(cachedLends);
-    }
     // Immediately persist to Supabase cloud workspace so all devices get the sheet update
     if (user?.email) {
       const nextWs = buildCloudWorkspace(Date.now());
@@ -575,6 +567,10 @@ export default function App() {
       void saveCloudWorkspace(nextWs).catch((err) => {
         console.warn('Cloud sync of activeSheet note:', err);
       });
+    }
+    // If a sheet was connected, immediately push current transactions to populate it live
+    if (meta?.id) {
+      void handlePushToSheet({ silent: true }).catch(console.warn);
     }
   };
 

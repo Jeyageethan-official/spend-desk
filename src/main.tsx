@@ -10,20 +10,18 @@ try {
   localStorage.setItem('spenddesk_theme', 'light');
 } catch {}
 
-// Automatically purge legacy unscoped keys on app boot
+// Automatically purge legacy unscoped keys and reset active sheets for fresh setup
 try {
-  const PURGE_FLAG = 'spenddesk_legacy_cleanup_v7';
+  const PURGE_FLAG = 'spenddesk_legacy_cleanup_v8';
   if (localStorage.getItem(PURGE_FLAG) !== 'true') {
-    const legacyKeys = [
-      'money_tracker_transactions_v2',
-      'money_tracker_transactions_v2_guest',
-      'money_tracker_lend_items_v2',
-      'money_tracker_lend_items_v2_guest',
-      'money_tracker_active_sheet_v2',
-      'money_tracker_active_sheet_v2_guest',
-      'spenddesk_workspace_sync',
-    ];
-    legacyKeys.forEach((key) => localStorage.removeItem(key));
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && (k.includes('active_sheet') || k === 'money_tracker_active_sheet_v2')) {
+        keysToRemove.push(k);
+      }
+    }
+    keysToRemove.forEach((k) => localStorage.removeItem(k));
     localStorage.setItem(PURGE_FLAG, 'true');
   }
 } catch (e) {}
