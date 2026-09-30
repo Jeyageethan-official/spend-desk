@@ -1,4 +1,5 @@
 import { Transaction, SpendingSummary, CategorySummary, LendItem } from '../types/finance';
+import { signInWithGoogleWorkspace, getCachedWorkspaceToken } from './workspaceAuth';
 
 // Use the officially provisioned and authorized OAuth Client ID for this applet
 export const GOOGLE_OAUTH_CLIENT_ID = '509348493041-ih637992a2lrmh6qdlvch1pkatpn70k0.apps.googleusercontent.com';
@@ -9,6 +10,8 @@ export const getGoogleClientId = (): string => {
 
 export const getStoredAccessToken = (): string | null => {
   try {
+    const cached = getCachedWorkspaceToken();
+    if (cached) return cached;
     return localStorage.getItem('money_tracker_access_token');
   } catch {
     return null;
@@ -17,7 +20,7 @@ export const getStoredAccessToken = (): string | null => {
 
 /**
  * Single Google OAuth Access Token Request.
- * Checks for existing cached/Supabase provider token or uses Google Identity Services.
+ * Uses official Workspace OAuth integration flow.
  */
 export const requestGoogleAccessToken = async (): Promise<string> => {
   const existing = getStoredAccessToken();
@@ -25,41 +28,8 @@ export const requestGoogleAccessToken = async (): Promise<string> => {
     return existing;
   }
 
-  return new Promise((resolve, reject) => {
-    try {
-      const google = (window as any).google;
-      if (!google?.accounts?.oauth2) {
-        reject(new Error('Google Identity script is loading. Please try again.'));
-        return;
-      }
-      const clientId = getGoogleClientId();
-
-      const client = google.accounts.oauth2.initTokenClient({
-        client_id: clientId,
-        scope: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file openid email profile',
-        callback: (response: any) => {
-          if (response.error) {
-            reject(new Error(response.error_description || response.error));
-            return;
-          }
-          if (response.access_token) {
-            try {
-              localStorage.setItem('money_tracker_access_token', response.access_token);
-            } catch (e) {}
-            resolve(response.access_token);
-          } else {
-            reject(new Error('No access token received from Google.'));
-          }
-        },
-        error_callback: (nonOAuthError: any) => {
-          reject(new Error(nonOAuthError?.message || 'Google Auth dialog closed.'));
-        }
-      });
-      client.requestAccessToken({ prompt: 'select_account' });
-    } catch (e: any) {
-      reject(e);
-    }
-  });
+  const { accessToken } = await signInWithGoogleWorkspace();
+  return accessToken;
 };
 
 /**

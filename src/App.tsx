@@ -4,6 +4,12 @@ import {
   signInWithGoogleSupabase, 
   signOutSupabase 
 } from './lib/supabase';
+import {
+  signInWithGoogleWorkspace,
+  initWorkspaceAuth,
+  signOutGoogleWorkspace,
+  getCachedWorkspaceToken,
+} from './lib/workspaceAuth';
 import { 
   Transaction, 
   FilterState, 
@@ -190,32 +196,46 @@ export default function App() {
     }, 4000);
   };
 
-  // Auth Initialization via Supabase
+  // Unified Auth Initialization: Google Workspace (Sheets & Drive) + Supabase
   useEffect(() => {
-    const unsubscribe = initSupabaseAuth(
-      (authedUser, token) => {
-        setUser(authedUser);
+    // 1. Listen for Google Workspace Auth
+    const unsubWorkspace = initWorkspaceAuth(
+      (wsUser, token) => {
+        setUser({
+          displayName: wsUser.name,
+          email: wsUser.email,
+          photoURL: wsUser.picture,
+        });
         if (token) setAccessToken(token);
         setOfflineWorkspaceEmail(null);
         try { localStorage.removeItem(LAST_OFFLINE_WORKSPACE_KEY); } catch {}
-        if (window.location.hash && window.location.hash.includes('access_token')) {
-          try {
-            if (window.history && window.history.replaceState) {
-              window.history.replaceState(null, '', window.location.pathname + window.location.search);
-            }
-          } catch (e) {}
-        }
       },
       () => {
-        // Only clear if no offline stored user
+        // Workspace not signed in
+      }
+    );
+
+    // 2. Listen for Supabase session if present
+    const unsubSupabase = initSupabaseAuth(
+      (authedUser, token) => {
+        setUser((prev) => prev || authedUser);
+        if (token && (!accessToken || accessToken === 'local_token')) setAccessToken(token);
+        setOfflineWorkspaceEmail(null);
+        try { localStorage.removeItem(LAST_OFFLINE_WORKSPACE_KEY); } catch {}
+      },
+      () => {
         const storedUser = localStorage.getItem('money_tracker_user_info') || localStorage.getItem('money_tracker_user');
-        if (!storedUser) {
+        if (!storedUser && !getCachedWorkspaceToken()) {
           setUser(null);
           setAccessToken(null);
         }
       }
     );
-    return () => unsubscribe();
+
+    return () => {
+      unsubWorkspace();
+      unsubSupabase();
+    };
   }, []);
 
   // Process URL hash fragment on OAuth redirect return
@@ -715,18 +735,22 @@ export default function App() {
     showNotification(`Deleted ${txIds.length} transactions.`, 'info');
   };
 
-  // Google Login handler via Supabase Google OAuth
+  // Google Login handler via authorized Google Workspace OAuth (Drive, Sheets & Account)
   const handleSignIn = async () => {
     try {
       showNotification('Opening Google Sign-In...', 'info');
-      const res = await signInWithGoogleSupabase();
-      if (res?.success) {
-        if (res.user) {
-          setUser(res.user);
-          showNotification(`Signed in as ${res.user.name || res.user.email}!`, 'success');
-        }
-      } else if (res?.errorMessage) {
-        showNotification(`Sign-in notice: ${res.errorMessage}`, 'error');
+      const { user: wsUser, accessToken: wsToken } = await signInWithGoogleWorkspace();
+      setUser({
+        displayName: wsUser.name,
+        email: wsUser.email,
+        photoURL: wsUser.picture,
+      });
+      setAccessToken(wsToken);
+      setOfflineWorkspaceEmail(null);
+      showNotification(`Signed in as ${wsUser.name || wsUser.email}! Google Sheets connected.`, 'success');
+      // If a sheet is connected, ensure it is populated immediately
+      if (activeSheet?.id) {
+        void handlePushToSheet({ silent: true }).catch(console.warn);
       }
     } catch (err: any) {
       console.warn('Google Sign-In Exception:', err);
@@ -747,6 +771,7 @@ export default function App() {
         localStorage.setItem(LAST_OFFLINE_WORKSPACE_KEY, signedOutScope);
       } catch {}
     }
+    await signOutGoogleWorkspace();
     await signOutSupabase();
     setUser(null);
     setAccessToken(null);
