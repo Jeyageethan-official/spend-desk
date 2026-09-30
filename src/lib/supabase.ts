@@ -61,7 +61,7 @@ export const signInWithGoogleSupabase = async (): Promise<AuthResult> => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        scopes: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file',
+        scopes: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email',
         redirectTo: redirectUrl,
         queryParams: {
           access_type: 'offline',
@@ -188,19 +188,31 @@ export const initSupabaseAuth = (
         photoURL: u.user_metadata?.avatar_url || undefined,
       };
       if (session.provider_token) {
-        try { localStorage.setItem(TOKEN_STORAGE_KEY, session.provider_token); } catch {}
+        try {
+          localStorage.setItem(TOKEN_STORAGE_KEY, session.provider_token);
+        } catch {}
       }
-      const tokenToUse = session.provider_token || localStorage.getItem(TOKEN_STORAGE_KEY) || session.access_token;
+      try {
+        localStorage.setItem(USER_STORAGE_KEY, JSON.stringify({
+          id: u.id,
+          name: userInfo.displayName,
+          email: userInfo.email,
+          picture: userInfo.photoURL,
+        }));
+        localStorage.setItem('money_tracker_user', JSON.stringify(userInfo));
+      } catch {}
+      const storedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
+      const tokenToUse = session.provider_token || (storedToken && !storedToken.startsWith('eyJ') ? storedToken : session.access_token);
       if (onAuthSuccess) onAuthSuccess(userInfo, tokenToUse);
     } else {
       // Check stored user
-      const rawUser = localStorage.getItem(USER_STORAGE_KEY);
+      const rawUser = localStorage.getItem(USER_STORAGE_KEY) || localStorage.getItem('money_tracker_user');
       const storedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
       if (rawUser) {
         try {
           const parsed = JSON.parse(rawUser);
           if (parsed?.email) {
-            if (onAuthSuccess) onAuthSuccess({ displayName: parsed.name, email: parsed.email, photoURL: parsed.picture }, storedToken || 'local_token');
+            if (onAuthSuccess) onAuthSuccess({ displayName: parsed.name || parsed.displayName, email: parsed.email, photoURL: parsed.picture || parsed.photoURL }, storedToken || 'local_token');
             return;
           }
         } catch {}
@@ -218,9 +230,21 @@ export const initSupabaseAuth = (
         photoURL: u.user_metadata?.avatar_url || undefined,
       };
       if (session.provider_token) {
-        try { localStorage.setItem(TOKEN_STORAGE_KEY, session.provider_token); } catch {}
+        try {
+          localStorage.setItem(TOKEN_STORAGE_KEY, session.provider_token);
+        } catch {}
       }
-      const tokenToUse = session.provider_token || localStorage.getItem(TOKEN_STORAGE_KEY) || session.access_token;
+      try {
+        localStorage.setItem(USER_STORAGE_KEY, JSON.stringify({
+          id: u.id,
+          name: userInfo.displayName,
+          email: userInfo.email,
+          picture: userInfo.photoURL,
+        }));
+        localStorage.setItem('money_tracker_user', JSON.stringify(userInfo));
+      } catch {}
+      const storedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
+      const tokenToUse = session.provider_token || (storedToken && !storedToken.startsWith('eyJ') ? storedToken : session.access_token);
       if (onAuthSuccess) onAuthSuccess(userInfo, tokenToUse);
     } else if (event === 'SIGNED_OUT') {
       if (onAuthFailure) onAuthFailure();

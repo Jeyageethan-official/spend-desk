@@ -745,29 +745,18 @@ export default function App() {
     showNotification(`Deleted ${txIds.length} transactions.`, 'info');
   };
 
-  // Google Login handler via authorized Google Workspace OAuth (Drive, Sheets & Account)
+  // Google Login handler via Supabase Google OAuth (shows all Gmails, zero origin_mismatch)
   const handleSignIn = async () => {
     try {
-      showNotification('Opening Google Sign-In...', 'info');
-      const { user: wsUser, accessToken: wsToken } = await signInWithGoogleWorkspace();
-      const updatedUser = {
-        displayName: wsUser.name,
-        email: wsUser.email,
-        photoURL: wsUser.picture,
-      };
-      setUser(updatedUser);
-      setAccessToken(wsToken);
-      setOfflineWorkspaceEmail(null);
-      saveStoredProfile({ name: wsUser.name, email: wsUser.email, avatar: wsUser.picture || null }, wsUser.email);
-      showNotification(`Signed in as ${wsUser.name || wsUser.email}! Google Sheets & Drive connected.`, 'success');
-      // If a sheet is connected, ensure it is populated immediately
-      if (activeSheet?.id) {
-        void handlePushToSheet({ silent: true }).catch(console.warn);
+      showNotification('Opening Google account picker...', 'info');
+      const res = await signInWithGoogleSupabase();
+      if (!res.success && res.errorMessage) {
+        showNotification(res.errorMessage, 'error');
       }
     } catch (err: any) {
       console.warn('Google Sign-In Exception:', err);
       const msg = String(err?.message || err);
-      if (!msg.includes('closed-by-user') && !msg.includes('popup-closed-by-user') && !msg.includes('cancelled') && !msg.includes('closed')) {
+      if (!msg.includes('closed') && !msg.includes('cancelled')) {
         showNotification('Google Sign-In notice: ' + msg, 'error');
       }
     }
