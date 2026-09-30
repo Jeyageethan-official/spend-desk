@@ -43,7 +43,7 @@ interface SheetManagerViewProps {
   activeSheet: GoogleSheetMeta | null;
   onSetActiveSheet: (sheet: GoogleSheetMeta | null) => void;
   onPushToSheet: () => Promise<unknown>;
-  onPullFromSheet: () => Promise<unknown>;
+  onPullFromSheet: (sheetId?: string, token?: string) => Promise<unknown>;
   onSignInDirect?: () => void;
   onExportCSV?: () => void;
   isSyncing?: boolean;
@@ -180,9 +180,17 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
       lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
     onSetActiveSheet(meta);
-    setSuccessMsg(`Connected to "${item.name}"`);
-    onNotification?.(`Connected to "${item.name}"`, 'success');
+    setSuccessMsg(`Connecting to "${item.name}" and fetching records...`);
+    onNotification?.(`Connecting to "${item.name}"...`, 'info');
     setActiveTab('sheets');
+    try {
+      await onPullFromSheet(item.id, accessToken || undefined);
+      setSuccessMsg(`Connected to "${item.name}"! Showing only this sheet's records.`);
+      onNotification?.(`Loaded records from "${item.name}"!`, 'success');
+    } catch (e: any) {
+      console.warn('Pull on select error:', e);
+      setErrorMsg(e?.message || 'Could not load records from this sheet.');
+    }
   };
 
   const handleSaveWebhook = () => {
@@ -237,9 +245,17 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
 
       onSetActiveSheet(meta);
       setLinkUrlInput('');
-      const msg = `Connected to "${title}"!`;
+      const msg = `Connected to "${title}"! Loading records...`;
       setSuccessMsg(msg);
-      onNotification?.(msg, 'success');
+      onNotification?.(msg, 'info');
+      try {
+        await onPullFromSheet(sheetId, token || undefined);
+        setSuccessMsg(`Connected to "${title}"! Showing only this sheet's records.`);
+        onNotification?.(`Loaded records from "${title}"!`, 'success');
+      } catch (e: any) {
+        console.warn('Pull on link error:', e);
+        setErrorMsg(e?.message || 'Could not load records from this sheet.');
+      }
     } catch (err: any) {
       setErrorMsg(err?.message || 'Could not connect spreadsheet.');
     } finally {
@@ -463,7 +479,7 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
 
                         <button
                           type="button"
-                          onClick={onPullFromSheet}
+                          onClick={() => void onPullFromSheet()}
                           disabled={isSyncing}
                           className="p-4 rounded-2xl bg-slate-900 hover:bg-black text-white font-bold text-xs shadow-xs flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 transition-colors"
                         >

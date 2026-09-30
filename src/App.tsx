@@ -33,7 +33,12 @@ import {
   loadStoredProfile,
   saveStoredProfile,
   mergeGuestDataIntoUser,
-  UserProfile
+  UserProfile,
+  saveSheetTransactions,
+  loadSheetTransactions,
+  saveSheetLendItems,
+  loadSheetLendItems,
+  clearSheetCache
 } from './lib/storage';
 import { 
   calculateSummary, 
@@ -130,11 +135,24 @@ export default function App() {
 
   // Transactions, Debt & Config State
   const initialScope = (user?.email || loadLastOfflineWorkspace() || 'guest').trim().toLowerCase();
-  const [transactions, setTransactions] = useState<Transaction[]>(() => loadStoredTransactions(initialScope));
-  const [lendItems, setLendItems] = useState<LendItem[]>(() => loadStoredLendItems(initialScope));
+  const initialSheet = loadStoredSheetMeta(initialScope);
+  const [activeSheet, setActiveSheet] = useState<GoogleSheetMeta | null>(initialSheet);
+  const [transactions, setTransactions] = useState<Transaction[]>(() => {
+    if (initialSheet?.id) {
+      const sheetTxs = loadSheetTransactions(initialSheet.id);
+      if (sheetTxs !== null) return sheetTxs;
+    }
+    return loadStoredTransactions(initialScope);
+  });
+  const [lendItems, setLendItems] = useState<LendItem[]>(() => {
+    if (initialSheet?.id) {
+      const sheetLends = loadSheetLendItems(initialSheet.id);
+      if (sheetLends !== null) return sheetLends;
+    }
+    return loadStoredLendItems(initialScope);
+  });
   const [alertPhone, setAlertPhone] = useState<string>(() => loadStoredAlertPhone(initialScope));
   const [telegramAlertConfig, setTelegramAlertConfig] = useState<TelegramAlertConfig>(() => loadStoredTelegramAlertConfig(initialScope));
-  const [activeSheet, setActiveSheet] = useState<GoogleSheetMeta | null>(() => loadStoredSheetMeta(initialScope));
   const [budgetConfig, setBudgetConfig] = useState<BudgetConfig>(() => loadStoredBudgetConfig(initialScope));
   const [currency, setCurrency] = useState<string>('Rs');
   const [userProfile, setUserProfile] = useState<UserProfile>(() => loadStoredProfile());
@@ -267,61 +285,59 @@ export default function App() {
   }, []);
 
   // Load a clean, strictly account-scoped workspace on every identity change.
-  // Guest and offline data are cleanly merged so newly recorded transactions or
-  // sheet connections are never erased on login.
   useEffect(() => {
     const scope = currentUserEmail || 'guest';
     setLoadedStorageScope('');
     setSelectedTransactionIds([]);
 
-    if (currentUserEmail) {
-      try {
-        mergeGuestDataIntoUser(currentUserEmail);
-      } catch (e) {
-        console.warn('Guest data merge warning:', e);
-      }
+    const storedSheet = loadStoredSheetMeta(scope);
+    setActiveSheet(storedSheet);
+
+    let initialTxs: Transaction[] = [];
+    let initialLends: LendItem[] = [];
+
+    if (storedSheet?.id) {
+      const sheetTxs = loadSheetTransactions(storedSheet.id);
+      const sheetLends = loadSheetLendItems(storedSheet.id);
+      initialTxs = sheetTxs !== null ? sheetTxs : loadStoredTransactions(scope);
+      initialLends = sheetLends !== null ? sheetLends : loadStoredLendItems(scope);
+    } else {
+      initialTxs = loadStoredTransactions(scope);
+      initialLends = loadStoredLendItems(scope);
     }
 
-    const storedTxs = loadStoredTransactions(scope);
-    setTransactions((prev) => {
-      if (storedTxs && storedTxs.length > 0) return storedTxs;
-      if (prev.length > 0) {
-        saveStoredTransactions(prev, scope);
-        return prev;
-      }
-      return [];
-    });
-
-    const storedLends = loadStoredLendItems(scope);
-    setLendItems((prev) => {
-      if (storedLends && storedLends.length > 0) return storedLends;
-      if (prev.length > 0) {
-        saveStoredLendItems(prev, scope);
-        return prev;
-      }
-      return [];
-    });
+    setTransactions(initialTxs);
+    setLendItems(initialLends);
 
     setAlertPhone(loadStoredAlertPhone(scope));
 
     const storedTelegram = loadStoredTelegramAlertConfig(scope);
-    setTelegramAlertConfig((prev) => {
-      const cfg = (storedTelegram && storedTelegram.chatId) ? storedTelegram : prev;
-      if (cfg && cfg.chatId) saveStoredTelegramAlertConfig(cfg, scope);
-      return cfg;
-    });
-
-    const storedSheet = loadStoredSheetMeta(scope);
-    setActiveSheet((prev) => {
-      const sheet = storedSheet || prev;
-      if (sheet) saveStoredSheetMeta(sheet, scope);
-      return sheet;
-    });
+    setTelegramAlertConfig(storedTelegram);
 
     setBudgetConfig(loadStoredBudgetConfig(scope));
     setUserProfile(loadStoredProfile(scope));
     setLoadedStorageScope(scope);
-  }, [currentUserEmail]);
+
+    // If an active sheet is connected, silently sync latest sheet data in background
+    if (storedSheet?.id && accessToken && accessToken !== 'local_token' && !accessToken.startsWith('eyJ')) {
+      void fetchAllTransactionsFromSheet(accessToken, storedSheet.id).then((remoteTxs) => {
+        const sortedTxs = [...remoteTxs].sort((a, b) => {
+          const dateDiff = new Date(b.date).getTime() - new Date(a.date).getTime();
+          if (dateDiff !== 0) return dateDiff;
+          return (b.createdAt || 0) - (a.createdAt || 0);
+        });
+        setTransactions(sortedTxs);
+        saveStoredTransactions(sortedTxs, scope);
+        saveSheetTransactions(storedSheet.id, sortedTxs);
+      }).catch((e) => console.warn('Auto-pull sheet txs notice:', e));
+
+      void fetchAllLendItemsFromSheet(accessToken, storedSheet.id).then((remoteLends) => {
+        setLendItems(remoteLends);
+        saveStoredLendItems(remoteLends, scope);
+        saveSheetLendItems(storedSheet.id, remoteLends);
+      }).catch((e) => console.warn('Auto-pull sheet lends notice:', e));
+    }
+  }, [currentUserEmail, accessToken]);
 
   const handleUpdateProfile = (updated: Partial<UserProfile>) => {
     markSettingsDirty(currentUserEmail);
@@ -411,35 +427,17 @@ export default function App() {
     const remoteTxs = Array.isArray(workspace.transactions) ? workspace.transactions : [];
     const remoteLends = Array.isArray(workspace.lendItems) ? workspace.lendItems : [];
 
-    setTransactions((prev) => {
-      if (remoteTxs.length === 0 && prev.length > 0) {
-        saveStoredTransactions(prev, scope);
-        return prev;
-      }
-      const txMap = new Map<string, Transaction>();
-      remoteTxs.forEach((t) => txMap.set(t.id, t));
-      prev.forEach((t) => {
-        if (!txMap.has(t.id)) txMap.set(t.id, t);
-      });
-      const merged = Array.from(txMap.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-      saveStoredTransactions(merged, scope);
-      return merged;
-    });
+    setTransactions(remoteTxs);
+    saveStoredTransactions(remoteTxs, scope);
+    if (workspace.activeSheet?.id) {
+      saveSheetTransactions(workspace.activeSheet.id, remoteTxs);
+    }
 
-    setLendItems((prev) => {
-      if (remoteLends.length === 0 && prev.length > 0) {
-        saveStoredLendItems(prev, scope);
-        return prev;
-      }
-      const lendMap = new Map<string, LendItem>();
-      remoteLends.forEach((l) => lendMap.set(l.id, l));
-      prev.forEach((l) => {
-        if (!lendMap.has(l.id)) lendMap.set(l.id, l);
-      });
-      const merged = Array.from(lendMap.values());
-      saveStoredLendItems(merged, scope);
-      return merged;
-    });
+    setLendItems(remoteLends);
+    saveStoredLendItems(remoteLends, scope);
+    if (workspace.activeSheet?.id) {
+      saveSheetLendItems(workspace.activeSheet.id, remoteLends);
+    }
 
     if (Array.isArray(workspace.categories) && workspace.categories.length > 0) {
       saveStoredCategoryDefs(workspace.categories, scope);
@@ -603,9 +601,15 @@ export default function App() {
     markSettingsDirty(currentUserEmail);
     setActiveSheet(meta);
     saveStoredSheetMeta(meta, currentUserEmail);
+    if (meta?.id) {
+      const cachedTxs = loadSheetTransactions(meta.id);
+      const cachedLends = loadSheetLendItems(meta.id);
+      if (cachedTxs !== null) setTransactions(cachedTxs);
+      if (cachedLends !== null) setLendItems(cachedLends);
+    }
   };
 
-  // Pull Data from Connected Google Sheet & Merge Cleanly with Local Storage
+  // Pull Data from Connected Google Sheet - ONLY show records from this connected sheet!
   const handlePullFromSheet = useCallback(async (
     targetSheetId?: string,
     targetToken?: string,
@@ -635,28 +639,32 @@ export default function App() {
       const remoteTxs = await fetchAllTransactionsFromSheet(token, sId);
       const remoteLends = await fetchAllLendItemsFromSheet(token, sId);
 
-      // Merge remote transactions with local transactions so local records are preserved
-      setTransactions((prev) => {
-        const map = new Map<string, Transaction>();
-        prev.forEach((tx) => { if (tx?.id) map.set(tx.id, tx); });
-        remoteTxs.forEach((tx) => { if (tx?.id) map.set(tx.id, tx); });
-        const merged = Array.from(map.values()).sort((a, b) => {
-          const dateDiff = new Date(b.date).getTime() - new Date(a.date).getTime();
-          if (dateDiff !== 0) return dateDiff;
-          return (b.createdAt || 0) - (a.createdAt || 0);
-        });
-        saveStoredTransactions(merged, currentUserEmail);
-        return merged;
+      // Cleanly replace: show ONLY the records from this connected Google Sheet
+      const sortedTxs = [...remoteTxs].sort((a, b) => {
+        const dateDiff = new Date(b.date).getTime() - new Date(a.date).getTime();
+        if (dateDiff !== 0) return dateDiff;
+        return (b.createdAt || 0) - (a.createdAt || 0);
       });
 
-      setLendItems((prev) => {
-        const map = new Map<string, LendItem>();
-        prev.forEach((l) => { if (l?.id) map.set(l.id, l); });
-        remoteLends.forEach((l) => { if (l?.id) map.set(l.id, l); });
-        const merged = Array.from(map.values());
-        saveStoredLendItems(merged, currentUserEmail);
-        return merged;
-      });
+      setTransactions(sortedTxs);
+      saveStoredTransactions(sortedTxs, currentUserEmail);
+      saveSheetTransactions(sId, sortedTxs);
+
+      setLendItems(remoteLends);
+      saveStoredLendItems(remoteLends, currentUserEmail);
+      saveSheetLendItems(sId, remoteLends);
+
+      const updatedMeta: GoogleSheetMeta = {
+        ...(activeSheet || { id: sId, name: 'Connected Sheet', url: `https://docs.google.com/spreadsheets/d/${sId}/edit` }),
+        id: sId,
+        lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+      setActiveSheet(updatedMeta);
+      saveStoredSheetMeta(updatedMeta, currentUserEmail);
+
+      if (!options.silent) {
+        showNotification(`Loaded ${sortedTxs.length} records from Google Sheet!`, 'success');
+      }
     } catch (err: any) {
       console.error('Failed to fetch from sheet:', err);
       const raw = String(err?.message || err);
@@ -676,10 +684,10 @@ export default function App() {
     } finally {
       setIsSyncing(false);
     }
-  }, [activeSheet?.id, accessToken, currentUserEmail, isPendingSignedOutReplay]);
+  }, [activeSheet, accessToken, currentUserEmail, isPendingSignedOutReplay]);
 
   const handleManualPullFromSheet = useCallback(
-    () => handlePullFromSheet(undefined, undefined, { interactive: true, silent: false }),
+    (sheetId?: string, token?: string) => handlePullFromSheet(sheetId, token, { interactive: true, silent: false }),
     [handlePullFromSheet],
   );
 
@@ -895,6 +903,9 @@ export default function App() {
       updatedTxs = transactions.map((t) => (t.id === txData.id ? recordedTx : t));
       markTransactionUpsert(recordedTx, currentUserEmail);
       saveStoredTransactions(updatedTxs, currentUserEmail);
+      if (activeSheet?.id) {
+        saveSheetTransactions(activeSheet.id, updatedTxs);
+      }
       setTransactions(updatedTxs);
       showNotification('Transaction updated.', 'success');
     } else {
@@ -906,6 +917,9 @@ export default function App() {
       updatedTxs = [recordedTx, ...transactions];
       markTransactionUpsert(recordedTx, currentUserEmail);
       saveStoredTransactions(updatedTxs, currentUserEmail);
+      if (activeSheet?.id) {
+        saveSheetTransactions(activeSheet.id, updatedTxs);
+      }
       setTransactions(updatedTxs);
       showNotification('Transaction recorded.', 'success');
     }
@@ -951,6 +965,9 @@ export default function App() {
     const remaining = transactions.filter((t) => t.id !== deleteCandidate.id);
     markTransactionDelete(deleteCandidate.id, currentUserEmail);
     saveStoredTransactions(remaining, currentUserEmail);
+    if (activeSheet?.id) {
+      saveSheetTransactions(activeSheet.id, remaining);
+    }
     setTransactions(remaining);
     setDeleteCandidate(null);
     showNotification('Transaction deleted.', 'info');
@@ -976,6 +993,9 @@ export default function App() {
     const updated = [newItem, ...lendItems];
     markLendUpsert(newItem, currentUserEmail);
     saveStoredLendItems(updated, currentUserEmail);
+    if (activeSheet?.id) {
+      saveSheetLendItems(activeSheet.id, updated);
+    }
     setLendItems(updated);
     showNotification(`${data.type === 'lent' ? 'Money Lent' : 'Money Borrowed'} saved.`, 'success');
 
@@ -1002,6 +1022,9 @@ export default function App() {
       return item;
     });
     saveStoredLendItems(updated, currentUserEmail);
+    if (activeSheet?.id) {
+      saveSheetLendItems(activeSheet.id, updated);
+    }
     const changedItem = updated.find((item) => item.id === id);
     if (changedItem) markLendUpsert(changedItem, currentUserEmail);
     setLendItems(updated);
@@ -1021,6 +1044,9 @@ export default function App() {
     const updated = lendItems.filter((i) => i.id !== id);
     markLendDelete(id, currentUserEmail);
     saveStoredLendItems(updated, currentUserEmail);
+    if (activeSheet?.id) {
+      saveSheetLendItems(activeSheet.id, updated);
+    }
     setLendItems(updated);
     showNotification('Record deleted.', 'info');
 

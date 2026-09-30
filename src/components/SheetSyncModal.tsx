@@ -130,8 +130,14 @@ export const SheetSyncModal: React.FC<SheetSyncModalProps> = ({
       lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
     onSetActiveSheet(meta);
-    setSuccessMsg(`Connected to "${item.name}"`);
+    setSuccessMsg(`Connected to "${item.name}". Loading records...`);
     setActiveTab('sync');
+    try {
+      await onPullFromSheet();
+      setSuccessMsg(`Connected to "${item.name}"! Showing only this sheet's records.`);
+    } catch (e: any) {
+      console.warn('Pull on select error:', e);
+    }
   };
 
   const handleSaveWebhook = () => {

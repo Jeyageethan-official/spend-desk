@@ -154,18 +154,70 @@ export const DEFAULT_BUDGET_CONFIG: BudgetConfig = {
 
 export const INITIAL_SAMPLE_TRANSACTIONS: Transaction[] = [];
 
+const SHEET_TX_STORAGE_KEY = 'spenddesk_sheet_txs_v1';
+const SHEET_LEND_STORAGE_KEY = 'spenddesk_sheet_lends_v1';
+
+export const saveSheetTransactions = (sheetId: string, transactions: Transaction[]) => {
+  try {
+    if (!sheetId) return;
+    localStorage.setItem(`${SHEET_TX_STORAGE_KEY}_${sheetId}`, JSON.stringify(transactions));
+  } catch (e) {
+    console.error('Failed to save sheet transactions:', e);
+  }
+};
+
+export const loadSheetTransactions = (sheetId: string): Transaction[] | null => {
+  try {
+    if (!sheetId) return null;
+    const raw = localStorage.getItem(`${SHEET_TX_STORAGE_KEY}_${sheetId}`);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (e) {
+    console.error('Failed to load sheet transactions:', e);
+  }
+  return null;
+};
+
+export const saveSheetLendItems = (sheetId: string, items: LendItem[]) => {
+  try {
+    if (!sheetId) return;
+    localStorage.setItem(`${SHEET_LEND_STORAGE_KEY}_${sheetId}`, JSON.stringify(items));
+  } catch (e) {
+    console.error('Failed to save sheet lend items:', e);
+  }
+};
+
+export const loadSheetLendItems = (sheetId: string): LendItem[] | null => {
+  try {
+    if (!sheetId) return null;
+    const raw = localStorage.getItem(`${SHEET_LEND_STORAGE_KEY}_${sheetId}`);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (e) {
+    console.error('Failed to load sheet lend items:', e);
+  }
+  return null;
+};
+
+export const clearSheetCache = (sheetId: string) => {
+  try {
+    if (!sheetId) return;
+    localStorage.removeItem(`${SHEET_TX_STORAGE_KEY}_${sheetId}`);
+    localStorage.removeItem(`${SHEET_LEND_STORAGE_KEY}_${sheetId}`);
+  } catch (e) {}
+};
+
 export const loadStoredTransactions = (email?: string | null): Transaction[] => {
   try {
     const key = getScopedKey(TX_STORAGE_KEY, email);
-    let raw = localStorage.getItem(key);
-    if (!raw && email) {
-      raw = localStorage.getItem(getScopedKey(TX_STORAGE_KEY, 'guest')) || localStorage.getItem(TX_STORAGE_KEY);
-    } else if (!raw) {
-      raw = localStorage.getItem(TX_STORAGE_KEY);
-    }
+    const raw = localStorage.getItem(key);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
+      if (Array.isArray(parsed)) {
         return parsed;
       }
     }
@@ -180,10 +232,6 @@ export const saveStoredTransactions = (transactions: Transaction[], email?: stri
     const key = getScopedKey(TX_STORAGE_KEY, email);
     const serialized = JSON.stringify(transactions);
     localStorage.setItem(key, serialized);
-    localStorage.setItem(TX_STORAGE_KEY, serialized);
-    if (!email || email === 'guest') {
-      localStorage.setItem(getScopedKey(TX_STORAGE_KEY, 'guest'), serialized);
-    }
   } catch (e) {
     console.error('Failed to store transactions:', e);
   }
@@ -192,15 +240,10 @@ export const saveStoredTransactions = (transactions: Transaction[], email?: stri
 export const loadStoredLendItems = (email?: string | null): LendItem[] => {
   try {
     const key = getScopedKey(LEND_STORAGE_KEY, email);
-    let raw = localStorage.getItem(key);
-    if (!raw && email) {
-      raw = localStorage.getItem(getScopedKey(LEND_STORAGE_KEY, 'guest')) || localStorage.getItem(LEND_STORAGE_KEY);
-    } else if (!raw) {
-      raw = localStorage.getItem(LEND_STORAGE_KEY);
-    }
+    const raw = localStorage.getItem(key);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
+      if (Array.isArray(parsed)) {
         return parsed;
       }
     }
@@ -215,10 +258,6 @@ export const saveStoredLendItems = (items: LendItem[], email?: string | null) =>
     const key = getScopedKey(LEND_STORAGE_KEY, email);
     const serialized = JSON.stringify(items);
     localStorage.setItem(key, serialized);
-    localStorage.setItem(LEND_STORAGE_KEY, serialized);
-    if (!email || email === 'guest') {
-      localStorage.setItem(getScopedKey(LEND_STORAGE_KEY, 'guest'), serialized);
-    }
   } catch (e) {
     console.error('Failed to save lend items:', e);
   }
@@ -253,12 +292,7 @@ const DEFAULT_TELEGRAM_ALERT_CONFIG: TelegramAlertConfig = {
 export const loadStoredTelegramAlertConfig = (email?: string | null): TelegramAlertConfig => {
   try {
     const key = getScopedKey(TELEGRAM_ALERT_KEY, email);
-    let raw = localStorage.getItem(key);
-    if (!raw && email) {
-      raw = localStorage.getItem(getScopedKey(TELEGRAM_ALERT_KEY, 'guest')) || localStorage.getItem(TELEGRAM_ALERT_KEY);
-    } else if (!raw) {
-      raw = localStorage.getItem(TELEGRAM_ALERT_KEY);
-    }
+    const raw = localStorage.getItem(key);
     if (!raw) return DEFAULT_TELEGRAM_ALERT_CONFIG;
     const parsed = JSON.parse(raw);
     return {
@@ -275,10 +309,6 @@ export const saveStoredTelegramAlertConfig = (config: TelegramAlertConfig, email
     const key = getScopedKey(TELEGRAM_ALERT_KEY, email);
     const data = JSON.stringify({ enabled: Boolean(config.enabled), chatId: config.chatId.trim() });
     localStorage.setItem(key, data);
-    localStorage.setItem(TELEGRAM_ALERT_KEY, data);
-    if (!email || email === 'guest') {
-      localStorage.setItem(getScopedKey(TELEGRAM_ALERT_KEY, 'guest'), data);
-    }
   } catch (e) {
     console.error('Failed to save Telegram alert settings:', e);
   }
@@ -287,12 +317,7 @@ export const saveStoredTelegramAlertConfig = (config: TelegramAlertConfig, email
 export const loadStoredSheetMeta = (email?: string | null): GoogleSheetMeta | null => {
   try {
     const key = getScopedKey(SHEET_META_KEY, email);
-    let raw = localStorage.getItem(key);
-    if (!raw && email) {
-      raw = localStorage.getItem(getScopedKey(SHEET_META_KEY, 'guest')) || localStorage.getItem(SHEET_META_KEY);
-    } else if (!raw) {
-      raw = localStorage.getItem(SHEET_META_KEY);
-    }
+    const raw = localStorage.getItem(key);
     if (raw) return JSON.parse(raw);
   } catch (e) {
     console.error('Failed to parse sheet meta:', e);
@@ -306,12 +331,8 @@ export const saveStoredSheetMeta = (meta: GoogleSheetMeta | null, email?: string
     if (meta) {
       const serialized = JSON.stringify(meta);
       localStorage.setItem(key, serialized);
-      localStorage.setItem(SHEET_META_KEY, serialized);
-      localStorage.setItem(getScopedKey(SHEET_META_KEY, 'guest'), serialized);
     } else {
       localStorage.removeItem(key);
-      localStorage.removeItem(SHEET_META_KEY);
-      localStorage.removeItem(getScopedKey(SHEET_META_KEY, 'guest'));
     }
   } catch (e) {
     console.error('Failed to save sheet meta:', e);
@@ -319,68 +340,10 @@ export const saveStoredSheetMeta = (meta: GoogleSheetMeta | null, email?: string
 };
 
 export const mergeGuestDataIntoUser = (
-  userEmail: string
+  _userEmail: string
 ): { txCount: number; lendCount: number; mergedTxs: Transaction[]; mergedLends: LendItem[] } => {
-  try {
-    if (!userEmail || !userEmail.trim()) {
-      return { txCount: 0, lendCount: 0, mergedTxs: [], mergedLends: [] };
-    }
-
-    // Only merge unassigned guest & legacy root data created while signed out
-    const guestTxs = loadStoredTransactions('guest');
-    const legacyTxs = loadStoredTransactions(null);
-    const offlineTxsToMerge = [...guestTxs, ...legacyTxs];
-
-    const guestLends = loadStoredLendItems('guest');
-    const legacyLends = loadStoredLendItems(null);
-    const offlineLendsToMerge = [...guestLends, ...legacyLends];
-
-    const existingUserTxs = loadStoredTransactions(userEmail);
-    const existingUserLends = loadStoredLendItems(userEmail);
-
-    const txMap = new Map<string, Transaction>();
-    existingUserTxs.forEach(t => { if (t && t.id) txMap.set(t.id, t); });
-    let newTxCount = 0;
-    offlineTxsToMerge.forEach(t => {
-      if (t && t.id && !txMap.has(t.id)) {
-        txMap.set(t.id, t);
-        newTxCount++;
-      }
-    });
-    const finalMergedTxs = Array.from(txMap.values());
-
-    const lendMap = new Map<string, LendItem>();
-    existingUserLends.forEach(l => { if (l && l.id) lendMap.set(l.id, l); });
-    let newLendCount = 0;
-    offlineLendsToMerge.forEach(l => {
-      if (l && l.id && !lendMap.has(l.id)) {
-        lendMap.set(l.id, l);
-        newLendCount++;
-      }
-    });
-    const finalMergedLends = Array.from(lendMap.values());
-
-    saveStoredTransactions(finalMergedTxs, userEmail);
-    saveStoredLendItems(finalMergedLends, userEmail);
-
-    // Clear guest and root legacy keys after successful merge so next user doesn't get old guest data
-    try {
-      saveStoredTransactions([], 'guest');
-      saveStoredLendItems([], 'guest');
-      localStorage.removeItem(TX_STORAGE_KEY);
-      localStorage.removeItem(LEND_STORAGE_KEY);
-    } catch (e) {}
-
-    return {
-      txCount: newTxCount,
-      lendCount: newLendCount,
-      mergedTxs: finalMergedTxs,
-      mergedLends: finalMergedLends
-    };
-  } catch (e) {
-    console.error('Failed to merge guest data into user storage:', e);
-    return { txCount: 0, lendCount: 0, mergedTxs: [], mergedLends: [] };
-  }
+  // Deliberately isolated: Guest data is not injected into user accounts to prevent mixing.
+  return { txCount: 0, lendCount: 0, mergedTxs: [], mergedLends: [] };
 };
 
 export const loadStoredBudgetConfig = (email?: string | null): BudgetConfig => {
