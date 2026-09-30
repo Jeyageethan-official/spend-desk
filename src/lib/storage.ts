@@ -484,3 +484,63 @@ export const importFullBackupJson = (jsonString: string, email?: string | null):
     return { success: false, message: err?.message || 'Failed to parse backup JSON.' };
   }
 };
+
+// Known Google Spreadsheets Registry (Ensures created sheets always show in Drive tab)
+const KNOWN_SPREADSHEETS_KEY = 'spenddesk_known_spreadsheets_v2';
+
+export interface KnownSpreadsheetItem {
+  id: string;
+  name: string;
+  url?: string;
+  modifiedTime?: string;
+  createdAt: number;
+}
+
+export const loadKnownSpreadsheets = (email?: string | null): KnownSpreadsheetItem[] => {
+  try {
+    const key = getScopedKey(KNOWN_SPREADSHEETS_KEY, email);
+    const raw = localStorage.getItem(key) || localStorage.getItem(KNOWN_SPREADSHEETS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+};
+
+export const saveKnownSpreadsheet = (
+  sheet: { id: string; name: string; url?: string; modifiedTime?: string },
+  email?: string | null
+) => {
+  if (!sheet?.id) return;
+  try {
+    const key = getScopedKey(KNOWN_SPREADSHEETS_KEY, email);
+    const existing = loadKnownSpreadsheets(email);
+    const updated: KnownSpreadsheetItem[] = [
+      {
+        id: sheet.id,
+        name: sheet.name || 'SpendDesk Spreadsheet',
+        url: sheet.url || `https://docs.google.com/spreadsheets/d/${sheet.id}/edit`,
+        modifiedTime: sheet.modifiedTime || new Date().toISOString(),
+        createdAt: Date.now(),
+      },
+      ...existing.filter((s) => s.id !== sheet.id),
+    ];
+    localStorage.setItem(key, JSON.stringify(updated));
+    localStorage.setItem(KNOWN_SPREADSHEETS_KEY, JSON.stringify(updated));
+  } catch (e) {
+    console.warn('Could not save known spreadsheet:', e);
+  }
+};
+
+export const removeKnownSpreadsheet = (sheetId: string, email?: string | null) => {
+  if (!sheetId) return;
+  try {
+    const key = getScopedKey(KNOWN_SPREADSHEETS_KEY, email);
+    const existing = loadKnownSpreadsheets(email);
+    const updated = existing.filter((s) => s.id !== sheetId);
+    localStorage.setItem(key, JSON.stringify(updated));
+    localStorage.setItem(KNOWN_SPREADSHEETS_KEY, JSON.stringify(updated));
+  } catch (e) {
+    console.warn('Could not remove known spreadsheet:', e);
+  }
+};
+

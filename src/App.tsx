@@ -44,7 +44,8 @@ import {
   loadSheetTransactions,
   saveSheetLendItems,
   loadSheetLendItems,
-  clearSheetCache
+  clearSheetCache,
+  saveKnownSpreadsheet
 } from './lib/storage';
 import { 
   calculateSummary, 
@@ -187,6 +188,7 @@ export default function App() {
   const [pendingSheetPushEmail, setPendingSheetPushEmail] = useState<string | null>(loadPendingSheetPushEmail);
   const cloudVersionRef = useRef(0);
   const cloudSyncTimerRef = useRef<number | null>(null);
+  const queueSheetPushRef = useRef<((snapshot?: { transactions: Transaction[]; lendItems: LendItem[] }) => void) | null>(null);
   const suppressNextCloudSyncRef = useRef(false);
 
   const showNotification = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
@@ -512,7 +514,12 @@ export default function App() {
       const ws = customWorkspace || getLatestWorkspace(nextVersion);
       ws.updatedAt = nextVersion;
       void saveCloudWorkspace(ws)
-        .then(() => clearPendingSync(currentUserEmail))
+        .then(() => {
+          clearPendingSync(currentUserEmail);
+          if (activeSheet && queueSheetPushRef.current) {
+            queueSheetPushRef.current({ transactions: ws.transactions, lendItems: ws.lendItems });
+          }
+        })
         .catch((error) => console.error('Cloud workspace sync failed:', error));
     }, 600);
   }, [user?.email, cloudSyncReady, currentUserEmail, getLatestWorkspace]);
@@ -622,6 +629,9 @@ export default function App() {
     markSettingsDirty(currentUserEmail);
     setActiveSheet(meta);
     saveStoredSheetMeta(meta, currentUserEmail);
+    if (meta?.id) {
+      saveKnownSpreadsheet(meta, currentUserEmail);
+    }
     // Immediately persist to Supabase cloud workspace so all devices get the sheet update
     if (user?.email) {
       const nextWs = buildCloudWorkspace(Date.now());
@@ -740,14 +750,16 @@ export default function App() {
     try {
       showNotification('Opening Google Sign-In...', 'info');
       const { user: wsUser, accessToken: wsToken } = await signInWithGoogleWorkspace();
-      setUser({
+      const updatedUser = {
         displayName: wsUser.name,
         email: wsUser.email,
         photoURL: wsUser.picture,
-      });
+      };
+      setUser(updatedUser);
       setAccessToken(wsToken);
       setOfflineWorkspaceEmail(null);
-      showNotification(`Signed in as ${wsUser.name || wsUser.email}! Google Sheets connected.`, 'success');
+      saveStoredProfile({ name: wsUser.name, email: wsUser.email, avatar: wsUser.picture || null }, wsUser.email);
+      showNotification(`Signed in as ${wsUser.name || wsUser.email}! Google Sheets & Drive connected.`, 'success');
       // If a sheet is connected, ensure it is populated immediately
       if (activeSheet?.id) {
         void handlePushToSheet({ silent: true }).catch(console.warn);
@@ -755,7 +767,7 @@ export default function App() {
     } catch (err: any) {
       console.warn('Google Sign-In Exception:', err);
       const msg = String(err?.message || err);
-      if (!msg.includes('closed-by-user') && !msg.includes('popup-closed-by-user') && !msg.includes('cancelled')) {
+      if (!msg.includes('closed-by-user') && !msg.includes('popup-closed-by-user') && !msg.includes('cancelled') && !msg.includes('closed')) {
         showNotification('Google Sign-In notice: ' + msg, 'error');
       }
     }
@@ -799,19 +811,22 @@ export default function App() {
     // cannot call Google APIs. A Google OAuth token is required separately.
     const hasGoogleSheetsToken = Boolean(sheetToken && sheetToken !== 'local_token' && !sheetToken.startsWith('eyJ'));
     if (!hasGoogleSheetsToken) {
-      // Safari blocks account-selection popups unless they come directly from
-      // a tap. Background saves stay local and retry after a user taps Push.
-      if (!options.interactive) {
+      const cached = getCachedWorkspaceToken();
+      if (cached && !cached.startsWith('eyJ') && cached !== 'local_token' && cached.length > 20) {
+        sheetToken = cached;
+        setAccessToken(cached);
+      } else if (!options.interactive) {
         isPushingToSheetRef.current = false;
         return false;
-      }
-      try {
-        sheetToken = await requestGoogleAccessToken();
-        setAccessToken(sheetToken);
-      } catch (error: any) {
-        if (!options.silent) showNotification(error?.message || 'Google Sheet permission is required.', 'error');
-        isPushingToSheetRef.current = false;
-        return false;
+      } else {
+        try {
+          sheetToken = await requestGoogleAccessToken();
+          setAccessToken(sheetToken);
+        } catch (error: any) {
+          if (!options.silent) showNotification(error?.message || 'Google Sheet permission is required.', 'error');
+          isPushingToSheetRef.current = false;
+          return false;
+        }
       }
     }
     const transactionsToPush = snapshot?.transactions ?? latestStateRef.current.transactions;
@@ -885,6 +900,10 @@ export default function App() {
       });
     }, 1000);
   }, [activeSheet, handlePushToSheet]);
+
+  useEffect(() => {
+    queueSheetPushRef.current = queueSheetPush;
+  }, [queueSheetPush]);
 
   // A sign-out workspace gets priority on the next login: after local/offline
   // data has been reconciled, overwrite the linked Google Sheet once. The

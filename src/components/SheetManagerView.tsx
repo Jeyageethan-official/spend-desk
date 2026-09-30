@@ -34,7 +34,10 @@ import {
 } from '../lib/sheetsApi';
 import { 
   loadStoredWebhookUrl, 
-  saveStoredWebhookUrl 
+  saveStoredWebhookUrl,
+  loadKnownSpreadsheets,
+  saveKnownSpreadsheet,
+  removeKnownSpreadsheet
 } from '../lib/storage';
 
 interface SheetManagerViewProps {
@@ -43,7 +46,7 @@ interface SheetManagerViewProps {
   activeSheet: GoogleSheetMeta | null;
   onSetActiveSheet: (sheet: GoogleSheetMeta | null) => void;
   onPushToSheet: () => Promise<unknown>;
-  onPullFromSheet: (sheetId?: string, token?: string) => Promise<unknown>;
+  onPullFromSheet?: (sheetId?: string, token?: string) => Promise<unknown>;
   onSignInDirect?: () => void;
   onExportCSV?: () => void;
   isSyncing?: boolean;
@@ -86,22 +89,55 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
-  // Auto load Drive sheets when switching to 'drive' tab or authenticated
+  // Auto load Drive sheets when switching to 'drive' tab or on mount
   useEffect(() => {
-    if (accessToken && activeTab === 'drive' && spreadsheets.length === 0) {
+    if (activeTab === 'drive' || spreadsheets.length === 0) {
       loadDriveSheets();
     }
   }, [accessToken, activeTab]);
 
   const loadDriveSheets = async () => {
-    if (!accessToken || accessToken === 'local_token') return;
     setLoadingList(true);
     setErrorMsg('');
+
+    // 1. Gather all locally created / known spreadsheets
+    const localKnown = loadKnownSpreadsheets();
+    const localItems: DriveSpreadsheetItem[] = localKnown.map((k) => ({
+      id: k.id,
+      name: k.name,
+      webViewLink: k.url,
+      modifiedTime: k.modifiedTime,
+    }));
+
+    if (activeSheet && !localItems.some((s) => s.id === activeSheet.id)) {
+      localItems.unshift({
+        id: activeSheet.id,
+        name: activeSheet.name,
+        webViewLink: activeSheet.url,
+        modifiedTime: new Date().toISOString(),
+      });
+    }
+
+    // If no valid Google token yet, display all known created sheets immediately
+    if (!accessToken || accessToken === 'local_token' || accessToken.startsWith('eyJ')) {
+      setSpreadsheets(localItems);
+      setLoadingList(false);
+      return;
+    }
+
     try {
       const items = await listUserSpreadsheets(accessToken);
-      setSpreadsheets(items);
+      // Merge remote Drive items and locally known items (deduplicating by id)
+      const mergedMap = new Map<string, DriveSpreadsheetItem>();
+      items.forEach((item) => mergedMap.set(item.id, item));
+      localItems.forEach((item) => {
+        if (!mergedMap.has(item.id)) mergedMap.set(item.id, item);
+      });
+      setSpreadsheets(Array.from(mergedMap.values()));
     } catch (err: any) {
       console.warn('Google Drive list error:', err);
+      // Fallback: still show locally created sheets
+      setSpreadsheets(localItems);
     } finally {
       setLoadingList(false);
     }
@@ -116,7 +152,7 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
     try {
       let token = accessToken;
 
-      if (!token || token === 'local_token' || token.length < 30) {
+      if (!token || token === 'local_token' || token.length < 30 || token.startsWith('eyJ')) {
         token = await requestGoogleAccessToken();
       }
 
@@ -146,9 +182,24 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
         url: created.url,
         lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
+
+      // Save to known spreadsheets registry so it is ALWAYS visible in Drive tab
+      saveKnownSpreadsheet(newMeta);
       onSetActiveSheet(newMeta);
-      setSuccessMsg(`Created "${created.name}" in your Google Drive!`);
-      onNotification?.(`Created "${created.name}" in your Google Drive!`, 'success');
+
+      // Instantly add to Drive spreadsheet list
+      setSpreadsheets((prev) => [
+        {
+          id: created.id,
+          name: created.name,
+          webViewLink: created.url,
+          modifiedTime: new Date().toISOString(),
+        },
+        ...prev.filter((s) => s.id !== created.id),
+      ]);
+
+      setSuccessMsg(`Created "${created.name}" and connected!`);
+      onNotification?.(`Created "${created.name}" in Google Drive!`, 'success');
 
       try { await onPushToSheet(); } catch (e) { console.warn(e); }
 
@@ -165,7 +216,7 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
       } else if (raw.includes('invalid_client') || raw.includes('401')) {
         setErrorMsg('Google Sign-In session expired or permission denied. Please sign in again.');
       } else {
-        setErrorMsg('Unable to connect to Google Sheets. Please check your network connection and try again.');
+        setErrorMsg('Unable to connect to Google Sheets: ' + (err?.message || 'Please check connection.'));
       }
     } finally {
       setIsCreating(false);
@@ -179,17 +230,16 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
       url: item.webViewLink || `https://docs.google.com/spreadsheets/d/${item.id}/edit`,
       lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
+    saveKnownSpreadsheet(meta);
     onSetActiveSheet(meta);
-    setSuccessMsg(`Connecting to "${item.name}" and fetching records...`);
-    onNotification?.(`Connecting to "${item.name}"...`, 'info');
+    setSuccessMsg(`Connected to "${item.name}"! Syncing records...`);
+    onNotification?.(`Connected to "${item.name}"!`, 'success');
     setActiveTab('sheets');
     try {
-      await onPullFromSheet(item.id, accessToken || undefined);
-      setSuccessMsg(`Connected to "${item.name}"! Showing only this sheet's records.`);
-      onNotification?.(`Loaded records from "${item.name}"!`, 'success');
+      await onPushToSheet();
+      setSuccessMsg(`Connected to "${item.name}"! All records synced to sheet.`);
     } catch (e: any) {
-      console.warn('Pull on select error:', e);
-      setErrorMsg(e?.message || 'Could not load records from this sheet.');
+      console.warn('Push on select error:', e);
     }
   };
 
@@ -230,7 +280,7 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
       let token = accessToken;
       let title = 'Linked Google Sheet';
 
-      if (token && token !== 'local_token' && token.length > 20) {
+      if (token && token !== 'local_token' && token.length > 20 && !token.startsWith('eyJ')) {
         try {
           title = await fetchSpreadsheetTitle(token, sheetId);
         } catch {}
@@ -243,18 +293,18 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
         lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
 
+      saveKnownSpreadsheet(meta);
       onSetActiveSheet(meta);
       setLinkUrlInput('');
-      const msg = `Connected to "${title}"! Loading records...`;
-      setSuccessMsg(msg);
-      onNotification?.(msg, 'info');
+      setSuccessMsg(`Connected to "${title}"! Syncing records...`);
+      onNotification?.(`Connected to "${title}"!`, 'info');
+
       try {
-        await onPullFromSheet(sheetId, token || undefined);
-        setSuccessMsg(`Connected to "${title}"! Showing only this sheet's records.`);
-        onNotification?.(`Loaded records from "${title}"!`, 'success');
+        await onPushToSheet();
+        setSuccessMsg(`Connected to "${title}"! All records synced to sheet.`);
+        onNotification?.(`Synced records to "${title}"!`, 'success');
       } catch (e: any) {
-        console.warn('Pull on link error:', e);
-        setErrorMsg(e?.message || 'Could not load records from this sheet.');
+        console.warn('Push on link error:', e);
       }
     } catch (err: any) {
       setErrorMsg(err?.message || 'Could not connect spreadsheet.');
@@ -269,8 +319,9 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
     setErrorMsg('');
     try {
       let token = accessToken;
-      if (!token || token === 'local_token') token = await requestGoogleAccessToken();
+      if (!token || token === 'local_token' || token.startsWith('eyJ')) token = await requestGoogleAccessToken();
       await deleteUserSpreadsheet(token, item.id);
+      removeKnownSpreadsheet(item.id);
       setSpreadsheets((current) => current.filter((sheet) => sheet.id !== item.id));
       if (activeSheet?.id === item.id) onSetActiveSheet(null);
       const message = `Deleted "${item.name}" from Google Drive.`;
@@ -465,26 +516,16 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                         <div className="hidden sm:block p-3.5"><span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Sync status</span><span className="mt-1 flex items-center gap-1 text-xs font-bold text-emerald-700"><CheckCircle2 className="w-3.5 h-3.5" /> Ready</span></div>
                       </div>
 
-                      {/* Push & Pull Buttons */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {/* Push to Sheet Action (Single Primary Button) */}
+                      <div>
                         <button
                           type="button"
                           onClick={() => void onPushToSheet()}
                           disabled={isSyncing}
-                          className="p-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 transition-colors"
+                          className="w-full p-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm shadow-xs flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 transition-colors"
                         >
                           <UploadCloud className={`w-4 h-4 ${isSyncing ? 'animate-bounce' : ''}`} />
-                          <span>{isSyncing ? 'Syncing...' : 'Push to Sheet'}</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => void onPullFromSheet()}
-                          disabled={isSyncing}
-                          className="p-4 rounded-2xl bg-slate-900 hover:bg-black text-white font-bold text-xs shadow-xs flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 transition-colors"
-                        >
-                          <DownloadCloud className={`w-4 h-4 ${isSyncing ? 'animate-bounce' : ''}`} />
-                          <span>Pull from Sheet</span>
+                          <span>{isSyncing ? 'Syncing Records to Sheet...' : 'Push to Google Sheet'}</span>
                         </button>
                       </div>
 
@@ -598,98 +639,103 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                       </button>
                     </div>
 
-                    {accessToken ? (
-                      <>
-                        <div className="relative">
-                          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3" />
-                          <input
-                            type="text"
-                            value={driveSearch}
-                            onChange={(e) => setDriveSearch(e.target.value)}
-                            placeholder="Search your Google Drive spreadsheets..."
-                            className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-hidden"
-                          />
+                    {/* If not signed in to Google, show quick connection banner */}
+                    {(!accessToken || accessToken === 'local_token' || accessToken.startsWith('eyJ')) && (
+                      <div className="p-3.5 bg-emerald-50/80 border border-emerald-200/90 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
+                        <div className="flex items-center gap-2">
+                          <FileSpreadsheet className="w-4 h-4 text-emerald-700 shrink-0" />
+                          <p className="text-xs text-emerald-950 font-medium">
+                            Sign in with your Google account to auto-load all your Drive spreadsheets.
+                          </p>
                         </div>
-
-                        <div className="max-h-64 overflow-y-auto space-y-1.5 pr-1 divide-y divide-slate-100">
-                          {loadingList ? (
-                            <div className="p-6 text-center text-xs text-slate-400">
-                              Loading spreadsheets from your Google Drive...
-                            </div>
-                          ) : filteredDriveSheets.length === 0 ? (
-                            <div className="p-6 text-center text-xs text-slate-400">
-                              No spreadsheets found matching your search.
-                            </div>
-                          ) : (
-                            filteredDriveSheets.map((item) => {
-                              const isConnected = activeSheet?.id === item.id;
-                              return (
-                                <div
-                                  key={item.id}
-                                  className={`pt-2 flex items-center justify-between p-2.5 rounded-xl transition-colors ${
-                                    isConnected
-                                      ? 'bg-emerald-50/80 border border-emerald-200/90'
-                                      : 'hover:bg-slate-50'
-                                  }`}
-                                >
-                                  <div className="min-w-0 pr-2">
-                                    <div className="flex items-center gap-2">
-                                      <span className="font-bold text-xs text-slate-800 block truncate">
-                                        {item.name}
-                                      </span>
-                                      {isConnected && (
-                                        <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold inline-flex items-center gap-1 shrink-0">
-                                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                          Connected
-                                        </span>
-                                      )}
-                                    </div>
-                                    <span className="text-[10px] text-slate-400 block mt-0.5">
-                                      Modified: {item.modifiedTime ? new Date(item.modifiedTime).toLocaleDateString() : 'N/A'}
-                                    </span>
-                                  </div>
-
-                                  <div className="flex items-center gap-1.5 shrink-0">
-                                    {isConnected ? (
-                                      <span className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold inline-flex items-center gap-1">
-                                        <CheckCircle2 className="w-3.5 h-3.5" /> Active
-                                      </span>
-                                    ) : (
-                                      <button type="button" onClick={() => handleSelectExisting(item)} className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-emerald-600 hover:text-white text-slate-700 text-xs font-bold cursor-pointer transition-colors">
-                                        Connect
-                                      </button>
-                                    )}
-                                    <button
-                                      type="button"
-                                      onClick={() => void handleDeleteDriveSheet(item)}
-                                      disabled={deletingSheetId === item.id}
-                                      title={`Delete ${item.name}`}
-                                      aria-label={`Delete ${item.name}`}
-                                      className="p-2 rounded-lg text-rose-600 hover:bg-rose-50 cursor-pointer disabled:opacity-50"
-                                    >
-                                      <Trash2 className="w-4 h-4" />
-                                    </button>
-                                  </div>
-                                </div>
-                              );
-                            })
-                          )}
-                        </div>
-                      </>
-                    ) : (
-                      <div className="p-6 rounded-2xl bg-slate-50 border border-slate-200 text-center space-y-3">
-                        <p className="text-xs text-slate-500">
-                          Sign in with Google to automatically browse and connect existing spreadsheets from your Drive.
-                        </p>
                         <button
                           type="button"
                           onClick={onSignInDirect}
-                          className="px-5 py-2 rounded-xl bg-slate-900 hover:bg-black text-white font-bold text-xs shadow-xs inline-flex items-center gap-2 cursor-pointer"
+                          className="px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold shadow-2xs cursor-pointer shrink-0 transition-colors"
                         >
-                          <span>Sign in with Google</span>
+                          Sign in with Google
                         </button>
                       </div>
                     )}
+
+                    <div className="relative">
+                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3" />
+                      <input
+                        type="text"
+                        value={driveSearch}
+                        onChange={(e) => setDriveSearch(e.target.value)}
+                        placeholder="Search your created &amp; Drive spreadsheets..."
+                        className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-hidden"
+                      />
+                    </div>
+
+                    <div className="max-h-72 overflow-y-auto space-y-1.5 pr-1 divide-y divide-slate-100">
+                      {loadingList ? (
+                        <div className="p-6 text-center text-xs text-slate-400">
+                          Loading spreadsheets from Google Drive...
+                        </div>
+                      ) : filteredDriveSheets.length === 0 ? (
+                        <div className="p-6 text-center text-xs text-slate-400 space-y-1.5">
+                          <p className="font-semibold text-slate-600">No spreadsheets found.</p>
+                          <p className="text-[11px] text-slate-400">
+                            Create a new dedicated SpendDesk sheet in the Sheets tab or link via URL.
+                          </p>
+                        </div>
+                      ) : (
+                        filteredDriveSheets.map((item) => {
+                          const isConnected = activeSheet?.id === item.id;
+                          return (
+                            <div
+                              key={item.id}
+                              className={`pt-2 flex items-center justify-between p-2.5 rounded-xl transition-colors ${
+                                isConnected
+                                  ? 'bg-emerald-50/80 border border-emerald-200/90'
+                                  : 'hover:bg-slate-50'
+                              }`}
+                            >
+                              <div className="min-w-0 pr-2">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-bold text-xs text-slate-800 block truncate">
+                                    {item.name}
+                                  </span>
+                                  {isConnected && (
+                                    <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold inline-flex items-center gap-1 shrink-0">
+                                      <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                      Connected
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="text-[10px] text-slate-400 block mt-0.5">
+                                  Modified: {item.modifiedTime ? new Date(item.modifiedTime).toLocaleDateString() : 'N/A'}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                {isConnected ? (
+                                  <span className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold inline-flex items-center gap-1">
+                                    <CheckCircle2 className="w-3.5 h-3.5" /> Active
+                                  </span>
+                                ) : (
+                                  <button type="button" onClick={() => handleSelectExisting(item)} className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-emerald-600 hover:text-white text-slate-700 text-xs font-bold cursor-pointer transition-colors">
+                                    Connect
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => void handleDeleteDriveSheet(item)}
+                                  disabled={deletingSheetId === item.id}
+                                  title={`Delete ${item.name}`}
+                                  aria-label={`Delete ${item.name}`}
+                                  className="p-2 rounded-lg text-rose-600 hover:bg-rose-50 cursor-pointer disabled:opacity-50"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
                   </div>
                 </div>
               )}

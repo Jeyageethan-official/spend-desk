@@ -1,33 +1,31 @@
-import { initializeApp, getApps, getApp } from 'firebase/app';
-import { 
-  getAuth, 
-  signInWithPopup, 
-  GoogleAuthProvider, 
-  onAuthStateChanged, 
-  signOut as firebaseSignOut,
-  User 
-} from 'firebase/auth';
-import firebaseConfig from '../../firebase-applet-config.json';
+export const GOOGLE_OAUTH_CLIENT_ID = '509348493041-ih637992a2lrmh6qdlvch1pkatpn70k0.apps.googleusercontent.com';
 
-const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
-const auth = getAuth(app);
+const GOOGLE_SCOPES = [
+  'https://www.googleapis.com/auth/spreadsheets',
+  'https://www.googleapis.com/auth/drive.file',
+  'https://www.googleapis.com/auth/userinfo.profile',
+  'https://www.googleapis.com/auth/userinfo.email',
+].join(' ');
 
-const provider = new GoogleAuthProvider();
-provider.addScope('https://www.googleapis.com/auth/spreadsheets');
-provider.addScope('https://www.googleapis.com/auth/drive.file');
-provider.setCustomParameters({
-  prompt: 'select_account',
-});
-
-let isSigningIn = false;
-let cachedAccessToken: string | null = null;
 const TOKEN_KEY = 'money_tracker_access_token';
+const USER_STORAGE_KEY = 'money_tracker_user_info';
+
+let cachedAccessToken: string | null = null;
+
+export interface WorkspaceUser {
+  id: string;
+  email: string;
+  name: string;
+  picture?: string;
+}
 
 export const getCachedWorkspaceToken = (): string | null => {
-  if (cachedAccessToken) return cachedAccessToken;
+  if (cachedAccessToken && !cachedAccessToken.startsWith('eyJ') && cachedAccessToken !== 'local_token') {
+    return cachedAccessToken;
+  }
   try {
     const stored = localStorage.getItem(TOKEN_KEY);
-    if (stored && stored !== 'local_token' && !stored.startsWith('eyJ')) {
+    if (stored && stored !== 'local_token' && !stored.startsWith('eyJ') && stored.length > 20) {
       cachedAccessToken = stored;
       return stored;
     }
@@ -46,73 +44,192 @@ export const setCachedWorkspaceToken = (token: string | null) => {
   } catch {}
 };
 
-export interface WorkspaceUser {
-  id: string;
-  email: string;
-  name: string;
+/**
+ * Fetch Google User Info using OAuth access token
+ */
+export const fetchGoogleUserInfo = async (accessToken: string): Promise<{
+  sub: string;
+  name?: string;
+  email?: string;
   picture?: string;
-}
-
-export const signInWithGoogleWorkspace = async (): Promise<{ user: WorkspaceUser; accessToken: string }> => {
-  try {
-    isSigningIn = true;
-    const result = await signInWithPopup(auth, provider);
-    const credential = GoogleAuthProvider.credentialFromResult(result);
-    if (!credential?.accessToken) {
-      throw new Error('Google OAuth token could not be obtained.');
-    }
-
-    const token = credential.accessToken;
-    setCachedWorkspaceToken(token);
-
-    const user: WorkspaceUser = {
-      id: result.user.uid,
-      email: result.user.email || '',
-      name: result.user.displayName || result.user.email?.split('@')[0] || 'User',
-      picture: result.user.photoURL || undefined,
-    };
-
-    return { user, accessToken: token };
-  } catch (error: any) {
-    console.error('Google Workspace sign in error:', error);
-    throw error;
-  } finally {
-    isSigningIn = false;
+}> => {
+  const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+  if (!res.ok) {
+    throw new Error('Failed to fetch Google user profile.');
   }
+  return await res.json();
 };
 
-export const initWorkspaceAuth = (
-  onAuthSuccess?: (user: WorkspaceUser, token: string) => void,
-  onAuthFailure?: () => void
-) => {
-  return onAuthStateChanged(auth, async (firebaseUser: User | null) => {
-    if (firebaseUser) {
-      const token = getCachedWorkspaceToken() || '';
-      const user: WorkspaceUser = {
-        id: firebaseUser.uid,
-        email: firebaseUser.email || '',
-        name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
-        picture: firebaseUser.photoURL || undefined,
-      };
-      if (token && onAuthSuccess) {
-        onAuthSuccess(user, token);
-      } else if (!isSigningIn) {
-        if (onAuthSuccess) {
-          onAuthSuccess(user, '');
-        }
+/**
+ * Dynamically ensure Google Identity Services client script is loaded
+ */
+export const ensureGsiLoaded = (): Promise<void> => {
+  if (typeof window === 'undefined') return Promise.resolve();
+  if ((window as any).google?.accounts?.oauth2) return Promise.resolve();
+
+  return new Promise((resolve) => {
+    const existing = document.querySelector('script[src*="accounts.google.com/gsi/client"]');
+    if (existing) {
+      if ((window as any).google?.accounts?.oauth2) {
+        resolve();
+        return;
       }
-    } else {
-      setCachedWorkspaceToken(null);
-      if (onAuthFailure) onAuthFailure();
+      existing.addEventListener('load', () => resolve());
+      setTimeout(resolve, 1500);
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    script.onload = () => resolve();
+    script.onerror = () => resolve();
+    document.head.appendChild(script);
+    setTimeout(resolve, 2000);
+  });
+};
+
+/**
+ * Sign in directly with Google Identity Services (GIS).
+ * Obtains Google OAuth token for Google Sheets & Drive.
+ * Completely eliminates Firebase domain restrictions.
+ */
+export const signInWithGoogleWorkspace = async (): Promise<{ user: WorkspaceUser; accessToken: string }> => {
+  await ensureGsiLoaded();
+
+  if (typeof window === 'undefined' || !(window as any).google?.accounts?.oauth2) {
+    throw new Error('Google Identity Services client is not available. Please verify your internet connection.');
+  }
+
+  return new Promise((resolve, reject) => {
+    try {
+      const client = (window as any).google.accounts.oauth2.initTokenClient({
+        client_id: GOOGLE_OAUTH_CLIENT_ID,
+        scope: GOOGLE_SCOPES,
+        callback: async (resp: any) => {
+          if (resp.error) {
+            console.error('Google OAuth token error:', resp);
+            reject(new Error(resp.error_description || resp.error || 'Google Sign-In failed'));
+            return;
+          }
+
+          const token = resp.access_token;
+          if (!token) {
+            reject(new Error('No access token returned from Google.'));
+            return;
+          }
+
+          setCachedWorkspaceToken(token);
+
+          try {
+            const profile = await fetchGoogleUserInfo(token);
+            const user: WorkspaceUser = {
+              id: profile.sub,
+              email: profile.email || '',
+              name: profile.name || profile.email?.split('@')[0] || 'User',
+              picture: profile.picture,
+            };
+
+            try {
+              localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
+              localStorage.setItem('money_tracker_user', JSON.stringify({
+                displayName: user.name,
+                email: user.email,
+                photoURL: user.picture,
+              }));
+            } catch {}
+
+            window.dispatchEvent(new CustomEvent('spenddesk_google_auth', { detail: { user, token } }));
+            resolve({ user, accessToken: token });
+          } catch (profileErr) {
+            console.warn('Could not fetch user profile from token:', profileErr);
+            const fallbackUser: WorkspaceUser = {
+              id: 'google_user_' + Date.now(),
+              email: '',
+              name: 'Google User',
+            };
+            resolve({ user: fallbackUser, accessToken: token });
+          }
+        },
+        error_callback: (err: any) => {
+          console.warn('GIS Error callback:', err);
+          reject(new Error(err?.message || 'Google Sign-In was closed.'));
+        },
+      });
+
+      client.requestAccessToken({ prompt: 'select_account' });
+    } catch (err: any) {
+      reject(err);
     }
   });
 };
 
+/**
+ * Initialize workspace auth state listener
+ */
+export const initWorkspaceAuth = (
+  onAuthSuccess?: (user: WorkspaceUser, token: string) => void,
+  onAuthFailure?: () => void
+) => {
+  const checkCurrentAuth = () => {
+    const token = getCachedWorkspaceToken();
+    const savedUser = localStorage.getItem(USER_STORAGE_KEY) || localStorage.getItem('money_tracker_user');
+
+    if (savedUser && token && token !== 'local_token' && !token.startsWith('eyJ')) {
+      try {
+        const parsed = JSON.parse(savedUser);
+        const user: WorkspaceUser = {
+          id: parsed.id || parsed.sub || 'google_user',
+          email: parsed.email || '',
+          name: parsed.name || parsed.displayName || 'Google User',
+          picture: parsed.picture || parsed.photoURL || undefined,
+        };
+        if (onAuthSuccess) onAuthSuccess(user, token);
+        return;
+      } catch {}
+    }
+
+    if (onAuthFailure) onAuthFailure();
+  };
+
+  // Immediate check
+  checkCurrentAuth();
+
+  // Listen to custom auth events triggered by signInWithGoogleWorkspace
+  const handleAuthEvent = (e: Event) => {
+    const detail = (e as CustomEvent).detail;
+    if (detail?.user && detail?.token && onAuthSuccess) {
+      onAuthSuccess(detail.user, detail.token);
+    }
+  };
+
+  window.addEventListener('spenddesk_google_auth', handleAuthEvent);
+
+  return () => {
+    window.removeEventListener('spenddesk_google_auth', handleAuthEvent);
+  };
+};
+
+/**
+ * Sign out from Google Workspace
+ */
 export const signOutGoogleWorkspace = async () => {
-  try {
-    await firebaseSignOut(auth);
-  } catch (e) {
-    console.warn('Firebase signout warning:', e);
+  const token = getCachedWorkspaceToken();
+  if (token && typeof window !== 'undefined' && (window as any).google?.accounts?.oauth2?.revoke) {
+    try {
+      (window as any).google.accounts.oauth2.revoke(token, () => {});
+    } catch (e) {
+      console.warn('Revoke token error:', e);
+    }
   }
   setCachedWorkspaceToken(null);
+  try {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_STORAGE_KEY);
+  } catch {}
 };
