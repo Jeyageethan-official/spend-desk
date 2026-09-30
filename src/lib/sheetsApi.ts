@@ -1,4 +1,4 @@
-import { Transaction, SpendingSummary, CategorySummary, LendItem } from '../types/finance';
+import { Transaction, SpendingSummary, CategorySummary, LendItem, TransactionType, LendType, LendStatus } from '../types/finance';
 import { signInWithGoogleWorkspace, getCachedWorkspaceToken } from './workspaceAuth';
 
 // Use the officially provisioned and authorized OAuth Client ID for this applet
@@ -424,7 +424,7 @@ export const fetchAllTransactionsFromSheet = async (
   spreadsheetId: string
 ): Promise<Transaction[]> => {
   const res = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Transactions!A2:I1000`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Transactions!A1:I1000`,
     {
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -438,21 +438,115 @@ export const fetchAllTransactionsFromSheet = async (
   }
 
   const data = await res.json();
-  const rows: any[][] = data.values || [];
+  const allRows: any[][] = data.values || [];
+  if (allRows.length <= 1) return [];
 
-  return rows
-    .filter((row) => row && row[0] && row[4] !== undefined)
-    .map((row) => ({
-      id: String(row[0]),
-      date: String(row[1] || ''),
-      time: String(row[2] || ''),
-      type: (row[3] as any) || 'cash_expense',
-      category: (row[4] as any) || 'Other',
-      amount: parseFloat(String(row[5] || '0').replace(/[^0-9.-]+/g, '')) || 0,
-      paymentMethod: (row[6] as any) || 'Cash',
-      notes: String(row[7] || ''),
-      createdAt: row[8] ? new Date(row[8]).getTime() : Date.now(),
-    }));
+  const headerRow = (allRows[0] || []).map((h) => String(h || '').trim().toLowerCase());
+  const dataRows = allRows.slice(1);
+
+  const findCol = (regex: RegExp, fallback: number) => {
+    const idx = headerRow.findIndex((h) => regex.test(h));
+    return idx >= 0 ? idx : fallback;
+  };
+
+  const idCol = findCol(/id/i, 0);
+  const dateCol = findCol(/date/i, 1);
+  const timeCol = findCol(/time/i, 2);
+  const typeCol = findCol(/type/i, 3);
+  const catCol = findCol(/categor/i, 4);
+  const amtCol = findCol(/amount|rs|price|cost/i, 5);
+  const paymentCol = findCol(/payment|method|mode/i, 6);
+  const notesCol = findCol(/note|desc|reason|remark/i, 7);
+  const createdCol = findCol(/created/i, 8);
+
+  const parsedTxs: Transaction[] = [];
+
+  dataRows.forEach((row, idx) => {
+    if (!row || row.length === 0) return;
+    const hasAnyContent = row.some((cell) => cell !== undefined && String(cell).trim() !== '');
+    if (!hasAnyContent) return;
+
+    let rawAmount = row[amtCol];
+    if (rawAmount === undefined || String(rawAmount).trim() === '') {
+      for (let c = 0; c < row.length; c++) {
+        if (c !== dateCol && c !== timeCol && c !== idCol) {
+          const testNum = parseFloat(String(row[c] || '').replace(/[^0-9.-]+/g, ''));
+          if (!isNaN(testNum) && testNum > 0) {
+            rawAmount = row[c];
+            break;
+          }
+        }
+      }
+    }
+    const amount = parseFloat(String(rawAmount || '0').replace(/[^0-9.-]+/g, '')) || 0;
+
+    let rawDate = String(row[dateCol] || '').trim();
+    if (!rawDate && String(row[0] || '').match(/^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}$/)) {
+      rawDate = String(row[0]).trim();
+    }
+    let dateStr = new Date().toISOString().split('T')[0];
+    if (rawDate) {
+      if (/^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}$/.test(rawDate)) {
+        const parts = rawDate.split(/[-/.]/);
+        dateStr = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+      } else if (/^\d{1,2}[-/.]\d{1,2}[-/.]\d{4}$/.test(rawDate)) {
+        const parts = rawDate.split(/[-/.]/);
+        dateStr = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+      } else {
+        const d = new Date(rawDate);
+        if (!isNaN(d.getTime())) {
+          dateStr = d.toISOString().split('T')[0];
+        }
+      }
+    }
+
+    const rawType = String(row[typeCol] || '').toLowerCase();
+    let type: TransactionType = 'cash_expense';
+    if (rawType.includes('add') || rawType.includes('income') || rawType.includes('receiv') || rawType.includes('credit')) {
+      type = 'cash_added';
+    } else if (rawType.includes('card')) {
+      type = 'card_expense';
+    } else {
+      type = 'cash_expense';
+    }
+
+    let category = String(row[catCol] || 'Other').trim();
+    if (!category) category = 'Other';
+
+    const rawPayment = String(row[paymentCol] || '').trim();
+    let paymentMethod = 'Cash';
+    if (rawPayment.toLowerCase().includes('card')) paymentMethod = 'Card';
+    else if (rawPayment.toLowerCase().includes('bank') || rawPayment.toLowerCase().includes('transfer')) paymentMethod = 'Bank Transfer';
+    else if (type === 'card_expense') paymentMethod = 'Card';
+
+    const notes = String(row[notesCol] || '').trim();
+
+    let rawId = String(row[idCol] || '').trim();
+    if (!rawId || rawId.includes('/') || rawId.includes(' ') || rawId.length < 3) {
+      rawId = `tx_sheet_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 6)}`;
+    }
+
+    const rawCreated = row[createdCol];
+    let createdAt = Date.now() - idx * 1000;
+    if (rawCreated) {
+      const cDate = new Date(rawCreated);
+      if (!isNaN(cDate.getTime())) createdAt = cDate.getTime();
+    }
+
+    parsedTxs.push({
+      id: rawId,
+      date: dateStr,
+      time: String(row[timeCol] || '').trim(),
+      type,
+      category: category as any,
+      amount,
+      paymentMethod: paymentMethod as any,
+      notes,
+      createdAt,
+    });
+  });
+
+  return parsedTxs;
 };
 
 export const overwriteTransactionsInSheet = async (
@@ -460,37 +554,37 @@ export const overwriteTransactionsInSheet = async (
   spreadsheetId: string,
   transactions: Transaction[]
 ) => {
-  // Clear existing transactions
-  const clearResponse = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Transactions!A2:I1000:clear`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-    }
-  );
-  if (!clearResponse.ok) {
-    throw parseGoogleApiError(clearResponse.status, await clearResponse.text(), 'Failed to clear old transactions');
+  if (transactions.length === 0) {
+    await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Transactions!A2:I1000:clear`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+    return;
   }
-
-  if (transactions.length === 0) return;
 
   const rows = transactions.map((tx) => [
     tx.id,
-    tx.date,
+    tx.date || '',
     tx.time || '',
-    tx.type,
-    tx.category,
-    tx.amount,
-    tx.paymentMethod,
+    tx.type === 'cash_added' ? 'Cash Added' : tx.type === 'card_expense' ? 'Card Expense' : 'Cash Expense',
+    tx.category || 'Other',
+    tx.amount || 0,
+    tx.paymentMethod || 'Cash',
     tx.notes || '',
-    new Date(tx.createdAt).toISOString(),
+    tx.createdAt ? new Date(tx.createdAt).toISOString() : new Date().toISOString(),
   ]);
 
+  const endRow = rows.length + 1;
+  const targetRange = `Transactions!A2:I${endRow}`;
+
   const writeResponse = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Transactions!A2?valueInputOption=USER_ENTERED`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${targetRange}?valueInputOption=USER_ENTERED`,
     {
       method: 'PUT',
       headers: {
@@ -498,12 +592,27 @@ export const overwriteTransactionsInSheet = async (
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
+        range: targetRange,
+        majorDimension: 'ROWS',
         values: rows,
       }),
     }
   );
   if (!writeResponse.ok) {
-    throw parseGoogleApiError(writeResponse.status, await writeResponse.text(), 'Failed to save transactions');
+    throw parseGoogleApiError(writeResponse.status, await writeResponse.text(), 'Failed to save transactions to sheet');
+  }
+
+  if (endRow < 1000) {
+    void fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Transactions!A${endRow + 1}:I1000:clear`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    ).catch(console.warn);
   }
 };
 
@@ -512,36 +621,37 @@ export const overwriteLendItemsInSheet = async (
   spreadsheetId: string,
   lendItems: LendItem[]
 ) => {
-  const clearResponse = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Lend_Borrow!A2:I500:clear`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-    }
-  );
-  if (!clearResponse.ok) {
-    throw parseGoogleApiError(clearResponse.status, await clearResponse.text(), 'Failed to clear old lend records');
+  if (lendItems.length === 0) {
+    await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Lend_Borrow!A2:I500:clear`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+    return;
   }
-
-  if (lendItems.length === 0) return;
 
   const rows = lendItems.map((item) => [
     item.id,
-    item.personName,
+    item.personName || '',
     item.type === 'lent' ? 'I Lent' : 'I Borrowed',
-    item.thingsOrReason,
-    item.amount,
-    item.date,
+    item.thingsOrReason || '',
+    item.amount || 0,
+    item.date || '',
     item.dueDate || '',
-    item.status,
+    item.status === 'settled' ? 'Settled' : 'Pending',
     item.phone || '',
   ]);
 
+  const endRow = rows.length + 1;
+  const targetRange = `Lend_Borrow!A2:I${endRow}`;
+
   const writeResponse = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Lend_Borrow!A2?valueInputOption=USER_ENTERED`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${targetRange}?valueInputOption=USER_ENTERED`,
     {
       method: 'PUT',
       headers: {
@@ -549,12 +659,27 @@ export const overwriteLendItemsInSheet = async (
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
+        range: targetRange,
+        majorDimension: 'ROWS',
         values: rows,
       }),
     }
   );
   if (!writeResponse.ok) {
-    throw parseGoogleApiError(writeResponse.status, await writeResponse.text(), 'Failed to save lend records');
+    throw parseGoogleApiError(writeResponse.status, await writeResponse.text(), 'Failed to save lend records to sheet');
+  }
+
+  if (endRow < 500) {
+    void fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Lend_Borrow!A${endRow + 1}:I500:clear`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    ).catch(console.warn);
   }
 };
 
@@ -564,7 +689,7 @@ export const fetchAllLendItemsFromSheet = async (
 ): Promise<LendItem[]> => {
   try {
     const res = await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Lend_Borrow!A2:I500`,
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Lend_Borrow!A1:I500`,
       {
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -575,22 +700,75 @@ export const fetchAllLendItemsFromSheet = async (
     if (!res.ok) return [];
 
     const data = await res.json();
-    const rows: any[][] = data.values || [];
+    const allRows: any[][] = data.values || [];
+    if (allRows.length <= 1) return [];
 
-    return rows
-      .filter((row) => row && row[0] && row[1])
-      .map((row) => ({
-        id: String(row[0]),
-        personName: String(row[1] || ''),
-        type: row[2] === 'I Borrowed' ? 'borrowed' : 'lent',
-        thingsOrReason: String(row[3] || ''),
-        amount: parseFloat(String(row[4] || '0').replace(/[^0-9.-]+/g, '')) || 0,
-        date: String(row[5] || ''),
-        dueDate: String(row[6] || ''),
-        status: (row[7] as any) === 'returned' || (row[7] as any) === 'settled' ? 'settled' : 'pending',
-        phone: String(row[8] || ''),
-        createdAt: Date.now(),
-      }));
+    const headerRow = (allRows[0] || []).map((h) => String(h || '').trim().toLowerCase());
+    const dataRows = allRows.slice(1);
+
+    const findCol = (regex: RegExp, fallback: number) => {
+      const idx = headerRow.findIndex((h) => regex.test(h));
+      return idx >= 0 ? idx : fallback;
+    };
+
+    const idCol = findCol(/id/i, 0);
+    const personCol = findCol(/person|name|who/i, 1);
+    const typeCol = findCol(/type|lent|borrow/i, 2);
+    const reasonCol = findCol(/thing|reason|note|desc/i, 3);
+    const amtCol = findCol(/amount|rs|price/i, 4);
+    const dateCol = findCol(/date/i, 5);
+    const dueDateCol = findCol(/due/i, 6);
+    const statusCol = findCol(/status/i, 7);
+    const phoneCol = findCol(/phone|mobile|contact/i, 8);
+
+    const parsedLends: LendItem[] = [];
+
+    dataRows.forEach((row, idx) => {
+      if (!row || row.length === 0) return;
+      const hasAnyContent = row.some((cell) => cell !== undefined && String(cell).trim() !== '');
+      if (!hasAnyContent) return;
+
+      let personName = String(row[personCol] || '').trim();
+      let rawId = String(row[idCol] || '').trim();
+
+      if (!personName && rawId && !rawId.startsWith('lend_') && isNaN(Number(rawId))) {
+        personName = rawId;
+        rawId = '';
+      }
+
+      if (!personName) return;
+
+      if (!rawId || rawId.length < 3) {
+        rawId = `lend_sheet_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 6)}`;
+      }
+
+      const rawType = String(row[typeCol] || '').toLowerCase();
+      const type: LendType = (rawType.includes('borrow') || rawType.includes('taken')) ? 'borrowed' : 'lent';
+
+      const amount = parseFloat(String(row[amtCol] || '0').replace(/[^0-9.-]+/g, '')) || 0;
+      const thingsOrReason = String(row[reasonCol] || '').trim();
+      const date = String(row[dateCol] || '').trim() || new Date().toISOString().split('T')[0];
+      const dueDate = String(row[dueDateCol] || '').trim();
+
+      const rawStatus = String(row[statusCol] || '').toLowerCase();
+      const status: LendStatus = (rawStatus.includes('settle') || rawStatus.includes('return') || rawStatus.includes('paid')) ? 'settled' : 'pending';
+      const phone = String(row[phoneCol] || '').trim();
+
+      parsedLends.push({
+        id: rawId,
+        personName,
+        type,
+        thingsOrReason,
+        amount,
+        date,
+        dueDate,
+        status,
+        phone,
+        createdAt: Date.now() - idx * 1000,
+      });
+    });
+
+    return parsedLends;
   } catch (e) {
     console.warn('Failed to fetch lend items from sheet:', e);
     return [];

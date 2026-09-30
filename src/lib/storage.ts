@@ -340,10 +340,50 @@ export const saveStoredSheetMeta = (meta: GoogleSheetMeta | null, email?: string
 };
 
 export const mergeGuestDataIntoUser = (
-  _userEmail: string
+  userEmail: string
 ): { txCount: number; lendCount: number; mergedTxs: Transaction[]; mergedLends: LendItem[] } => {
-  // Deliberately isolated: Guest data is not injected into user accounts to prevent mixing.
-  return { txCount: 0, lendCount: 0, mergedTxs: [], mergedLends: [] };
+  if (!userEmail) return { txCount: 0, lendCount: 0, mergedTxs: [], mergedLends: [] };
+  try {
+    const guestTxs = loadStoredTransactions('guest');
+    const guestLends = loadStoredLendItems('guest');
+    const userTxs = loadStoredTransactions(userEmail);
+    const userLends = loadStoredLendItems(userEmail);
+
+    if (guestTxs.length === 0 && guestLends.length === 0) {
+      return { txCount: userTxs.length, lendCount: userLends.length, mergedTxs: userTxs, mergedLends: userLends };
+    }
+
+    // Merge non-duplicate transactions
+    const existingTxIds = new Set(userTxs.map((t) => t.id));
+    const newTxs = guestTxs.filter((t) => !existingTxIds.has(t.id));
+    const mergedTxs = [...userTxs, ...newTxs];
+
+    // Merge non-duplicate lend items
+    const existingLendIds = new Set(userLends.map((l) => l.id));
+    const newLends = guestLends.filter((l) => !existingLendIds.has(l.id));
+    const mergedLends = [...userLends, ...newLends];
+
+    saveStoredTransactions(mergedTxs, userEmail);
+    saveStoredLendItems(mergedLends, userEmail);
+
+    // Also migrate sheet meta if user doesn't have one
+    const userSheet = loadStoredSheetMeta(userEmail);
+    if (!userSheet) {
+      const guestSheet = loadStoredSheetMeta('guest');
+      if (guestSheet) {
+        saveStoredSheetMeta(guestSheet, userEmail);
+      }
+    }
+
+    // Clear guest storage after successful migration so it doesn't duplicate on future logins
+    saveStoredTransactions([], 'guest');
+    saveStoredLendItems([], 'guest');
+
+    return { txCount: mergedTxs.length, lendCount: mergedLends.length, mergedTxs, mergedLends };
+  } catch (e) {
+    console.error('Failed to merge guest data into user:', e);
+    return { txCount: 0, lendCount: 0, mergedTxs: [], mergedLends: [] };
+  }
 };
 
 export const loadStoredBudgetConfig = (email?: string | null): BudgetConfig => {

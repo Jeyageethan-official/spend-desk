@@ -316,6 +316,11 @@ export default function App() {
     setLoadedStorageScope('');
     setSelectedTransactionIds([]);
 
+    // Merge any existing guest records into the logged-in user's account
+    if (user?.email) {
+      mergeGuestDataIntoUser(user.email);
+    }
+
     const storedSheet = loadStoredSheetMeta(scope);
     setActiveSheet(storedSheet);
 
@@ -640,9 +645,9 @@ export default function App() {
         console.warn('Cloud sync of activeSheet note:', err);
       });
     }
-    // Only if a newly different sheet was connected, push current transactions to populate it
-    if (isNewSheet) {
-      void handlePushToSheet({ silent: true }).catch(console.warn);
+    // When a sheet is connected, sync immediately (imports any existing rows and pushes full records)
+    if (meta?.id) {
+      void handlePushToSheet({ silent: false, interactive: false }).catch(console.warn);
     }
   };
 
@@ -690,6 +695,13 @@ export default function App() {
       setLendItems(remoteLends);
       saveStoredLendItems(remoteLends, currentUserEmail);
       saveSheetLendItems(sId, remoteLends);
+
+      if (user?.email) {
+        const nextWs = buildCloudWorkspace(Date.now());
+        nextWs.transactions = sortedTxs;
+        nextWs.lendItems = remoteLends;
+        void saveCloudWorkspace(nextWs).catch(console.warn);
+      }
 
       const updatedMeta: GoogleSheetMeta = {
         ...(activeSheet || { id: sId, name: 'Connected Sheet', url: `https://docs.google.com/spreadsheets/d/${sId}/edit` }),
@@ -786,7 +798,7 @@ export default function App() {
 
   const isPushingToSheetRef = useRef(false);
 
-  // Push Data to Connected Google Sheet (Transactions, Lend/Borrow, and Dashboard KPIs) - Silent by default
+  // Push & Two-Way Sync Data with Connected Google Sheet (Transactions, Lend/Borrow, and Dashboard KPIs)
   const handlePushToSheet = useCallback(async (
     options: { silent?: boolean; interactive?: boolean } = { silent: true },
     snapshot?: { transactions: Transaction[]; lendItems: LendItem[] }
@@ -818,22 +830,100 @@ export default function App() {
         }
       }
     }
-    const transactionsToPush = snapshot?.transactions ?? latestStateRef.current.transactions;
-    const lendsToPush = snapshot?.lendItems ?? latestStateRef.current.lendItems;
+    
     if (!options.silent) {
       setIsSyncing(true);
     }
     try {
-      // 1. Push Transactions & Lend side-by-side to Transactions sheet
-      await overwriteTransactionsInSheet(sheetToken, activeSheet.id, transactionsToPush);
-      
-      // 2. Push Lend & Borrow backup tab records
-      await overwriteLendItemsInSheet(sheetToken, activeSheet.id, lendsToPush);
+      // 1. Read existing rows currently in Google Sheet (so manual edits or sheet rows are never lost!)
+      let remoteTxs: Transaction[] = [];
+      let remoteLends: LendItem[] = [];
+      try {
+        remoteTxs = await fetchAllTransactionsFromSheet(sheetToken, activeSheet.id);
+        remoteLends = await fetchAllLendItemsFromSheet(sheetToken, activeSheet.id);
+      } catch (fetchErr) {
+        console.warn('Could not read existing sheet rows before push:', fetchErr);
+      }
 
-      // 3. Push Dashboard KPI Totals & Trends
-      const allSummary = calculateSummary(transactionsToPush, transactionsToPush);
-      const catSummary = calculateCategoryBreakdown(transactionsToPush);
-      const { dayTotals } = calculateWeeklyDailyTrend(transactionsToPush);
+      // 2. Intelligent 2-way merge:
+      const currentLocalTxs = snapshot?.transactions ?? latestStateRef.current.transactions;
+      const currentLocalLends = snapshot?.lendItems ?? latestStateRef.current.lendItems;
+
+      const localTxIdMap = new Map(currentLocalTxs.map(t => [t.id, t]));
+      const localCompositeSet = new Set(
+        currentLocalTxs.map(t => `${t.date}_${t.amount}_${t.category}_${t.paymentMethod}`)
+      );
+
+      const mergedTxs = [...currentLocalTxs];
+      let newTxsCount = 0;
+
+      for (const rTx of remoteTxs) {
+        if (!localTxIdMap.has(rTx.id)) {
+          const compKey = `${rTx.date}_${rTx.amount}_${rTx.category}_${rTx.paymentMethod}`;
+          if (!localCompositeSet.has(compKey)) {
+            mergedTxs.push(rTx);
+            localTxIdMap.set(rTx.id, rTx);
+            localCompositeSet.add(compKey);
+            newTxsCount++;
+          }
+        }
+      }
+
+      // Sort newest date first
+      mergedTxs.sort((a, b) => {
+        const dateDiff = (b.date || '').localeCompare(a.date || '');
+        if (dateDiff !== 0) return dateDiff;
+        return (b.createdAt || 0) - (a.createdAt || 0);
+      });
+
+      // Merge lend items
+      const localLendIdMap = new Map(currentLocalLends.map(l => [l.id, l]));
+      const localLendCompositeSet = new Set(
+        currentLocalLends.map(l => `${l.personName.toLowerCase()}_${l.type}_${l.amount}_${l.date}`)
+      );
+      const mergedLends = [...currentLocalLends];
+      let newLendsCount = 0;
+
+      for (const rLend of remoteLends) {
+        if (!localLendIdMap.has(rLend.id)) {
+          const compKey = `${rLend.personName.toLowerCase()}_${rLend.type}_${rLend.amount}_${rLend.date}`;
+          if (!localLendCompositeSet.has(compKey)) {
+            mergedLends.push(rLend);
+            localLendIdMap.set(rLend.id, rLend);
+            localLendCompositeSet.add(compKey);
+            newLendsCount++;
+          }
+        }
+      }
+
+      // If new records were imported from Google Sheet, update local state & cloud workspace immediately!
+      if (newTxsCount > 0 || newLendsCount > 0) {
+        setTransactions(mergedTxs);
+        saveStoredTransactions(mergedTxs, currentUserEmail);
+        saveSheetTransactions(activeSheet.id, mergedTxs);
+
+        setLendItems(mergedLends);
+        saveStoredLendItems(mergedLends, currentUserEmail);
+        saveSheetLendItems(activeSheet.id, mergedLends);
+
+        if (user?.email) {
+          const nextWs = buildCloudWorkspace(Date.now());
+          nextWs.transactions = mergedTxs;
+          nextWs.lendItems = mergedLends;
+          void saveCloudWorkspace(nextWs).catch(console.warn);
+        }
+      }
+
+      // 3. Write merged complete records to Transactions sheet
+      await overwriteTransactionsInSheet(sheetToken, activeSheet.id, mergedTxs);
+      
+      // 4. Write merged Lend & Borrow backup tab records
+      await overwriteLendItemsInSheet(sheetToken, activeSheet.id, mergedLends);
+
+      // 5. Update Dashboard KPI Totals & Trends
+      const allSummary = calculateSummary(mergedTxs, mergedTxs);
+      const catSummary = calculateCategoryBreakdown(mergedTxs);
+      const { dayTotals } = calculateWeeklyDailyTrend(mergedTxs);
       await syncDashboardStats(sheetToken, activeSheet.id, allSummary, catSummary, dayTotals);
 
       const updatedMeta: GoogleSheetMeta = {
@@ -845,7 +935,11 @@ export default function App() {
       saveStoredSheetMeta(updatedMeta, currentUserEmail);
 
       if (!options.silent) {
-        showNotification(`Synced all records to "${activeSheet.name}"!`, 'success');
+        if (newTxsCount > 0 || newLendsCount > 0) {
+          showNotification(`Synced! Imported ${newTxsCount} transactions & ${newLendsCount} borrow items from Google Sheet.`, 'success');
+        } else {
+          showNotification(`Synced all records with "${activeSheet.name}"!`, 'success');
+        }
       }
       return true;
     } catch (err: any) {
@@ -873,7 +967,7 @@ export default function App() {
         setIsSyncing(false);
       }
     }
-  }, [activeSheet, accessToken, currentUserEmail]);
+  }, [activeSheet, accessToken, currentUserEmail, user?.email, buildCloudWorkspace]);
 
   const sheetPushTimerRef = useRef<number | null>(null);
   const queueSheetPush = useCallback((snapshot?: { transactions: Transaction[]; lendItems: LendItem[] }) => {

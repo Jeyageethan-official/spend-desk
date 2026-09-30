@@ -516,17 +516,20 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                         <div className="hidden sm:block p-3.5"><span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Sync status</span><span className="mt-1 flex items-center gap-1 text-xs font-bold text-emerald-700"><CheckCircle2 className="w-3.5 h-3.5" /> Ready</span></div>
                       </div>
 
-                      {/* Push to Sheet Action (Single Primary Button) */}
-                      <div>
+                      {/* Push / Two-Way Sync Action */}
+                      <div className="space-y-1.5">
                         <button
                           type="button"
                           onClick={() => void onPushToSheet()}
                           disabled={isSyncing}
                           className="w-full p-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm shadow-xs flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 transition-colors"
                         >
-                          <UploadCloud className={`w-4 h-4 ${isSyncing ? 'animate-bounce' : ''}`} />
-                          <span>{isSyncing ? 'Syncing Records to Sheet...' : 'Push to Google Sheet'}</span>
+                          <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                          <span>{isSyncing ? 'Syncing with Google Sheet...' : 'Sync with Google Sheet'}</span>
                         </button>
+                        <p className="text-[11px] text-center text-slate-400">
+                          Two-way live sync: imports records added in Google Sheet &amp; updates Dashboard
+                        </p>
                       </div>
 
                       <div className="pt-1 flex items-center justify-between">
