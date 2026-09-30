@@ -635,13 +635,28 @@ export default function App() {
       const remoteTxs = await fetchAllTransactionsFromSheet(token, sId);
       const remoteLends = await fetchAllLendItemsFromSheet(token, sId);
 
-      // Google Sheet is authoritative for a pull. Do not merge stale local rows
-      // back into it: that previously resurrected records deleted on another
-      // device. Offline mutations are handled by the durable pending-sync queue.
-      setTransactions(remoteTxs);
-      saveStoredTransactions(remoteTxs, currentUserEmail);
-      setLendItems(remoteLends);
-      saveStoredLendItems(remoteLends, currentUserEmail);
+      // Merge remote transactions with local transactions so local records are preserved
+      setTransactions((prev) => {
+        const map = new Map<string, Transaction>();
+        prev.forEach((tx) => { if (tx?.id) map.set(tx.id, tx); });
+        remoteTxs.forEach((tx) => { if (tx?.id) map.set(tx.id, tx); });
+        const merged = Array.from(map.values()).sort((a, b) => {
+          const dateDiff = new Date(b.date).getTime() - new Date(a.date).getTime();
+          if (dateDiff !== 0) return dateDiff;
+          return (b.createdAt || 0) - (a.createdAt || 0);
+        });
+        saveStoredTransactions(merged, currentUserEmail);
+        return merged;
+      });
+
+      setLendItems((prev) => {
+        const map = new Map<string, LendItem>();
+        prev.forEach((l) => { if (l?.id) map.set(l.id, l); });
+        remoteLends.forEach((l) => { if (l?.id) map.set(l.id, l); });
+        const merged = Array.from(map.values());
+        saveStoredLendItems(merged, currentUserEmail);
+        return merged;
+      });
     } catch (err: any) {
       console.error('Failed to fetch from sheet:', err);
       const raw = String(err?.message || err);

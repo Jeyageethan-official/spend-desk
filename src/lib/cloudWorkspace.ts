@@ -18,9 +18,17 @@ export interface CloudWorkspace {
 }
 
 let activeWorkspaceChannel: RealtimeChannel | null = null;
-const localBroadcast = typeof window !== 'undefined' && 'BroadcastChannel' in window
-  ? new BroadcastChannel('spenddesk_workspace_sync')
-  : null;
+
+const getLocalBroadcast = (): BroadcastChannel | null => {
+  try {
+    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+      return new BroadcastChannel('spenddesk_workspace_sync');
+    }
+  } catch {
+    // Safari Private Browsing or tracking protection blocks BroadcastChannel
+  }
+  return null;
+};
 
 const getCurrentUserId = async (): Promise<string | null> => {
   const { data: { session } } = await getSupabase().auth.getSession();
@@ -46,9 +54,10 @@ export const saveCloudWorkspace = async (workspace: CloudWorkspace): Promise<voi
   if (!userId) throw new Error('Sign in is required for cloud sync.');
 
   // 1. Broadcast locally across tabs in the same browser immediately (0ms)
-  if (localBroadcast) {
+  const localBc = getLocalBroadcast();
+  if (localBc) {
     try {
-      localBroadcast.postMessage({ workspace });
+      localBc.postMessage({ workspace });
     } catch (e) {
       console.warn('Local broadcast error:', e);
     }
@@ -81,11 +90,16 @@ export const subscribeToCloudWorkspace = async (
   if (!userId) return null;
 
   // Listen to cross-tab updates in the same browser
-  if (localBroadcast) {
-    localBroadcast.onmessage = (event) => {
-      const ws = event.data?.workspace as CloudWorkspace | undefined;
-      if (ws) onWorkspace(ws);
-    };
+  const localBc = getLocalBroadcast();
+  if (localBc) {
+    try {
+      localBc.onmessage = (event) => {
+        const ws = event.data?.workspace as CloudWorkspace | undefined;
+        if (ws) onWorkspace(ws);
+      };
+    } catch (e) {
+      console.warn('Local broadcast listen error:', e);
+    }
   }
 
   // Realtime channel with both WebSocket Broadcast and Postgres Changes

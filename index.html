@@ -13,6 +13,21 @@
     <meta property="og:description" content="spend desk is a Cash Wallet and Card Spending Tracker web application synced with Google Sheets, designed to manage daily cash expenses, card payments, lend &amp; borrow records, and financial budgets." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
+    <script>
+      // Clear legacy service worker caches that broke Safari/Chrome normal mode
+      try {
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.getRegistrations().then(function(regs) {
+            regs.forEach(function(r) { r.unregister(); });
+          }).catch(function() {});
+        }
+        if ('caches' in window) {
+          caches.keys().then(function(keys) {
+            keys.forEach(function(k) { caches.delete(k); });
+          }).catch(function() {});
+        }
+      } catch (e) {}
+    </script>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
   </head>
   <body>

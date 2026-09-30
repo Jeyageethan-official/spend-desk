@@ -5,24 +5,29 @@ import { ErrorBoundary } from './ErrorBoundary.tsx';
 import './index.css';
 
 // Make the app light-only before the first React paint.
-document.documentElement.classList.remove('dark');
-localStorage.setItem('spenddesk_theme', 'light');
+try {
+  document.documentElement.classList.remove('dark');
+  localStorage.setItem('spenddesk_theme', 'light');
+} catch {}
 
 // Remove legacy offline caches. They were serving stale UI bundles after deploys.
-if ('serviceWorker' in navigator && import.meta.env.PROD) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.getRegistrations().then((registrations) =>
-      Promise.all(registrations.map(async (registration) => {
-        // Safari can continue serving an old worker until it explicitly checks
-        // for an update. Force that check before removing the legacy cache.
-        try { await registration.update(); } catch {}
-        return registration.unregister();
-      }))
-    ).then(() => caches.keys()).then((keys) =>
-      Promise.all(keys.map((key) => caches.delete(key)))
-    ).catch((err) => console.warn('Cache cleanup failed:', err));
-  });
-}
+try {
+  if (typeof window !== 'undefined' && 'serviceWorker' in navigator && import.meta.env.PROD) {
+    window.addEventListener('load', () => {
+      try {
+        if (typeof caches !== 'undefined' && caches.keys) {
+          caches.keys().then((keys) => Promise.all(keys.map((key) => caches.delete(key)))).catch(() => {});
+        }
+        navigator.serviceWorker?.getRegistrations?.().then((registrations) =>
+          Promise.all(registrations.map(async (registration) => {
+            try { await registration.update(); } catch {}
+            return registration.unregister();
+          }))
+        ).catch(() => {});
+      } catch {}
+    });
+  }
+} catch {}
 
 // Block touch pinch zoom and gesture zooming on iOS Safari / Mobile browsers
 document.addEventListener('gesturestart', (e) => e.preventDefault());
