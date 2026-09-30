@@ -370,30 +370,62 @@ export default function App() {
     showNotification(nextConfig.enabled ? 'Telegram transaction alerts enabled.' : 'Telegram transaction alerts saved but disabled.', 'success');
   };
 
-  const buildCloudWorkspace = useCallback((updatedAt: number): CloudWorkspace => ({
-    version: 1,
-    updatedAt,
+  const latestStateRef = useRef({
     transactions,
     lendItems,
-    categories: loadStoredCategoryDefs(currentUserEmail),
     budgetConfig,
     alertPhone,
     telegramAlertConfig,
     activeSheet,
-    profile: userProfile,
+    userProfile,
     currency,
-  }), [transactions, lendItems, budgetConfig, alertPhone, telegramAlertConfig, activeSheet, userProfile, currency, currentUserEmail]);
+    currentUserEmail,
+  });
+
+  useEffect(() => {
+    latestStateRef.current = {
+      transactions,
+      lendItems,
+      budgetConfig,
+      alertPhone,
+      telegramAlertConfig,
+      activeSheet,
+      userProfile,
+      currency,
+      currentUserEmail,
+    };
+  });
+
+  const getLatestWorkspace = useCallback((updatedAt: number): CloudWorkspace => {
+    const s = latestStateRef.current;
+    return {
+      version: 1,
+      updatedAt,
+      transactions: s.transactions,
+      lendItems: s.lendItems,
+      categories: loadStoredCategoryDefs(s.currentUserEmail),
+      budgetConfig: s.budgetConfig,
+      alertPhone: s.alertPhone,
+      telegramAlertConfig: s.telegramAlertConfig,
+      activeSheet: s.activeSheet,
+      profile: s.userProfile,
+      currency: s.currency,
+    };
+  }, []);
+
+  const buildCloudWorkspace = getLatestWorkspace;
 
   // Signed-out use is treated exactly like offline use. Keep a complete local
   // workspace snapshot current after every transaction/settings change so a
   // later login restores the user's final local state before any remote pull.
   useEffect(() => {
     if (!isSignedOutLocalMode || !offlineWorkspaceEmail) return;
-    saveSignedOutWorkspace(offlineWorkspaceEmail, buildCloudWorkspace(Date.now()));
-  }, [isSignedOutLocalMode, offlineWorkspaceEmail, buildCloudWorkspace]);
+    saveSignedOutWorkspace(offlineWorkspaceEmail, getLatestWorkspace(Date.now()));
+  }, [isSignedOutLocalMode, offlineWorkspaceEmail, transactions, lendItems, budgetConfig, activeSheet, userProfile, currency, getLatestWorkspace]);
 
   const applyCloudWorkspace = useCallback((workspace: CloudWorkspace) => {
     if (!workspace || workspace.version !== 1 || !Number.isFinite(workspace.updatedAt)) return;
+    // CRITICAL: Reject any remote workspace that is older than or equal to our local version!
     if (workspace.updatedAt <= cloudVersionRef.current) return;
     suppressNextCloudSyncRef.current = true;
     cloudVersionRef.current = workspace.updatedAt;
@@ -448,18 +480,24 @@ export default function App() {
     setCloudWorkspaceRevision((revision) => revision + 1);
   }, [currentUserEmail]);
 
-  const queueCloudSync = useCallback(() => {
+  const queueCloudSync = useCallback((customWorkspace?: CloudWorkspace) => {
     if (!user?.email || !cloudSyncReady) return;
     if (cloudSyncTimerRef.current) window.clearTimeout(cloudSyncTimerRef.current);
+    
+    // Bump version immediately to stamp freshness and reject any older remote incoming messages
+    const nextVersion = Math.max(Date.now(), cloudVersionRef.current + 1);
+    cloudVersionRef.current = nextVersion;
+
     cloudSyncTimerRef.current = window.setTimeout(() => {
-      const nextVersion = Math.max(Date.now(), cloudVersionRef.current + 1);
-      cloudVersionRef.current = nextVersion;
-      void saveCloudWorkspace(buildCloudWorkspace(nextVersion))
+      const ws = customWorkspace || getLatestWorkspace(nextVersion);
+      ws.updatedAt = nextVersion;
+      void saveCloudWorkspace(ws)
         .then(() => clearPendingSync(currentUserEmail))
         .catch((error) => console.error('Cloud workspace sync failed:', error));
-    }, 700);
-  }, [user?.email, cloudSyncReady, buildCloudWorkspace]);
+    }, 600);
+  }, [user?.email, cloudSyncReady, currentUserEmail, getLatestWorkspace]);
 
+  // Cloud Workspace Subscription: runs strictly on user login or network status changes
   useEffect(() => {
     if (!user?.email || !isOnline) {
       setCloudSyncReady(false);
@@ -467,17 +505,18 @@ export default function App() {
     }
     let active = true;
     let channel: Awaited<ReturnType<typeof subscribeToCloudWorkspace>> = null;
+
     void (async () => {
       try {
         const remoteWorkspace = await fetchCloudWorkspace();
         if (!active) return;
         const hasPending = hasPendingSync(currentUserEmail);
+
         if (remoteWorkspace && hasPending) {
-          // Reconnect path: remote is pulled first, then durable offline operations
-          // are replayed before fast push to Supabase.
+          // Reconnect path: merge pending local edits over remote
           const merged = mergePendingWorkspace(
             remoteWorkspace,
-            buildCloudWorkspace(Date.now()),
+            getLatestWorkspace(Date.now()),
             loadPendingSync(currentUserEmail),
             Math.max(Date.now(), remoteWorkspace.updatedAt + 1)
           );
@@ -485,16 +524,19 @@ export default function App() {
           await saveCloudWorkspace(merged);
           clearPendingSync(currentUserEmail);
         } else if (remoteWorkspace) {
-          applyCloudWorkspace(remoteWorkspace);
+          if (remoteWorkspace.updatedAt > cloudVersionRef.current) {
+            applyCloudWorkspace(remoteWorkspace);
+          }
         } else {
           // New cloud workspace on Supabase: upload current local data
-          const local = buildCloudWorkspace(Date.now());
+          const local = getLatestWorkspace(Date.now());
           await saveCloudWorkspace(local);
           clearPendingSync(currentUserEmail);
         }
+
         setCloudSyncReady(true);
         channel = await subscribeToCloudWorkspace((workspace) => {
-          if (workspace.updatedAt > cloudVersionRef.current) {
+          if (workspace && workspace.updatedAt > cloudVersionRef.current) {
             applyCloudWorkspace(workspace);
           }
         });
@@ -522,10 +564,9 @@ export default function App() {
       active = false;
       document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
       window.removeEventListener('focus', handleVisibilityOrFocus);
-      if (cloudSyncTimerRef.current) window.clearTimeout(cloudSyncTimerRef.current);
       unsubscribeFromCloudWorkspace(channel);
     };
-  }, [user?.email, isOnline, isPendingSignedOutReplay, applyCloudWorkspace, buildCloudWorkspace, currentUserEmail]);
+  }, [user?.email, isOnline, currentUserEmail, applyCloudWorkspace, getLatestWorkspace]);
 
   useEffect(() => {
     if (!user?.email || !cloudSyncReady) return;
@@ -661,8 +702,15 @@ export default function App() {
     setTransactions(prev => {
       const updated = prev.filter(t => !txIds.includes(t.id));
       saveStoredTransactions(updated, currentUserEmail);
+      if (activeSheet?.id) {
+        saveSheetTransactions(activeSheet.id, updated);
+      }
       return updated;
     });
+    setSelectedTransactionIds([]);
+    if (activeSheet) {
+      queueSheetPush();
+    }
     showNotification(`Deleted ${txIds.length} transactions.`, 'info');
   };
 
