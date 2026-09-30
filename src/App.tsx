@@ -844,40 +844,40 @@ export default function App() {
       showNotification('Transaction recorded.', 'success');
     }
 
-    // Trigger background SMS notification if phone is configured
-    if (sendSmsTo) {
-      handleUpdateAlertPhone(sendSmsTo);
-      const currentSum = calculateSummary(updatedTxs, updatedTxs);
-      const smsBody = generateTransactionSmsText(recordedTx, currentSum.currentCashBalance, currency);
-      triggerDeviceSms(sendSmsTo, smsBody);
-      showNotification('SMS message is ready to send.', 'info');
-    }
+    // Non-blocking background side effects (SMS, Telegram, Webhook)
+    setTimeout(() => {
+      if (sendSmsTo) {
+        handleUpdateAlertPhone(sendSmsTo);
+        const currentSum = calculateSummary(updatedTxs, updatedTxs);
+        const smsBody = generateTransactionSmsText(recordedTx, currentSum.currentCashBalance, currency);
+        triggerDeviceSms(sendSmsTo, smsBody);
+      }
 
-    if (isNewTransaction && telegramAlertConfig.enabled && telegramAlertConfig.chatId) {
-      const currentSum = calculateSummary(updatedTxs, updatedTxs);
-      const telegramAlert = generateTransactionTelegramAlert(recordedTx, currency, currentSum.currentCashBalance);
-      void sendTelegramAlert({ ...telegramAlert, chatId: telegramAlertConfig.chatId })
-        .then((res) => {
-          if (res.queued) {
-            showNotification('Offline: Telegram alert queued, will send when online.', 'info');
-          } else {
-            showNotification('Telegram alert delivered.', 'success');
-          }
-        })
-        .catch((error) => {
-          console.error('Telegram alert failed:', error);
-          showNotification('Transaction saved. Check Telegram settings.', 'info');
-        });
-    }
+      if (isNewTransaction && telegramAlertConfig.enabled && telegramAlertConfig.chatId) {
+        const currentSum = calculateSummary(updatedTxs, updatedTxs);
+        const telegramAlert = generateTransactionTelegramAlert(recordedTx, currency, currentSum.currentCashBalance);
+        void sendTelegramAlert({ ...telegramAlert, chatId: telegramAlertConfig.chatId })
+          .then((res) => {
+            if (res.queued) {
+              showNotification('Offline: Telegram alert queued, will send when online.', 'info');
+            } else {
+              showNotification('Telegram alert delivered.', 'success');
+            }
+          })
+          .catch((error) => {
+            console.error('Telegram alert failed:', error);
+          });
+      }
+
+      const webhookUrl = loadStoredWebhookUrl();
+      if (webhookUrl) {
+        const sum = calculateSummary(updatedTxs, updatedTxs);
+        syncViaWebhook(webhookUrl, updatedTxs as any, sum, lendItems).catch(console.warn);
+      }
+    }, 0);
 
     if (activeSheet) {
       queueSheetPush({ transactions: updatedTxs, lendItems });
-    }
-
-    const webhookUrl = loadStoredWebhookUrl();
-    if (webhookUrl) {
-      const sum = calculateSummary(updatedTxs, updatedTxs);
-      syncViaWebhook(webhookUrl, updatedTxs as any, sum, lendItems).catch(console.warn);
     }
   };
 

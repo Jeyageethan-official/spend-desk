@@ -23,11 +23,24 @@ export const generateLendReminderText = (item: LendItem, currency: string = 'Rs'
 };
 
 export const triggerDeviceSms = (phoneNumber: string, bodyText: string) => {
+  if (!phoneNumber) return;
   const cleanPhone = phoneNumber.replace(/[^0-9+]/g, '');
+  if (!cleanPhone) return;
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
   const separator = isIOS ? '&' : '?';
   const url = `sms:${cleanPhone}${separator}body=${encodeURIComponent(bodyText)}`;
   
-  // Try opening native SMS app
-  window.location.href = url;
+  try {
+    const link = document.createElement('a');
+    link.href = url;
+    link.rel = 'noopener noreferrer';
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    setTimeout(() => {
+      try { document.body.removeChild(link); } catch {}
+    }, 100);
+  } catch (e) {
+    console.warn('Could not launch SMS link:', e);
+  }
 };
