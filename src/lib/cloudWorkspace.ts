@@ -1,7 +1,7 @@
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { BudgetConfig, GoogleSheetMeta, LendItem, Transaction } from '../types/finance';
 import { CategoryDef, TelegramAlertConfig, UserProfile } from './storage';
-import { getSupabase } from './supabase';
+import { getSupabase, ensureSupabaseSessionForEmail } from './supabase';
 
 export interface CloudWorkspace {
   version: 1;
@@ -13,6 +13,7 @@ export interface CloudWorkspace {
   alertPhone: string;
   telegramAlertConfig: TelegramAlertConfig;
   activeSheet: GoogleSheetMeta | null;
+  availableSheets?: GoogleSheetMeta[];
   profile: UserProfile;
   currency: string;
 }
@@ -34,7 +35,20 @@ const getCurrentUserId = async (): Promise<string | null> => {
   const { data: { session } } = await getSupabase().auth.getSession();
   if (session?.user?.id) return session.user.id;
   const { data: { user } } = await getSupabase().auth.getUser();
-  return user?.id || null;
+  if (user?.id) return user.id;
+
+  try {
+    const rawUser = localStorage.getItem('money_tracker_user_info') || localStorage.getItem('money_tracker_user');
+    if (rawUser) {
+      const parsed = JSON.parse(rawUser);
+      if (parsed?.email) {
+        const bridgedId = await ensureSupabaseSessionForEmail(parsed.email, parsed.name || parsed.displayName);
+        if (bridgedId) return bridgedId;
+      }
+    }
+  } catch {}
+
+  return null;
 };
 
 export const fetchCloudWorkspace = async (): Promise<CloudWorkspace | null> => {

@@ -339,6 +339,31 @@ export const saveStoredSheetMeta = (meta: GoogleSheetMeta | null, email?: string
   }
 };
 
+const AVAILABLE_SHEETS_KEY = 'money_tracker_available_sheets_v2';
+
+export const loadStoredAvailableSheets = (email?: string | null): GoogleSheetMeta[] => {
+  try {
+    const key = getScopedKey(AVAILABLE_SHEETS_KEY, email);
+    const raw = localStorage.getItem(key);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (e) {
+    console.error('Failed to parse available sheets:', e);
+  }
+  return [];
+};
+
+export const saveStoredAvailableSheets = (sheets: GoogleSheetMeta[], email?: string | null) => {
+  try {
+    const key = getScopedKey(AVAILABLE_SHEETS_KEY, email);
+    localStorage.setItem(key, JSON.stringify(sheets));
+  } catch (e) {
+    console.error('Failed to save available sheets:', e);
+  }
+};
+
 export const mergeGuestDataIntoUser = (
   _userEmail: string
 ): { txCount: number; lendCount: number; mergedTxs: Transaction[]; mergedLends: LendItem[] } => {

@@ -1,29 +1,38 @@
 import { Transaction, SpendingSummary, CategorySummary, LendItem } from '../types/finance';
+import firebaseConfig from '../../firebase-applet-config.json';
+import { getAccessToken, googleSignIn } from './firebaseAuth';
 
-// The earlier client was deleted in Google Cloud and caused `invalid_client`
-// before the account chooser could appear.
-export const GOOGLE_OAUTH_CLIENT_ID = '403491523597-qdt2hjm4qi2nhggb25u1oihvivklq3lh.apps.googleusercontent.com';
+// Use the officially provisioned and authorized OAuth Client ID for this applet
+export const GOOGLE_OAUTH_CLIENT_ID = firebaseConfig.oAuthClientId || '509348493041-ih637992a2lrmh6qdlvch1pkatpn70k0.apps.googleusercontent.com';
 
 export const getGoogleClientId = (): string => {
-  try {
-    const custom = localStorage.getItem('money_tracker_google_client_id');
-    if (custom && (custom.includes('ftqbide3') || custom.includes('403491523597'))) {
-      localStorage.removeItem('money_tracker_google_client_id');
-    }
-  } catch (e) {}
   return GOOGLE_OAUTH_CLIENT_ID;
 };
 
 /**
- * Modern Google Identity Services (GIS) Access Token Request.
- * Obtains a fresh Google OAuth access token with Sheets & Drive scopes.
+ * Single Google OAuth Access Token Request.
+ * Uses official Firebase Google Sign-In with automatic account linking.
  */
-export const requestGoogleAccessToken = (): Promise<string> => {
+export const requestGoogleAccessToken = async (): Promise<string> => {
+  const existing = await getAccessToken();
+  if (existing && existing !== 'local_token' && !existing.startsWith('eyJ') && existing.length > 20) {
+    return existing;
+  }
+
+  try {
+    const res = await googleSignIn();
+    if (res?.accessToken) {
+      return res.accessToken;
+    }
+  } catch (authErr: any) {
+    console.warn('Firebase Google Sign-In attempt completed or dismissed:', authErr);
+  }
+
   return new Promise((resolve, reject) => {
     try {
       const google = (window as any).google;
       if (!google?.accounts?.oauth2) {
-        reject(new Error('Google Identity script loading. Please try again in a moment.'));
+        reject(new Error('Google Identity script is loading. Please try again.'));
         return;
       }
       const clientId = getGoogleClientId();
@@ -49,7 +58,7 @@ export const requestGoogleAccessToken = (): Promise<string> => {
           reject(new Error(nonOAuthError?.message || 'Google Auth dialog closed.'));
         }
       });
-      client.requestAccessToken({ prompt: 'select_account consent' });
+      client.requestAccessToken({ prompt: 'select_account' });
     } catch (e: any) {
       reject(e);
     }
