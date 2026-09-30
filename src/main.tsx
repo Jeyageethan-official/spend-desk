@@ -10,28 +10,20 @@ try {
   localStorage.setItem('spenddesk_theme', 'light');
 } catch {}
 
-// Automatically purge legacy caches and stale storage on app boot
+// Automatically purge legacy unscoped keys on app boot
 try {
-  const PURGE_FLAG = 'spenddesk_cache_purged_v6';
+  const PURGE_FLAG = 'spenddesk_legacy_cleanup_v7';
   if (localStorage.getItem(PURGE_FLAG) !== 'true') {
-    const keysToPurge: string[] = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k && (
-        k.startsWith('money_tracker_transactions') ||
-        k.startsWith('money_tracker_lend') ||
-        k.startsWith('money_tracker_last_offline') ||
-        k.startsWith('spenddesk_pending') ||
-        k.startsWith('spenddesk_sheet') ||
-        k.startsWith('money_tracker_pending') ||
-        k === 'spenddesk_workspace_sync' ||
-        k === 'money_tracker_transactions_v2' ||
-        k === 'money_tracker_lend_items_v2'
-      )) {
-        keysToPurge.push(k);
-      }
-    }
-    keysToPurge.forEach((key) => localStorage.removeItem(key));
+    const legacyKeys = [
+      'money_tracker_transactions_v2',
+      'money_tracker_transactions_v2_guest',
+      'money_tracker_lend_items_v2',
+      'money_tracker_lend_items_v2_guest',
+      'money_tracker_active_sheet_v2',
+      'money_tracker_active_sheet_v2_guest',
+      'spenddesk_workspace_sync',
+    ];
+    legacyKeys.forEach((key) => localStorage.removeItem(key));
     localStorage.setItem(PURGE_FLAG, 'true');
   }
 } catch (e) {}
