@@ -1,31 +1,28 @@
 import { Transaction, SpendingSummary, CategorySummary, LendItem } from '../types/finance';
-import firebaseConfig from '../../firebase-applet-config.json';
-import { getAccessToken, googleSignIn } from './firebaseAuth';
 
 // Use the officially provisioned and authorized OAuth Client ID for this applet
-export const GOOGLE_OAUTH_CLIENT_ID = firebaseConfig.oAuthClientId || '509348493041-ih637992a2lrmh6qdlvch1pkatpn70k0.apps.googleusercontent.com';
+export const GOOGLE_OAUTH_CLIENT_ID = '509348493041-ih637992a2lrmh6qdlvch1pkatpn70k0.apps.googleusercontent.com';
 
 export const getGoogleClientId = (): string => {
   return GOOGLE_OAUTH_CLIENT_ID;
 };
 
+export const getStoredAccessToken = (): string | null => {
+  try {
+    return localStorage.getItem('money_tracker_access_token');
+  } catch {
+    return null;
+  }
+};
+
 /**
  * Single Google OAuth Access Token Request.
- * Uses official Firebase Google Sign-In with automatic account linking.
+ * Checks for existing cached/Supabase provider token or uses Google Identity Services.
  */
 export const requestGoogleAccessToken = async (): Promise<string> => {
-  const existing = await getAccessToken();
+  const existing = getStoredAccessToken();
   if (existing && existing !== 'local_token' && !existing.startsWith('eyJ') && existing.length > 20) {
     return existing;
-  }
-
-  try {
-    const res = await googleSignIn();
-    if (res?.accessToken) {
-      return res.accessToken;
-    }
-  } catch (authErr: any) {
-    console.warn('Firebase Google Sign-In attempt completed or dismissed:', authErr);
   }
 
   return new Promise((resolve, reject) => {

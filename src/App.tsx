@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { 
-  initAuth, 
-  googleSignIn, 
-  logout 
-} from './lib/firebaseAuth';
+  initSupabaseAuth, 
+  signInWithGoogleSupabase, 
+  signOutSupabase 
+} from './lib/supabase';
 import { 
   Transaction, 
   FilterState, 
@@ -190,12 +190,12 @@ export default function App() {
     }, 4000);
   };
 
-  // Auth Initialization
+  // Auth Initialization via Supabase
   useEffect(() => {
-    const unsubscribe = initAuth(
+    const unsubscribe = initSupabaseAuth(
       (authedUser, token) => {
         setUser(authedUser);
-        setAccessToken(token);
+        if (token) setAccessToken(token);
         setOfflineWorkspaceEmail(null);
         try { localStorage.removeItem(LAST_OFFLINE_WORKSPACE_KEY); } catch {}
         if (window.location.hash && window.location.hash.includes('access_token')) {
@@ -208,7 +208,7 @@ export default function App() {
       },
       () => {
         // Only clear if no offline stored user
-        const storedUser = localStorage.getItem('money_tracker_user');
+        const storedUser = localStorage.getItem('money_tracker_user_info') || localStorage.getItem('money_tracker_user');
         if (!storedUser) {
           setUser(null);
           setAccessToken(null);
@@ -666,17 +666,18 @@ export default function App() {
     showNotification(`Deleted ${txIds.length} transactions.`, 'info');
   };
 
-  // Google Login handler via unified OAuth flow with Account Chooser
+  // Google Login handler via Supabase Google OAuth
   const handleSignIn = async () => {
     try {
       showNotification('Opening Google Sign-In...', 'info');
-      const res = await googleSignIn();
-      if (res?.user) {
-        setUser(res.user);
-        if (res.accessToken) {
-          setAccessToken(res.accessToken);
+      const res = await signInWithGoogleSupabase();
+      if (res?.success) {
+        if (res.user) {
+          setUser(res.user);
+          showNotification(`Signed in as ${res.user.name || res.user.email}!`, 'success');
         }
-        showNotification(`Signed in as ${res.user.displayName}! Google Sheets is ready.`, 'success');
+      } else if (res?.errorMessage) {
+        showNotification(`Sign-in notice: ${res.errorMessage}`, 'error');
       }
     } catch (err: any) {
       console.warn('Google Sign-In Exception:', err);
@@ -690,14 +691,14 @@ export default function App() {
   const handleSignOut = async () => {
     const signedOutScope = user?.email || currentUserEmail;
     if (signedOutScope) {
-      // Keep this exact Gmail user's local workspace on this device
+      // Keep this exact user's local workspace on this device
       stageWorkspaceForReplay(transactions, lendItems, signedOutScope);
       setOfflineWorkspaceEmail(signedOutScope);
       try {
         localStorage.setItem(LAST_OFFLINE_WORKSPACE_KEY, signedOutScope);
       } catch {}
     }
-    await logout();
+    await signOutSupabase();
     setUser(null);
     setAccessToken(null);
     try {
