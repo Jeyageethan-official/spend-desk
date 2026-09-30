@@ -2,8 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { 
   initAuth, 
   googleSignIn, 
-  logout,
-  getAccessToken 
+  logout 
 } from './lib/firebaseAuth';
 import { 
   Transaction, 
@@ -19,8 +18,6 @@ import {
   saveStoredTransactions, 
   loadStoredSheetMeta, 
   saveStoredSheetMeta,
-  loadStoredAvailableSheets,
-  saveStoredAvailableSheets,
   loadStoredBudgetConfig,
   saveStoredBudgetConfig,
   loadStoredWebhookUrl,
@@ -140,7 +137,6 @@ export default function App() {
   const initialScope = (user?.email || loadLastOfflineWorkspace() || 'guest').trim().toLowerCase();
   const initialSheet = loadStoredSheetMeta(initialScope);
   const [activeSheet, setActiveSheet] = useState<GoogleSheetMeta | null>(initialSheet);
-  const [availableSheets, setAvailableSheets] = useState<GoogleSheetMeta[]>(() => loadStoredAvailableSheets(initialScope));
   const [transactions, setTransactions] = useState<Transaction[]>(() => {
     return loadStoredTransactions(initialScope);
   });
@@ -186,8 +182,6 @@ export default function App() {
   const cloudVersionRef = useRef(0);
   const cloudSyncTimerRef = useRef<number | null>(null);
   const suppressNextCloudSyncRef = useRef(false);
-  const sheetPushTimerRef = useRef<number | null>(null);
-  const handlePushToSheetRef = useRef<((options?: { silent?: boolean; interactive?: boolean }, snapshot?: { transactions: Transaction[]; lendItems: LendItem[] }) => Promise<boolean>) | null>(null);
 
   const showNotification = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
     setNotification({ message, type });
@@ -386,10 +380,9 @@ export default function App() {
     alertPhone,
     telegramAlertConfig,
     activeSheet,
-    availableSheets,
     profile: userProfile,
     currency,
-  }), [transactions, lendItems, budgetConfig, alertPhone, telegramAlertConfig, activeSheet, availableSheets, userProfile, currency, currentUserEmail]);
+  }), [transactions, lendItems, budgetConfig, alertPhone, telegramAlertConfig, activeSheet, userProfile, currency, currentUserEmail]);
 
   // Signed-out use is treated exactly like offline use. Keep a complete local
   // workspace snapshot current after every transaction/settings change so a
@@ -420,11 +413,6 @@ export default function App() {
       saveSheetLendItems(workspace.activeSheet.id, remoteLends);
     }
 
-    if (Array.isArray(workspace.availableSheets)) {
-      setAvailableSheets(workspace.availableSheets);
-      saveStoredAvailableSheets(workspace.availableSheets, scope);
-    }
-
     if (Array.isArray(workspace.categories) && workspace.categories.length > 0) {
       saveStoredCategoryDefs(workspace.categories, scope);
     }
@@ -452,16 +440,6 @@ export default function App() {
     const nextSheet = workspace.activeSheet ?? null;
     setActiveSheet(nextSheet);
     saveStoredSheetMeta(nextSheet, scope);
-
-    // If an active sheet exists, automatically trigger live sync with incoming cloud updates
-    if (nextSheet?.id) {
-      if (sheetPushTimerRef.current) window.clearTimeout(sheetPushTimerRef.current);
-      sheetPushTimerRef.current = window.setTimeout(() => {
-        if (handlePushToSheetRef.current) {
-          void handlePushToSheetRef.current({ silent: true }, { transactions: remoteTxs, lendItems: remoteLends }).catch(console.warn);
-        }
-      }, 1500);
-    }
 
     const nextProfile = workspace.profile || loadStoredProfile(scope);
     setUserProfile(nextProfile);
@@ -582,24 +560,17 @@ export default function App() {
     markSettingsDirty(currentUserEmail);
     setActiveSheet(meta);
     saveStoredSheetMeta(meta, currentUserEmail);
-    let updatedAvailable = availableSheets;
-    if (meta?.id) {
-      updatedAvailable = [meta, ...availableSheets.filter((s) => s.id !== meta.id)];
-      setAvailableSheets(updatedAvailable);
-      saveStoredAvailableSheets(updatedAvailable, currentUserEmail);
-    }
     // Immediately persist to Supabase cloud workspace so all devices get the sheet update
     if (user?.email) {
       const nextWs = buildCloudWorkspace(Date.now());
       nextWs.activeSheet = meta;
-      nextWs.availableSheets = updatedAvailable;
       void saveCloudWorkspace(nextWs).catch((err) => {
         console.warn('Cloud sync of activeSheet note:', err);
       });
     }
     // If a sheet was connected, immediately push current transactions to populate it live
-    if (meta?.id && handlePushToSheetRef.current) {
-      void handlePushToSheetRef.current({ silent: true }).catch(console.warn);
+    if (meta?.id) {
+      void handlePushToSheet({ silent: true }).catch(console.warn);
     }
   };
 
@@ -690,12 +661,6 @@ export default function App() {
     setTransactions(prev => {
       const updated = prev.filter(t => !txIds.includes(t.id));
       saveStoredTransactions(updated, currentUserEmail);
-      if (activeSheet?.id) {
-        saveSheetTransactions(activeSheet.id, updated);
-      }
-      if (activeSheet) {
-        queueSheetPush({ transactions: updated, lendItems });
-      }
       return updated;
     });
     showNotification(`Deleted ${txIds.length} transactions.`, 'info');
@@ -749,21 +714,21 @@ export default function App() {
     snapshot?: { transactions: Transaction[]; lendItems: LendItem[] }
   ): Promise<boolean> => {
     if (!activeSheet) return false;
-    let sheetToken = accessToken || localStorage.getItem('money_tracker_access_token');
-    if (!sheetToken || sheetToken === 'local_token' || sheetToken.startsWith('eyJ')) {
-      try {
-        const fetched = await getAccessToken();
-        if (fetched) sheetToken = fetched;
-      } catch {}
-    }
-    const hasGoogleSheetsToken = Boolean(sheetToken && sheetToken !== 'local_token' && !sheetToken.startsWith('eyJ') && sheetToken.length > 20);
+    let sheetToken = accessToken;
+    // Supabase's session JWT (`eyJ…`) authenticates SpendDesk cloud sync but
+    // cannot call Google APIs. A Google OAuth token is required separately.
+    const hasGoogleSheetsToken = Boolean(sheetToken && sheetToken !== 'local_token' && !sheetToken.startsWith('eyJ'));
     if (!hasGoogleSheetsToken) {
+      // Safari blocks account-selection popups unless they come directly from
+      // a tap. Background saves stay local and retry after a user taps Push.
       if (!options.interactive) return false;
       try {
         sheetToken = await requestGoogleAccessToken();
         setAccessToken(sheetToken);
       } catch (error: any) {
-        if (!options.silent) showNotification(error?.message || 'Google Sheet permission is required.', 'error');
+        if (!options.silent) {
+          showNotification(error?.message || 'Google Sheet permission is required.', 'error');
+        }
         return false;
       }
     }
@@ -789,8 +754,7 @@ export default function App() {
         ...activeSheet,
         lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
-      setActiveSheet(updatedMeta);
-      saveStoredSheetMeta(updatedMeta, currentUserEmail);
+      handleSetActiveSheet(updatedMeta);
       if (!options.silent) {
         showNotification(`Synced all records to "${activeSheet.name}"!`, 'success');
       }
@@ -819,12 +783,9 @@ export default function App() {
         setIsSyncing(false);
       }
     }
-  }, [activeSheet, accessToken, transactions, lendItems, currentUserEmail]);
+  }, [activeSheet, accessToken, transactions, lendItems]);
 
-  useEffect(() => {
-    handlePushToSheetRef.current = handlePushToSheet;
-  }, [handlePushToSheet]);
-
+  const sheetPushTimerRef = useRef<number | null>(null);
   const queueSheetPush = useCallback((snapshot?: { transactions: Transaction[]; lendItems: LendItem[] }) => {
     if (!activeSheet) return;
     if (sheetPushTimerRef.current) window.clearTimeout(sheetPushTimerRef.current);
@@ -1297,7 +1258,6 @@ export default function App() {
               onBack={() => setActiveTab(sheetsSourceTab || 'settings')}
               accessToken={accessToken}
               activeSheet={activeSheet}
-              availableSheets={availableSheets}
               onSetActiveSheet={handleSetActiveSheet}
               onPushToSheet={() => handlePushToSheet({ silent: false, interactive: true })}
               onPullFromSheet={handleManualPullFromSheet}

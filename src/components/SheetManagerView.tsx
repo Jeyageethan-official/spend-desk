@@ -41,7 +41,6 @@ interface SheetManagerViewProps {
   onBack: () => void;
   accessToken: string | null;
   activeSheet: GoogleSheetMeta | null;
-  availableSheets?: GoogleSheetMeta[];
   onSetActiveSheet: (sheet: GoogleSheetMeta | null) => void;
   onPushToSheet: () => Promise<unknown>;
   onPullFromSheet: (sheetId?: string, token?: string) => Promise<unknown>;
@@ -61,7 +60,6 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
   onBack,
   accessToken,
   activeSheet,
-  availableSheets = [],
   onSetActiveSheet,
   onPushToSheet,
   onPullFromSheet,
@@ -285,37 +283,7 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
     }
   };
 
-  const allKnownSheets = React.useMemo(() => {
-    const map = new Map<string, DriveSpreadsheetItem>();
-    if (Array.isArray(availableSheets)) {
-      availableSheets.forEach((s) => {
-        if (s?.id) {
-          map.set(s.id, {
-            id: s.id,
-            name: s.name,
-            webViewLink: s.url,
-            modifiedTime: s.lastSyncedAt || undefined,
-          });
-        }
-      });
-    }
-    if (activeSheet?.id) {
-      map.set(activeSheet.id, {
-        id: activeSheet.id,
-        name: activeSheet.name,
-        webViewLink: activeSheet.url,
-        modifiedTime: activeSheet.lastSyncedAt || undefined,
-      });
-    }
-    spreadsheets.forEach((s) => {
-      if (s?.id) {
-        map.set(s.id, { ...map.get(s.id), ...s });
-      }
-    });
-    return Array.from(map.values());
-  }, [availableSheets, activeSheet, spreadsheets]);
-
-  const filteredDriveSheets = allKnownSheets.filter((s) =>
+  const filteredDriveSheets = spreadsheets.filter((s) =>
     s.name.toLowerCase().includes(driveSearch.toLowerCase())
   );
   const recentTransactions = [...transactions].sort((a, b) => b.createdAt - a.createdAt).slice(0, 8);
