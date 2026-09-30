@@ -598,6 +598,7 @@ export default function App() {
 
   // Save active sheet metadata
   const handleSetActiveSheet = (meta: GoogleSheetMeta | null) => {
+    const isNewSheet = Boolean(meta?.id && meta.id !== activeSheet?.id);
     markSettingsDirty(currentUserEmail);
     setActiveSheet(meta);
     saveStoredSheetMeta(meta, currentUserEmail);
@@ -609,8 +610,8 @@ export default function App() {
         console.warn('Cloud sync of activeSheet note:', err);
       });
     }
-    // If a sheet was connected, immediately push current transactions to populate it live
-    if (meta?.id) {
+    // Only if a newly different sheet was connected, push current transactions to populate it
+    if (isNewSheet) {
       void handlePushToSheet({ silent: true }).catch(console.warn);
     }
   };
@@ -757,12 +758,17 @@ export default function App() {
     showNotification('Signed out. Local records for this account remain active on this device.', 'info');
   };
 
+  const isPushingToSheetRef = useRef(false);
+
   // Push Data to Connected Google Sheet (Transactions, Lend/Borrow, and Dashboard KPIs) - Silent by default
   const handlePushToSheet = useCallback(async (
     options: { silent?: boolean; interactive?: boolean } = { silent: true },
     snapshot?: { transactions: Transaction[]; lendItems: LendItem[] }
   ): Promise<boolean> => {
     if (!activeSheet) return false;
+    if (isPushingToSheetRef.current) return false;
+    isPushingToSheetRef.current = true;
+
     let sheetToken = accessToken;
     // Supabase's session JWT (`eyJ…`) authenticates SpendDesk cloud sync but
     // cannot call Google APIs. A Google OAuth token is required separately.
@@ -770,17 +776,21 @@ export default function App() {
     if (!hasGoogleSheetsToken) {
       // Safari blocks account-selection popups unless they come directly from
       // a tap. Background saves stay local and retry after a user taps Push.
-      if (!options.interactive) return false;
+      if (!options.interactive) {
+        isPushingToSheetRef.current = false;
+        return false;
+      }
       try {
         sheetToken = await requestGoogleAccessToken();
         setAccessToken(sheetToken);
       } catch (error: any) {
         if (!options.silent) showNotification(error?.message || 'Google Sheet permission is required.', 'error');
+        isPushingToSheetRef.current = false;
         return false;
       }
     }
-    const transactionsToPush = snapshot?.transactions ?? transactions;
-    const lendsToPush = snapshot?.lendItems ?? lendItems;
+    const transactionsToPush = snapshot?.transactions ?? latestStateRef.current.transactions;
+    const lendsToPush = snapshot?.lendItems ?? latestStateRef.current.lendItems;
     if (!options.silent) {
       setIsSyncing(true);
     }
@@ -801,7 +811,10 @@ export default function App() {
         ...activeSheet,
         lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
-      handleSetActiveSheet(updatedMeta);
+      // CRITICAL: Update state and storage directly without re-triggering handleSetActiveSheet push loop
+      setActiveSheet(updatedMeta);
+      saveStoredSheetMeta(updatedMeta, currentUserEmail);
+
       if (!options.silent) {
         showNotification(`Synced all records to "${activeSheet.name}"!`, 'success');
       }
@@ -826,21 +839,26 @@ export default function App() {
       }
       return false;
     } finally {
+      isPushingToSheetRef.current = false;
       if (!options.silent) {
         setIsSyncing(false);
       }
     }
-  }, [activeSheet, accessToken, transactions, lendItems]);
+  }, [activeSheet, accessToken, currentUserEmail]);
 
   const sheetPushTimerRef = useRef<number | null>(null);
   const queueSheetPush = useCallback((snapshot?: { transactions: Transaction[]; lendItems: LendItem[] }) => {
     if (!activeSheet) return;
     if (sheetPushTimerRef.current) window.clearTimeout(sheetPushTimerRef.current);
+    const currentSnapshot = snapshot || {
+      transactions: latestStateRef.current.transactions,
+      lendItems: latestStateRef.current.lendItems,
+    };
     sheetPushTimerRef.current = window.setTimeout(() => {
-      void handlePushToSheet({ silent: true }, snapshot).catch((err) => {
+      void handlePushToSheet({ silent: true }, currentSnapshot).catch((err) => {
         console.warn('Background sheet push note:', err);
       });
-    }, 1200);
+    }, 1000);
   }, [activeSheet, handlePushToSheet]);
 
   // A sign-out workspace gets priority on the next login: after local/offline
