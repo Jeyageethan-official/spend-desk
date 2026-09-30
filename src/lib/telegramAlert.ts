@@ -22,7 +22,6 @@ export const generateTransactionTelegramAlert = (
   const noteStr = tx.notes?.trim() ? ` (${tx.notes.trim()})` : '';
 
   const messageLines = [
-    `[SpendDesk Alert]`,
     `${typeText}: ${formattedAmt}${noteStr}`,
     `on ${tx.date} at ${timeStr}.`,
   ];
@@ -33,7 +32,7 @@ export const generateTransactionTelegramAlert = (
 
   return {
     chatId: '',
-    title: 'SpendDesk Alert',
+    title: '[SpendDesk Alert]',
     message: messageLines.join('\n'),
   };
 };

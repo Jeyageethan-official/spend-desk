@@ -491,7 +491,7 @@ export default function App() {
   }, [user?.email, cloudSyncReady, buildCloudWorkspace]);
 
   useEffect(() => {
-    if (!user?.email || !accessToken || !isOnline) {
+    if (!user?.email || !isOnline) {
       setCloudSyncReady(false);
       return;
     }
@@ -550,12 +550,30 @@ export default function App() {
         console.error('Cloud workspace initialization failed:', error);
       }
     })();
+
+    const handleVisibilityOrFocus = async () => {
+      if (document.visibilityState === 'visible' && user?.email && isOnline) {
+        try {
+          const remoteWorkspace = await fetchCloudWorkspace();
+          if (remoteWorkspace && remoteWorkspace.updatedAt > cloudVersionRef.current) {
+            applyCloudWorkspace(remoteWorkspace);
+          }
+        } catch (err) {
+          console.warn('Tab focus sync check error:', err);
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    window.addEventListener('focus', handleVisibilityOrFocus);
+
     return () => {
       active = false;
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
       if (cloudSyncTimerRef.current) window.clearTimeout(cloudSyncTimerRef.current);
       unsubscribeFromCloudWorkspace(channel);
     };
-  }, [user?.email, accessToken, isOnline, isPendingSignedOutReplay, applyCloudWorkspace, buildCloudWorkspace, currentUserEmail]);
+  }, [user?.email, isOnline, isPendingSignedOutReplay, applyCloudWorkspace, buildCloudWorkspace, currentUserEmail]);
 
   useEffect(() => {
     if (!user?.email || !cloudSyncReady) return;
@@ -575,8 +593,8 @@ export default function App() {
     const balFormatted = formatCurrency(overallSummary.currentCashBalance, currency);
     await sendTelegramAlert({
       chatId: chatId.trim(),
-      title: 'SpendDesk Alert',
-      message: `[SpendDesk Alert]\nCash Added to Wallet: ${currency} 500.00\non ${today} at ${sampleTime}.\nCurrent Balance: ${balFormatted}.`,
+      title: '[SpendDesk Alert]',
+      message: `Cash Added to Wallet: ${currency} 500.00\non ${today} at ${sampleTime}.\nCurrent Balance: ${balFormatted}.`,
     });
   };
 
@@ -772,7 +790,9 @@ export default function App() {
     }
     const transactionsToPush = snapshot?.transactions ?? transactions;
     const lendsToPush = snapshot?.lendItems ?? lendItems;
-    setIsSyncing(true);
+    if (!options.silent) {
+      setIsSyncing(true);
+    }
     try {
       // 1. Push Transactions & Lend side-by-side to Transactions sheet
       await overwriteTransactionsInSheet(sheetToken, activeSheet.id, transactionsToPush);
@@ -815,9 +835,22 @@ export default function App() {
       }
       return false;
     } finally {
-      setIsSyncing(false);
+      if (!options.silent) {
+        setIsSyncing(false);
+      }
     }
   }, [activeSheet, accessToken, transactions, lendItems]);
+
+  const sheetPushTimerRef = useRef<number | null>(null);
+  const queueSheetPush = useCallback((snapshot?: { transactions: Transaction[]; lendItems: LendItem[] }) => {
+    if (!activeSheet) return;
+    if (sheetPushTimerRef.current) window.clearTimeout(sheetPushTimerRef.current);
+    sheetPushTimerRef.current = window.setTimeout(() => {
+      void handlePushToSheet({ silent: true }, snapshot).catch((err) => {
+        console.warn('Background sheet push note:', err);
+      });
+    }, 1200);
+  }, [activeSheet, handlePushToSheet]);
 
   // A sign-out workspace gets priority on the next login: after local/offline
   // data has been reconciled, overwrite the linked Google Sheet once. The
@@ -883,7 +916,7 @@ export default function App() {
     }
 
     if (activeSheet) {
-      void handlePushToSheet({ silent: true }, { transactions: updatedTxs, lendItems }).catch(console.error);
+      queueSheetPush({ transactions: updatedTxs, lendItems });
     }
 
     const webhookUrl = loadStoredWebhookUrl();
@@ -908,9 +941,7 @@ export default function App() {
     showNotification('Transaction deleted.', 'info');
 
     if (activeSheet) {
-      setTimeout(() => {
-        handlePushToSheet({ silent: true }, { transactions: remaining, lendItems }).catch(console.error);
-      }, 500);
+      queueSheetPush({ transactions: remaining, lendItems });
     }
 
     const webhookUrl = loadStoredWebhookUrl();
@@ -934,7 +965,7 @@ export default function App() {
     showNotification(`${data.type === 'lent' ? 'Money Lent' : 'Money Borrowed'} saved.`, 'success');
 
     if (activeSheet) {
-      void handlePushToSheet({ silent: true }, { transactions, lendItems: updated }).catch(console.error);
+      queueSheetPush({ transactions, lendItems: updated });
     }
     const webhookUrl = loadStoredWebhookUrl();
     if (webhookUrl) {
@@ -962,7 +993,7 @@ export default function App() {
     showNotification('Status updated.', 'info');
 
     if (activeSheet) {
-      void handlePushToSheet({ silent: true }, { transactions, lendItems: updated }).catch(console.error);
+      queueSheetPush({ transactions, lendItems: updated });
     }
     const webhookUrl = loadStoredWebhookUrl();
     if (webhookUrl) {
@@ -979,7 +1010,7 @@ export default function App() {
     showNotification('Record deleted.', 'info');
 
     if (activeSheet) {
-      void handlePushToSheet({ silent: true }, { transactions, lendItems: updated }).catch(console.error);
+      queueSheetPush({ transactions, lendItems: updated });
     }
     const webhookUrl = loadStoredWebhookUrl();
     if (webhookUrl) {
