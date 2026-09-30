@@ -726,9 +726,7 @@ export default function App() {
         sheetToken = await requestGoogleAccessToken();
         setAccessToken(sheetToken);
       } catch (error: any) {
-        if (!options.silent) {
-          showNotification(error?.message || 'Google Sheet permission is required.', 'error');
-        }
+        if (!options.silent) showNotification(error?.message || 'Google Sheet permission is required.', 'error');
         return false;
       }
     }
