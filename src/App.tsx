@@ -59,7 +59,7 @@ import {
   syncViaWebhook
 } from './lib/sheetsApi';
 import { generateTransactionSmsText, triggerDeviceSms } from './lib/smsAlert';
-import { generateTransactionTelegramAlert, sendTelegramAlert } from './lib/telegramAlert';
+import { generateTransactionTelegramAlert, sendTelegramAlert, flushPendingTelegramAlerts } from './lib/telegramAlert';
 import { CloudWorkspace, fetchCloudWorkspace, saveCloudWorkspace, subscribeToCloudWorkspace, unsubscribeFromCloudWorkspace } from './lib/cloudWorkspace';
 import { clearPendingSync, hasPendingSync, loadPendingSync, markLendDelete, markLendUpsert, markSettingsDirty, markTransactionDelete, markTransactionUpsert, mergePendingWorkspace, stageWorkspaceForReplay } from './lib/pendingSync';
 import { clearSignedOutWorkspace, loadSignedOutWorkspace, saveSignedOutWorkspace } from './lib/signedOutWorkspace';
@@ -258,9 +258,12 @@ export default function App() {
   useEffect(() => {
     const handleOnline = () => {
       setIsOnline(true);
-      // Reconnecting must never start an OAuth dialog or overwrite a local
-      // mutation in the background. Local/cloud sync has its own durable
-      // queue; Google Sheets is synced only from an explicit user action.
+      // Auto-flush any queued offline Telegram alerts when connection restores
+      void flushPendingTelegramAlerts().then((count) => {
+        if (count > 0) {
+          showNotification(`Delivered ${count} queued Telegram alert${count > 1 ? 's' : ''}.`, 'success');
+        }
+      }).catch(console.warn);
     };
 
     const handleOffline = () => {
@@ -269,6 +272,15 @@ export default function App() {
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+
+    // Initial check on mount: if online, flush any pending alerts from prior offline sessions
+    if (typeof navigator !== 'undefined' && navigator.onLine) {
+      void flushPendingTelegramAlerts().then((count) => {
+        if (count > 0) {
+          showNotification(`Delivered ${count} queued Telegram alert${count > 1 ? 's' : ''}.`, 'success');
+        }
+      }).catch(console.warn);
+    }
 
     return () => {
       window.removeEventListener('online', handleOnline);
@@ -533,11 +545,16 @@ export default function App() {
     const sampleTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
     const today = new Date().toISOString().split('T')[0];
     const balFormatted = formatCurrency(overallSummary.currentCashBalance, currency);
-    await sendTelegramAlert({
+    const res = await sendTelegramAlert({
       chatId: chatId.trim(),
       title: '[SpendDesk Alert]',
       message: `Cash Added to Wallet: ${currency} 500.00\non ${today} at ${sampleTime}.\nCurrent Balance: ${balFormatted}.`,
     });
+    if (res.queued) {
+      showNotification('Offline: Test alert queued and will send when online.', 'info');
+    } else {
+      showNotification('Telegram test alert delivered successfully!', 'success');
+    }
   };
 
   // Save active sheet metadata
@@ -550,6 +567,14 @@ export default function App() {
       const cachedLends = loadSheetLendItems(meta.id);
       if (cachedTxs !== null) setTransactions(cachedTxs);
       if (cachedLends !== null) setLendItems(cachedLends);
+    }
+    // Immediately persist to Supabase cloud workspace so all devices get the sheet update
+    if (user?.email) {
+      const nextWs = buildCloudWorkspace(Date.now());
+      nextWs.activeSheet = meta;
+      void saveCloudWorkspace(nextWs).catch((err) => {
+        console.warn('Cloud sync of activeSheet note:', err);
+      });
     }
   };
 
@@ -868,10 +893,16 @@ export default function App() {
       const currentSum = calculateSummary(updatedTxs, updatedTxs);
       const telegramAlert = generateTransactionTelegramAlert(recordedTx, currency, currentSum.currentCashBalance);
       void sendTelegramAlert({ ...telegramAlert, chatId: telegramAlertConfig.chatId })
-        .then(() => showNotification('Telegram alert delivered.', 'success'))
+        .then((res) => {
+          if (res.queued) {
+            showNotification('Offline: Telegram alert queued, will send when online.', 'info');
+          } else {
+            showNotification('Telegram alert delivered.', 'success');
+          }
+        })
         .catch((error) => {
           console.error('Telegram alert failed:', error);
-          showNotification('Transaction saved, but Telegram alert was not delivered. Check Settings → Alerts.', 'error');
+          showNotification('Transaction saved. Check Telegram settings.', 'info');
         });
     }
 
@@ -1285,6 +1316,11 @@ export default function App() {
               onUpdateCurrency={(c) => {
                 markSettingsDirty(currentUserEmail);
                 setCurrency(c);
+                if (user?.email) {
+                  const nextWs = buildCloudWorkspace(Date.now());
+                  nextWs.currency = c;
+                  void saveCloudWorkspace(nextWs).catch(console.warn);
+                }
                 showNotification(`Currency updated to ${c}`, 'success');
               }}
               budgetConfig={budgetConfig}

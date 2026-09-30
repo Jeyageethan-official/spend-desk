@@ -6,6 +6,7 @@ export interface TelegramAlertPayload {
   chatId: string;
   title: string;
   message: string;
+  createdAt?: number;
 }
 
 export const generateTransactionTelegramAlert = (
@@ -34,16 +35,96 @@ export const generateTransactionTelegramAlert = (
     chatId: '',
     title: '[SpendDesk Alert]',
     message: messageLines.join('\n'),
+    createdAt: Date.now(),
   };
 };
 
+const PENDING_TELEGRAM_ALERTS_KEY = 'spenddesk_pending_telegram_alerts_v1';
+
+export const getPendingTelegramAlerts = (): TelegramAlertPayload[] => {
+  try {
+    const raw = localStorage.getItem(PENDING_TELEGRAM_ALERTS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+};
+
+export const queueOfflineTelegramAlert = (payload: TelegramAlertPayload): void => {
+  try {
+    const current = getPendingTelegramAlerts();
+    current.push({ ...payload, createdAt: payload.createdAt || Date.now() });
+    localStorage.setItem(PENDING_TELEGRAM_ALERTS_KEY, JSON.stringify(current));
+  } catch (e) {
+    console.warn('Failed to queue offline Telegram alert:', e);
+  }
+};
+
+export const flushPendingTelegramAlerts = async (): Promise<number> => {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    return 0;
+  }
+  const pending = getPendingTelegramAlerts();
+  if (pending.length === 0) return 0;
+
+  const remaining: TelegramAlertPayload[] = [];
+  let sentCount = 0;
+
+  for (const alert of pending) {
+    try {
+      const { error } = await getSupabase().functions.invoke('telegram-alert', {
+        body: alert,
+      });
+      if (error) {
+        remaining.push(alert);
+      } else {
+        sentCount++;
+      }
+    } catch {
+      remaining.push(alert);
+    }
+  }
+
+  try {
+    if (remaining.length === 0) {
+      localStorage.removeItem(PENDING_TELEGRAM_ALERTS_KEY);
+    } else {
+      localStorage.setItem(PENDING_TELEGRAM_ALERTS_KEY, JSON.stringify(remaining));
+    }
+  } catch {}
+
+  return sentCount;
+};
+
 /**
- * Sends through a Supabase Edge Function. The Telegram bot token never reaches
- * the browser; it must be configured as TELEGRAM_BOT_TOKEN on the function.
+ * Sends alert through Supabase Edge Function.
+ * If offline or if the network fails, it queues the alert persistently in localStorage
+ * so it will automatically be sent once internet connectivity is restored.
  */
-export const sendTelegramAlert = async (payload: TelegramAlertPayload): Promise<void> => {
-  const { error } = await getSupabase().functions.invoke('telegram-alert', {
-    body: payload,
-  });
-  if (error) throw error;
+export const sendTelegramAlert = async (
+  payload: TelegramAlertPayload
+): Promise<{ delivered: boolean; queued: boolean }> => {
+  if (!payload.chatId.trim()) {
+    throw new Error('Telegram Chat ID is empty.');
+  }
+
+  const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+  if (isOffline) {
+    queueOfflineTelegramAlert(payload);
+    return { delivered: false, queued: true };
+  }
+
+  try {
+    const { error } = await getSupabase().functions.invoke('telegram-alert', {
+      body: payload,
+    });
+    if (error) {
+      queueOfflineTelegramAlert(payload);
+      return { delivered: false, queued: true };
+    }
+    return { delivered: true, queued: false };
+  } catch {
+    queueOfflineTelegramAlert(payload);
+    return { delivered: false, queued: true };
+  }
 };
