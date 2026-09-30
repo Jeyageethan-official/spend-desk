@@ -134,22 +134,28 @@ export default function App() {
   const [sheetsSourceTab, setSheetsSourceTab] = useState<AppTab>('settings');
 
   // Transactions, Debt & Config State
-  const initialScope = (user?.email || loadLastOfflineWorkspace() || 'guest').trim().toLowerCase();
-  const initialSheet = loadStoredSheetMeta(initialScope);
+  const initialScope = user?.email ? user.email.trim().toLowerCase() : null;
+  const initialSheet = initialScope ? loadStoredSheetMeta(initialScope) : null;
   const [activeSheet, setActiveSheet] = useState<GoogleSheetMeta | null>(initialSheet);
   const [transactions, setTransactions] = useState<Transaction[]>(() => {
-    if (initialSheet?.id) {
-      const sheetTxs = loadSheetTransactions(initialSheet.id);
-      if (sheetTxs !== null) return sheetTxs;
+    if (initialScope) {
+      if (initialSheet?.id) {
+        const sheetTxs = loadSheetTransactions(initialSheet.id);
+        if (sheetTxs !== null) return sheetTxs;
+      }
+      return loadStoredTransactions(initialScope);
     }
-    return loadStoredTransactions(initialScope);
+    return [];
   });
   const [lendItems, setLendItems] = useState<LendItem[]>(() => {
-    if (initialSheet?.id) {
-      const sheetLends = loadSheetLendItems(initialSheet.id);
-      if (sheetLends !== null) return sheetLends;
+    if (initialScope) {
+      if (initialSheet?.id) {
+        const sheetLends = loadSheetLendItems(initialSheet.id);
+        if (sheetLends !== null) return sheetLends;
+      }
+      return loadStoredLendItems(initialScope);
     }
-    return loadStoredLendItems(initialScope);
+    return [];
   });
   const [alertPhone, setAlertPhone] = useState<string>(() => loadStoredAlertPhone(initialScope));
   const [telegramAlertConfig, setTelegramAlertConfig] = useState<TelegramAlertConfig>(() => loadStoredTelegramAlertConfig(initialScope));
@@ -493,50 +499,18 @@ export default function App() {
       setCloudSyncReady(false);
       return;
     }
-    // Signed-out local edits have higher priority than any remote pull. They
-    // must reach the linked Sheet first; otherwise a stale pull can erase them.
-    if (isPendingSignedOutReplay) {
-      setCloudSyncReady(false);
-      return;
-    }
     let active = true;
     let channel: Awaited<ReturnType<typeof subscribeToCloudWorkspace>> = null;
     void (async () => {
       try {
-        const signedOutSnapshot = loadSignedOutWorkspace(user.email);
-        if (signedOutSnapshot) {
-          // Highest-priority restore: this device's signed-out final state wins
-          // over a stale cloud read. It is then saved to cloud and Sheet.
-          const restored = { ...signedOutSnapshot, updatedAt: Date.now() };
-          applyCloudWorkspace(restored);
-          await saveCloudWorkspace(restored);
-          setCloudSyncReady(true);
-          channel = await subscribeToCloudWorkspace((workspace) => {
-            if (workspace.updatedAt > cloudVersionRef.current) applyCloudWorkspace(workspace);
-          });
-          return;
-        }
         const remoteWorkspace = await fetchCloudWorkspace();
         if (!active) return;
-        const hasPending = hasPendingSync(currentUserEmail);
-        if (remoteWorkspace && hasPending) {
-          // Reconnect/sign-in path: remote is pulled first, then only the
-          // durable offline operations are replayed before one fast push.
-          const merged = mergePendingWorkspace(
-            remoteWorkspace,
-            buildCloudWorkspace(Date.now()),
-            loadPendingSync(currentUserEmail),
-            Math.max(Date.now(), remoteWorkspace.updatedAt + 1)
-          );
-          applyCloudWorkspace(merged);
-          await saveCloudWorkspace(merged);
-          clearPendingSync(currentUserEmail);
-        } else if (remoteWorkspace) {
+        if (remoteWorkspace) {
           applyCloudWorkspace(remoteWorkspace);
-        } else if (hasPending) {
-          const local = buildCloudWorkspace(Date.now());
-          await saveCloudWorkspace(local);
-          clearPendingSync(currentUserEmail);
+        } else {
+          // Fresh user account on Supabase: start 100% clean
+          setTransactions([]);
+          setLendItems([]);
         }
         setCloudSyncReady(true);
         channel = await subscribeToCloudWorkspace((workspace) => {
@@ -756,37 +730,21 @@ export default function App() {
   };
 
   const handleSignOut = async () => {
-    // Never write the in-memory state during sign-out. A user can sign out just
-    // after saving a record, before React has committed that state update. Each
-    // mutation is persisted immediately, so this avoids replacing a new Gmail
-    // record with an older in-memory snapshot.
-    // Keep this exact Gmail scope as the signed-out, local-only workspace.
-    // Its records were already synchronously written on every mutation.
-    const signedOutScope = currentUserEmail;
-    if (signedOutScope) {
-      // Make every current record and setting durable for the next login.
-      // This is deliberately local-only and does not sign out other devices.
-      stageWorkspaceForReplay(transactions, lendItems, signedOutScope);
-      saveSignedOutWorkspace(signedOutScope, buildCloudWorkspace(Date.now()));
-      setOfflineWorkspaceEmail(signedOutScope);
-      try {
-        localStorage.setItem(LAST_OFFLINE_WORKSPACE_KEY, signedOutScope);
-        // Re-login must push this device's local ledger to the linked Sheet
-        // before normal background sync takes over.
-        localStorage.setItem(PENDING_SHEET_PUSH_KEY, signedOutScope);
-        setPendingSheetPushEmail(signedOutScope.trim().toLowerCase());
-      } catch {}
-    }
-
     await logout();
     setUser(null);
     setAccessToken(null);
+    setOfflineWorkspaceEmail(null);
+    setTransactions([]);
+    setLendItems([]);
+    setActiveSheet(null);
     try {
       localStorage.removeItem('money_tracker_user');
       localStorage.removeItem('money_tracker_user_info');
       localStorage.removeItem('money_tracker_access_token');
+      localStorage.removeItem(LAST_OFFLINE_WORKSPACE_KEY);
+      localStorage.removeItem(PENDING_SHEET_PUSH_KEY);
     } catch (e) {}
-    showNotification('Signed out. Your local records remain available on this device.', 'info');
+    showNotification('Signed out. Local session cleared.', 'info');
   };
 
   // Push Data to Connected Google Sheet (Transactions, Lend/Borrow, and Dashboard KPIs) - Silent by default
@@ -1381,7 +1339,28 @@ export default function App() {
               onResetAllData={() => {
                 setTransactions([]);
                 setLendItems([]);
-                showNotification('All local transaction records cleared.', 'info');
+                saveStoredTransactions([], currentUserEmail);
+                saveStoredLendItems([], currentUserEmail);
+                if (activeSheet?.id) {
+                  saveSheetTransactions(activeSheet.id, []);
+                  saveSheetLendItems(activeSheet.id, []);
+                }
+                if (user?.email) {
+                  void saveCloudWorkspace({
+                    version: 1,
+                    updatedAt: Date.now(),
+                    transactions: [],
+                    lendItems: [],
+                    categories: loadStoredCategoryDefs(currentUserEmail),
+                    budgetConfig,
+                    alertPhone,
+                    telegramAlertConfig,
+                    activeSheet,
+                    profile: userProfile,
+                    currency,
+                  }).catch(console.warn);
+                }
+                showNotification('All records cleared successfully from device & cloud.', 'info');
               }}
               onRestoreTransactions={() => {
                 setTransactions(loadStoredTransactions(currentUserEmail));

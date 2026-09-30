@@ -10,24 +10,43 @@ try {
   localStorage.setItem('spenddesk_theme', 'light');
 } catch {}
 
-// Remove legacy offline caches. They were serving stale UI bundles after deploys.
+// Automatically purge legacy caches and stale storage on app boot
 try {
-  if (typeof window !== 'undefined' && 'serviceWorker' in navigator && import.meta.env.PROD) {
-    window.addEventListener('load', () => {
-      try {
-        if (typeof caches !== 'undefined' && caches.keys) {
-          caches.keys().then((keys) => Promise.all(keys.map((key) => caches.delete(key)))).catch(() => {});
-        }
-        navigator.serviceWorker?.getRegistrations?.().then((registrations) =>
-          Promise.all(registrations.map(async (registration) => {
-            try { await registration.update(); } catch {}
-            return registration.unregister();
-          }))
-        ).catch(() => {});
-      } catch {}
-    });
+  const PURGE_FLAG = 'spenddesk_cache_purged_v6';
+  if (localStorage.getItem(PURGE_FLAG) !== 'true') {
+    const keysToPurge: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && (
+        k.startsWith('money_tracker_transactions') ||
+        k.startsWith('money_tracker_lend') ||
+        k.startsWith('money_tracker_last_offline') ||
+        k.startsWith('spenddesk_pending') ||
+        k.startsWith('spenddesk_sheet') ||
+        k.startsWith('money_tracker_pending') ||
+        k === 'spenddesk_workspace_sync' ||
+        k === 'money_tracker_transactions_v2' ||
+        k === 'money_tracker_lend_items_v2'
+      )) {
+        keysToPurge.push(k);
+      }
+    }
+    keysToPurge.forEach((key) => localStorage.removeItem(key));
+    localStorage.setItem(PURGE_FLAG, 'true');
   }
-} catch {}
+} catch (e) {}
+
+// Remove all legacy service workers and CacheStorage to guarantee fresh bundles
+try {
+  if (typeof caches !== 'undefined' && caches.keys) {
+    caches.keys().then((keys) => Promise.all(keys.map((key) => caches.delete(key)))).catch(() => {});
+  }
+  if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistrations?.().then((registrations) =>
+      Promise.all(registrations.map((r) => r.unregister()))
+    ).catch(() => {});
+  }
+} catch (e) {}
 
 // Block touch pinch zoom and gesture zooming on iOS Safari / Mobile browsers
 document.addEventListener('gesturestart', (e) => e.preventDefault());
