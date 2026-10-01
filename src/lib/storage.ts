@@ -1,6 +1,8 @@
 import { Transaction, GoogleSheetMeta, BudgetConfig, LendItem } from '../types/finance';
 
 const TX_STORAGE_KEY = 'money_tracker_transactions_v2';
+const DELETED_TX_IDS_KEY = 'spenddesk_deleted_tx_ids_v1';
+const LAST_USER_EMAIL_KEY = 'spenddesk_last_user_email_v1';
 const SHEET_META_KEY = 'money_tracker_active_sheet_v2';
 const BUDGET_CONFIG_KEY = 'money_tracker_budget_config_v2';
 const WEBHOOK_URL_KEY = 'money_tracker_webhook_url_v2';
@@ -239,6 +241,67 @@ export const saveStoredTransactions = (transactions: Transaction[], email?: stri
   } catch (e) {
     console.error('Failed to store transactions:', e);
   }
+};
+
+export const saveLastUserEmail = (email?: string | null) => {
+  try {
+    if (email && email.trim() && email !== 'guest') {
+      localStorage.setItem(LAST_USER_EMAIL_KEY, email.trim().toLowerCase());
+    }
+  } catch {}
+};
+
+export const loadLastUserEmail = (): string | null => {
+  try {
+    const email = localStorage.getItem(LAST_USER_EMAIL_KEY);
+    return email && email.trim() ? email.trim().toLowerCase() : null;
+  } catch {
+    return null;
+  }
+};
+
+export const loadDeletedTxIds = (email?: string | null): Set<string> => {
+  try {
+    const key = getScopedKey(DELETED_TX_IDS_KEY, email);
+    const raw = localStorage.getItem(key);
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) return new Set(arr);
+    }
+  } catch {}
+  return new Set();
+};
+
+export const markTxIdDeleted = (id: string, email?: string | null) => {
+  if (!id) return;
+  try {
+    const key = getScopedKey(DELETED_TX_IDS_KEY, email);
+    const set = loadDeletedTxIds(email);
+    set.add(id);
+    localStorage.setItem(key, JSON.stringify(Array.from(set)));
+  } catch {}
+};
+
+export const markTxIdsDeleted = (ids: string[], email?: string | null) => {
+  if (!ids || ids.length === 0) return;
+  try {
+    const key = getScopedKey(DELETED_TX_IDS_KEY, email);
+    const set = loadDeletedTxIds(email);
+    ids.forEach((id) => set.add(id));
+    localStorage.setItem(key, JSON.stringify(Array.from(set)));
+  } catch {}
+};
+
+export const unmarkTxIdDeleted = (id: string, email?: string | null) => {
+  if (!id) return;
+  try {
+    const key = getScopedKey(DELETED_TX_IDS_KEY, email);
+    const set = loadDeletedTxIds(email);
+    if (set.has(id)) {
+      set.delete(id);
+      localStorage.setItem(key, JSON.stringify(Array.from(set)));
+    }
+  } catch {}
 };
 
 export const loadStoredLendItems = (email?: string | null): LendItem[] => {

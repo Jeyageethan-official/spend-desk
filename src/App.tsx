@@ -45,7 +45,13 @@ import {
   saveSheetLendItems,
   loadSheetLendItems,
   clearSheetCache,
-  saveKnownSpreadsheet
+  saveKnownSpreadsheet,
+  loadDeletedTxIds,
+  markTxIdDeleted,
+  markTxIdsDeleted,
+  unmarkTxIdDeleted,
+  saveLastUserEmail,
+  loadLastUserEmail
 } from './lib/storage';
 import { 
   calculateSummary, 
@@ -53,7 +59,8 @@ import {
   calculateWeeklyDailyTrend, 
   filterTransactions,
   formatCurrency,
-  sanitizeTransactions
+  sanitizeTransactions,
+  getLocalDateString
 } from './lib/calculations';
 import { 
   syncDashboardStats, 
@@ -83,7 +90,6 @@ import { SmsParserModal } from './components/SmsParserModal';
 import { AuthHelpModal } from './components/AuthHelpModal';
 import { AdjustBalanceModal } from './components/AdjustBalanceModal';
 import { BottomNav } from './components/BottomNav';
-import { LendBorrowView } from './components/LendBorrowView';
 import { AnalyticsView } from './components/AnalyticsView';
 import { SettingsView } from './components/SettingsView';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -111,7 +117,9 @@ const loadPendingSheetPushEmail = (): string | null => {
 const loadLastOfflineWorkspace = (): string | null => {
   try {
     const stored = localStorage.getItem(LAST_OFFLINE_WORKSPACE_KEY)?.trim().toLowerCase();
-    return stored || null;
+    if (stored) return stored;
+    const lastUser = loadLastUserEmail();
+    return lastUser || null;
   } catch {
     return null;
   }
@@ -173,7 +181,6 @@ export default function App() {
   // Modal & View States
   const [isTxModalOpen, setIsTxModalOpen] = useState(false);
   const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
-  const [isLendModalOpen, setIsLendModalOpen] = useState(false);
   const [modalDefaultType, setModalDefaultType] = useState<TransactionType>('cash_expense');
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [isSmsModalOpen, setIsSmsModalOpen] = useState(false);
@@ -206,14 +213,18 @@ export default function App() {
     // 1. Listen for Google Workspace Auth
     const unsubWorkspace = initWorkspaceAuth(
       (wsUser, token) => {
+        const email = wsUser.email ? wsUser.email.trim().toLowerCase() : '';
         setUser({
           displayName: wsUser.name,
           email: wsUser.email,
           photoURL: wsUser.picture,
         });
         if (token) setAccessToken(token);
-        setOfflineWorkspaceEmail(null);
-        try { localStorage.removeItem(LAST_OFFLINE_WORKSPACE_KEY); } catch {}
+        if (email) {
+          saveLastUserEmail(email);
+          mergeGuestDataIntoUser(email);
+          setOfflineWorkspaceEmail(email);
+        }
       },
       () => {
         // Workspace not signed in
@@ -223,14 +234,17 @@ export default function App() {
     // 2. Listen for Supabase session if present
     const unsubSupabase = initSupabaseAuth(
       (authedUser, token) => {
+        const email = authedUser.email ? authedUser.email.trim().toLowerCase() : '';
         setUser((prev) => prev || authedUser);
         if (token && (!accessToken || accessToken === 'local_token')) setAccessToken(token);
-        setOfflineWorkspaceEmail(null);
-        try { localStorage.removeItem(LAST_OFFLINE_WORKSPACE_KEY); } catch {}
+        if (email) {
+          saveLastUserEmail(email);
+          mergeGuestDataIntoUser(email);
+          setOfflineWorkspaceEmail(email);
+        }
       },
       () => {
-        setUser(null);
-        setAccessToken(null);
+        // Supabase signed out
       }
     );
 
@@ -353,10 +367,13 @@ export default function App() {
     const storedSheet = loadStoredSheetMeta(scope);
     setActiveSheet(storedSheet);
 
-    const initialTxs = loadStoredTransactions(scope);
+    const rawTxs = loadStoredTransactions(scope);
+    const deletedIds = loadDeletedTxIds(scope);
+    const initialTxs = sanitizeTransactions(rawTxs.filter((t) => !deletedIds.has(t.id)));
     const initialLends = loadStoredLendItems(scope);
 
     setTransactions(initialTxs);
+    latestStateRef.current.transactions = initialTxs;
     setLendItems(initialLends);
 
     setAlertPhone(loadStoredAlertPhone(scope));
@@ -489,10 +506,21 @@ export default function App() {
     const remoteTxs = sanitizeTransactions(Array.isArray(workspace.transactions) ? workspace.transactions : []);
     const remoteLends = Array.isArray(workspace.lendItems) ? workspace.lendItems : [];
 
-    setTransactions(remoteTxs);
-    saveStoredTransactions(remoteTxs, scope);
+    const deletedIds = loadDeletedTxIds(scope);
+    const filteredRemoteTxs = remoteTxs.filter((t) => !deletedIds.has(t.id));
+
+    // Never let an empty remote cloud wipe local transactions
+    const currentLocalTxs = loadStoredTransactions(scope);
+    if (filteredRemoteTxs.length === 0 && currentLocalTxs.length > 0) {
+      void saveCloudWorkspace(getLatestWorkspace(Date.now() + 100)).catch(console.warn);
+      return;
+    }
+
+    setTransactions(filteredRemoteTxs);
+    latestStateRef.current.transactions = filteredRemoteTxs;
+    saveStoredTransactions(filteredRemoteTxs, scope);
     if (workspace.activeSheet?.id) {
-      saveSheetTransactions(workspace.activeSheet.id, remoteTxs);
+      saveSheetTransactions(workspace.activeSheet.id, filteredRemoteTxs);
     }
 
     setLendItems(remoteLends);
@@ -704,16 +732,29 @@ export default function App() {
     }
     setIsSyncing(true);
     try {
-      const remoteTxs = await fetchAllTransactionsFromSheet(token, sId);
+      const remoteTxs = await fetchAllTransactionsFromSheet(token, sId, currentUserEmail || undefined);
       const remoteLends = await fetchAllLendItemsFromSheet(token, sId);
 
+      const deletedIds = loadDeletedTxIds(currentUserEmail);
+      const validRemoteTxs = remoteTxs.filter((t) => !deletedIds.has(t.id));
+
+      // If user deleted rows in Google Sheets, detect missing items and mark them deleted so they don't resurrect:
+      if (validRemoteTxs.length > 0 && transactions.length > 0) {
+        const remoteIdSet = new Set(validRemoteTxs.map((t) => t.id));
+        const missingFromSheet = transactions.filter((t) => !remoteIdSet.has(t.id));
+        if (missingFromSheet.length > 0) {
+          markTxIdsDeleted(missingFromSheet.map((t) => t.id), currentUserEmail);
+        }
+      }
+
       // Cleanly replace: show ONLY the valid sanitized records from this connected Google Sheet
-      const sortedTxs = sanitizeTransactions(remoteTxs).sort((a, b) => {
+      const sortedTxs = sanitizeTransactions(validRemoteTxs).sort((a, b) => {
         const dateDiff = new Date(b.date).getTime() - new Date(a.date).getTime();
         if (dateDiff !== 0) return dateDiff;
         return (b.createdAt || 0) - (a.createdAt || 0);
       });
 
+      latestStateRef.current.transactions = sortedTxs;
       setTransactions(sortedTxs);
       saveStoredTransactions(sortedTxs, currentUserEmail);
       saveSheetTransactions(sId, sortedTxs);
@@ -767,8 +808,10 @@ export default function App() {
   );
 
   const handleBulkDeleteTransactions = (txIds: string[]) => {
+    markTxIdsDeleted(txIds, currentUserEmail);
     txIds.forEach((id) => markTransactionDelete(id, currentUserEmail));
-    const updated = transactions.filter(t => !txIds.includes(t.id));
+    const updated = transactions.filter((t) => !txIds.includes(t.id));
+    latestStateRef.current.transactions = updated;
     setTransactions(updated);
     saveStoredTransactions(updated, currentUserEmail);
     if (activeSheet?.id) {
@@ -778,10 +821,11 @@ export default function App() {
     if (user?.email) {
       const nextWs = buildCloudWorkspace(Date.now() + 50);
       nextWs.transactions = updated;
+      cloudVersionRef.current = nextWs.updatedAt;
       void saveCloudWorkspace(nextWs).catch(console.warn);
     }
     if (activeSheet) {
-      queueSheetPush({ transactions: updated, lendItems });
+      void handlePushToSheet({ silent: true }, { transactions: updated, lendItems });
     }
     showNotification(`Deleted ${txIds.length} transactions.`, 'info');
   };
@@ -804,29 +848,32 @@ export default function App() {
   };
 
   const handleSignOut = async () => {
-    const signedOutScope = user?.email ? user.email.trim().toLowerCase() : null;
+    const signedOutScope = user?.email ? user.email.trim().toLowerCase() : (offlineWorkspaceEmail || null);
     if (signedOutScope && signedOutScope !== 'guest') {
-      stageWorkspaceForReplay(transactions, lendItems, signedOutScope);
+      saveStoredTransactions(transactions, signedOutScope);
+      saveStoredLendItems(lendItems, signedOutScope);
       if (activeSheet) {
         saveStoredSheetMeta(activeSheet, signedOutScope);
       }
+      saveStoredProfile(userProfile, signedOutScope);
+      saveStoredBudgetConfig(budgetConfig, signedOutScope);
+      saveLastUserEmail(signedOutScope);
+      setOfflineWorkspaceEmail(signedOutScope);
+      try {
+        localStorage.setItem(LAST_OFFLINE_WORKSPACE_KEY, signedOutScope);
+      } catch (e) {}
     }
-    setOfflineWorkspaceEmail(null);
     try {
-      localStorage.removeItem(LAST_OFFLINE_WORKSPACE_KEY);
       localStorage.removeItem('money_tracker_user');
       localStorage.removeItem('money_tracker_user_info');
       localStorage.removeItem('spenddesk_google_token');
       localStorage.removeItem('money_tracker_access_token');
-      localStorage.removeItem('money_tracker_profile_email_guest');
-      localStorage.removeItem('money_tracker_profile_name_guest');
     } catch (e) {}
     await signOutGoogleWorkspace();
     await signOutSupabase();
     setUser(null);
     setAccessToken(null);
-    setUserProfile({ name: 'My Wallet', avatar: null, email: '' });
-    showNotification('Signed out successfully.', 'info');
+    showNotification('Signed out. Your transactions remain saved in local storage.', 'info');
   };
 
   const isPushingToSheetRef = useRef(false);
@@ -975,8 +1022,10 @@ export default function App() {
       const existing = transactions.find((t) => t.id === txData.id);
       const createdAt = existing ? existing.createdAt : Date.now();
       recordedTx = { ...txData, id: txData.id, createdAt } as Transaction;
+      unmarkTxIdDeleted(recordedTx.id, currentUserEmail);
       updatedTxs = transactions.map((t) => (t.id === txData.id ? recordedTx : t));
       markTransactionUpsert(recordedTx, currentUserEmail);
+      latestStateRef.current.transactions = updatedTxs;
       saveStoredTransactions(updatedTxs, currentUserEmail);
       if (activeSheet?.id) {
         saveSheetTransactions(activeSheet.id, updatedTxs);
@@ -989,8 +1038,10 @@ export default function App() {
         id: 'tx-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
         createdAt: Date.now(),
       };
+      unmarkTxIdDeleted(recordedTx.id, currentUserEmail);
       updatedTxs = [recordedTx, ...transactions];
       markTransactionUpsert(recordedTx, currentUserEmail);
+      latestStateRef.current.transactions = updatedTxs;
       saveStoredTransactions(updatedTxs, currentUserEmail);
       if (activeSheet?.id) {
         saveSheetTransactions(activeSheet.id, updatedTxs);
@@ -1062,24 +1113,28 @@ export default function App() {
 
   const confirmDelete = () => {
     if (!deleteCandidate) return;
-    const remaining = transactions.filter((t) => t.id !== deleteCandidate.id);
-    markTransactionDelete(deleteCandidate.id, currentUserEmail);
+    const delId = deleteCandidate.id;
+    markTxIdDeleted(delId, currentUserEmail);
+    markTransactionDelete(delId, currentUserEmail);
+    const remaining = transactions.filter((t) => t.id !== delId);
+    latestStateRef.current.transactions = remaining;
+    setTransactions(remaining);
     saveStoredTransactions(remaining, currentUserEmail);
     if (activeSheet?.id) {
       saveSheetTransactions(activeSheet.id, remaining);
     }
-    setTransactions(remaining);
     setDeleteCandidate(null);
     showNotification('Transaction deleted.', 'info');
 
     if (user?.email) {
       const nextWs = buildCloudWorkspace(Date.now() + 50);
       nextWs.transactions = remaining;
+      cloudVersionRef.current = nextWs.updatedAt;
       void saveCloudWorkspace(nextWs).catch(console.warn);
     }
 
     if (activeSheet) {
-      queueSheetPush({ transactions: remaining, lendItems });
+      void handlePushToSheet({ silent: true }, { transactions: remaining, lendItems });
     }
 
     const webhookUrl = loadStoredWebhookUrl();
@@ -1200,7 +1255,25 @@ export default function App() {
     return calculateSummary(transactions, filteredTransactions);
   }, [transactions, filteredTransactions]);
 
-  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const [currentDateStr, setCurrentDateStr] = useState<string>(() => getLocalDateString());
+
+  // Automatically refresh date every 30s or on window focus so every day starts fresh with 0 daily spend
+  useEffect(() => {
+    const updateDate = () => {
+      const freshDate = getLocalDateString();
+      setCurrentDateStr((prev) => (prev !== freshDate ? freshDate : prev));
+    };
+    const interval = setInterval(updateDate, 30000);
+    window.addEventListener('focus', updateDate);
+    document.addEventListener('visibilitychange', updateDate);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', updateDate);
+      document.removeEventListener('visibilitychange', updateDate);
+    };
+  }, []);
+
+  const todayStr = currentDateStr;
 
   const todaySpend = useMemo(() => {
     return transactions
@@ -1654,21 +1727,6 @@ export default function App() {
             </main>
           )}
 
-          {activeTab === 'lend' && (
-            <main className="max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4 sm:space-y-6">
-              <LendBorrowView
-                items={lendItems}
-                onAddItem={handleAddLendItem}
-                onToggleStatus={handleToggleLendStatus}
-                onDeleteItem={handleDeleteLendItem}
-                currency={currency}
-                isAddModalOpen={isLendModalOpen}
-                onCloseAddModal={() => setIsLendModalOpen(false)}
-                onOpenAddModal={() => setIsLendModalOpen(true)}
-              />
-            </main>
-          )}
-
           {activeTab === 'analytics' && (
             <main className="max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4 sm:space-y-6">
               <AnalyticsView
@@ -1688,18 +1746,13 @@ export default function App() {
 
       {/* Native Mobile Bottom Navigation Bar */}
       <BottomNav
-        activeTab={activeTab}
+        activeTab={activeTab === 'lend' ? 'dashboard' : activeTab}
         onTabChange={setActiveTab}
         onQuickAdd={() => {
-          if (activeTab === 'lend') {
-            setIsLendModalOpen(true);
-          } else {
-            setEditingTransaction(null);
-            setModalDefaultType('cash_expense');
-            setIsTxModalOpen(true);
-          }
+          setEditingTransaction(null);
+          setModalDefaultType('cash_expense');
+          setIsTxModalOpen(true);
         }}
-        pendingLendCount={pendingLendCount}
       />
 
       {/* Quick Cash Balance Adjustment Modal */}

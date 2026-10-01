@@ -108,6 +108,8 @@ export const signInWithEmailSupabase = async (email: string, password: string): 
       picture: u?.user_metadata?.avatar_url || null,
     };
     localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(userObj));
+    localStorage.setItem('money_tracker_user', JSON.stringify({ displayName: userObj.name, email: userObj.email, photoURL: userObj.picture }));
+    window.dispatchEvent(new CustomEvent('spenddesk_google_auth', { detail: { user: userObj, token: 'local_token' } }));
     return { success: true, user: userObj };
   } catch (err: any) {
     return { success: false, errorMessage: err.message };
@@ -137,6 +139,9 @@ export const signUpWithEmailSupabase = async (email: string, password: string): 
       name: u?.user_metadata?.full_name || u?.email?.split('@')[0] || 'User',
       picture: u?.user_metadata?.avatar_url || null,
     };
+    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(userObj));
+    localStorage.setItem('money_tracker_user', JSON.stringify({ displayName: userObj.name, email: userObj.email, photoURL: userObj.picture }));
+    window.dispatchEvent(new CustomEvent('spenddesk_google_auth', { detail: { user: userObj, token: 'local_token' } }));
     return { success: true, user: userObj };
   } catch (err: any) {
     return { success: false, errorMessage: err.message };

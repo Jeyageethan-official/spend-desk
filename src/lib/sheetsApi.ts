@@ -1,6 +1,7 @@
 import { Transaction, SpendingSummary, CategorySummary, LendItem, TransactionType, LendType, LendStatus } from '../types/finance';
 import { signInWithGoogleWorkspace, getCachedWorkspaceToken, setCachedWorkspaceToken } from './workspaceAuth';
 import { sortTransactionsChronological, calculateRunningBalances } from './calculations';
+import { loadDeletedTxIds } from './storage';
 
 // Use the officially provisioned and authorized OAuth Client ID for this applet
 export const GOOGLE_OAUTH_CLIENT_ID = '509348493041-ih637992a2lrmh6qdlvch1pkatpn70k0.apps.googleusercontent.com';
@@ -608,7 +609,8 @@ export const appendTransactionRow = async (
 
 export const fetchAllTransactionsFromSheet = async (
   accessToken: string,
-  spreadsheetId: string
+  spreadsheetId: string,
+  emailScope?: string
 ): Promise<Transaction[]> => {
   const res = await fetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Transactions!A1:Z2000`,
@@ -624,6 +626,7 @@ export const fetchAllTransactionsFromSheet = async (
     throw new Error(`Failed to fetch transactions: ${res.status} ${error}`);
   }
 
+  const deletedIds = loadDeletedTxIds(emailScope);
   const data = await res.json();
   const allRows: any[][] = data.values || [];
   if (allRows.length <= 1) return [];
@@ -733,7 +736,13 @@ export const fetchAllTransactionsFromSheet = async (
 
     let rawId = String(row[idCol] || '').trim();
     if (!rawId || rawId.includes('/') || rawId.includes(' ') || rawId.length < 3) {
-      rawId = `tx_sheet_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 6)}`;
+      const cleanTime = String(row[timeCol] || '').replace(/[^0-9]/g, '');
+      const cleanNote = notes.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 10);
+      rawId = `tx_sheet_${dateStr}_${cleanTime}_${Math.round(amount)}_${cleanNote}`;
+    }
+
+    if (deletedIds.has(rawId)) {
+      return; // Never re-import deleted transactions!
     }
 
     const rawCreated = row[createdCol];

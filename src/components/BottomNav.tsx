@@ -3,8 +3,8 @@ import {
   Home, 
   Receipt, 
   Plus, 
-  HandCoins, 
-  BarChart2
+  BarChart2,
+  Settings
 } from 'lucide-react';
 import { AppTab } from '../types/finance';
 import { triggerFeedback } from '../lib/haptics';
@@ -13,14 +13,12 @@ interface BottomNavProps {
   activeTab: AppTab;
   onTabChange: (tab: AppTab) => void;
   onQuickAdd: () => void;
-  pendingLendCount?: number;
 }
 
 export const BottomNav: React.FC<BottomNavProps> = ({
   activeTab,
   onTabChange,
   onQuickAdd,
-  pendingLendCount = 0,
 }) => {
   return (
     <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-lg border-t border-slate-200/90 shadow-lg px-2 py-1 safe-area-pb">
@@ -55,7 +53,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           <span className="text-[10px] mt-0.5">Records</span>
         </button>
 
-        {/* Central Floating Action Button (+ Add) - Perfectly centered in middle flex slot */}
+        {/* Central Floating Action Button (+ Add) */}
         <div className="flex-1 flex items-center justify-center relative">
           <button
             type="button"
@@ -70,29 +68,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           </button>
         </div>
 
-        {/* Tab 3: Lend & Borrow */}
-        <button
-          type="button"
-          onClick={() => {
-            triggerFeedback('tap');
-            onTabChange('lend');
-          }}
-          className={`flex-1 relative flex flex-col items-center justify-center h-full transition-all cursor-pointer ${
-            activeTab === 'lend' ? 'text-[#116b4e] font-bold' : 'text-slate-400 hover:text-[#116b4e]'
-          }`}
-        >
-          <div className="relative">
-            <HandCoins className={`w-5 h-5 ${activeTab === 'lend' ? 'stroke-[2.5]' : ''}`} />
-            {pendingLendCount > 0 && (
-              <span className="absolute -top-1 -right-2 min-w-4 h-4 px-1 rounded-full bg-red-700 text-white text-[9px] font-bold flex items-center justify-center shadow-xs">
-                {pendingLendCount}
-              </span>
-            )}
-          </div>
-          <span className="text-[10px] mt-0.5">Lend/Debt</span>
-        </button>
-
-        {/* Tab 4: Analytics */}
+        {/* Tab 3: Analytics */}
         <button
           type="button"
           onClick={() => {
@@ -105,6 +81,21 @@ export const BottomNav: React.FC<BottomNavProps> = ({
         >
           <BarChart2 className={`w-5 h-5 ${activeTab === 'analytics' ? 'stroke-[2.5]' : ''}`} />
           <span className="text-[10px] mt-0.5">Analytics</span>
+        </button>
+
+        {/* Tab 4: Settings */}
+        <button
+          type="button"
+          onClick={() => {
+            triggerFeedback('tap');
+            onTabChange('settings');
+          }}
+          className={`flex-1 flex flex-col items-center justify-center h-full transition-all cursor-pointer ${
+            activeTab === 'settings' ? 'text-[#116b4e] font-bold' : 'text-slate-400 hover:text-slate-700'
+          }`}
+        >
+          <Settings className={`w-5 h-5 ${activeTab === 'settings' ? 'stroke-[2.5]' : ''}`} />
+          <span className="text-[10px] mt-0.5">Settings</span>
         </button>
       </div>
     </div>
