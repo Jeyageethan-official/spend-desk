@@ -312,6 +312,17 @@ export default function App() {
           showNotification(`Delivered ${count} queued Telegram alert${count > 1 ? 's' : ''}.`, 'success');
         }
       }).catch(console.warn);
+
+      // Automatically push pending offline updates to cloud workspace & connected Google Sheet
+      if (currentUserEmail) {
+        const local = getLatestWorkspace(Date.now());
+        void saveCloudWorkspace(local).then(() => {
+          clearPendingSync(currentUserEmail);
+          if (activeSheet && queueSheetPushRef.current) {
+            queueSheetPushRef.current();
+          }
+        }).catch(console.warn);
+      }
     };
 
     const handleOffline = () => {
@@ -804,23 +815,26 @@ export default function App() {
   };
 
   const handleSignOut = async () => {
-    const signedOutScope = user?.email || currentUserEmail;
-    if (signedOutScope) {
+    const signedOutScope = (user?.email || currentUserEmail || '').trim().toLowerCase();
+    if (signedOutScope && signedOutScope !== 'guest') {
       stageWorkspaceForReplay(transactions, lendItems, signedOutScope);
+      // Persist user scope in LAST_OFFLINE_WORKSPACE_KEY so offline tracking retains all ledger data & connected sheet
+      try {
+        localStorage.setItem(LAST_OFFLINE_WORKSPACE_KEY, signedOutScope);
+      } catch {}
+      setOfflineWorkspaceEmail(signedOutScope);
+      if (activeSheet) {
+        saveStoredSheetMeta(activeSheet, signedOutScope);
+      }
     }
-    setOfflineWorkspaceEmail(null);
-    setActiveSheet(null);
     try {
-      localStorage.removeItem(LAST_OFFLINE_WORKSPACE_KEY);
       localStorage.removeItem('money_tracker_user');
       localStorage.removeItem('money_tracker_user_info');
-      localStorage.removeItem('money_tracker_access_token');
     } catch (e) {}
     await signOutGoogleWorkspace();
     await signOutSupabase();
     setUser(null);
-    setAccessToken(null);
-    showNotification('Signed out successfully.', 'info');
+    showNotification('Signed out. Local workspace is ready for offline tracking.', 'info');
   };
 
   const isPushingToSheetRef = useRef(false);
@@ -835,27 +849,34 @@ export default function App() {
     isPushingToSheetRef.current = true;
 
     let sheetToken = accessToken;
-    // Supabase's session JWT (`eyJ…`) authenticates SpendDesk cloud sync but
-    // cannot call Google APIs. A Google OAuth token is required separately.
-    const hasGoogleSheetsToken = Boolean(sheetToken && sheetToken !== 'local_token' && !sheetToken.startsWith('eyJ'));
+    let hasGoogleSheetsToken = Boolean(sheetToken && sheetToken !== 'local_token' && !sheetToken.startsWith('eyJ') && sheetToken.length > 20);
     if (!hasGoogleSheetsToken) {
       const cached = getCachedWorkspaceToken();
       if (cached && !cached.startsWith('eyJ') && cached !== 'local_token' && cached.length > 20) {
         sheetToken = cached;
         setAccessToken(cached);
-      } else if (!options.interactive) {
-        isPushingToSheetRef.current = false;
-        return false;
-      } else {
-        try {
-          sheetToken = await requestGoogleAccessToken();
-          setAccessToken(sheetToken);
-        } catch (error: any) {
-          if (!options.silent) showNotification(error?.message || 'Google Sheet permission is required.', 'error');
-          isPushingToSheetRef.current = false;
-          return false;
+        hasGoogleSheetsToken = true;
+      }
+    }
+
+    if (!hasGoogleSheetsToken) {
+      try {
+        const freshToken = await requestGoogleAccessToken(Boolean(options.interactive));
+        if (freshToken && !freshToken.startsWith('eyJ') && freshToken !== 'local_token' && freshToken.length > 20) {
+          sheetToken = freshToken;
+          setAccessToken(freshToken);
+          hasGoogleSheetsToken = true;
+        }
+      } catch (err: any) {
+        if (!options.silent) {
+          showNotification(err?.message || 'Google Sheet permission is required.', 'error');
         }
       }
+    }
+
+    if (!hasGoogleSheetsToken) {
+      isPushingToSheetRef.current = false;
+      return false;
     }
     
     if (!options.silent) {

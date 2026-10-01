@@ -21,11 +21,18 @@ export interface WorkspaceUser {
   picture?: string;
 }
 
+const GOOGLE_TOKEN_KEY = 'spenddesk_google_token';
+
 export const getCachedWorkspaceToken = (): string | null => {
-  if (cachedAccessToken && !cachedAccessToken.startsWith('eyJ') && cachedAccessToken !== 'local_token') {
+  if (cachedAccessToken && !cachedAccessToken.startsWith('eyJ') && cachedAccessToken !== 'local_token' && cachedAccessToken.length > 20) {
     return cachedAccessToken;
   }
   try {
+    const googleToken = localStorage.getItem(GOOGLE_TOKEN_KEY);
+    if (googleToken && !googleToken.startsWith('eyJ') && googleToken !== 'local_token' && googleToken.length > 20) {
+      cachedAccessToken = googleToken;
+      return googleToken;
+    }
     const stored = localStorage.getItem(TOKEN_KEY);
     if (stored && stored !== 'local_token' && !stored.startsWith('eyJ') && stored.length > 20) {
       cachedAccessToken = stored;
@@ -36,14 +43,19 @@ export const getCachedWorkspaceToken = (): string | null => {
 };
 
 export const setCachedWorkspaceToken = (token: string | null) => {
-  cachedAccessToken = token;
-  try {
-    if (token) {
+  if (token && !token.startsWith('eyJ') && token !== 'local_token' && token.length > 20) {
+    cachedAccessToken = token;
+    try {
+      localStorage.setItem(GOOGLE_TOKEN_KEY, token);
       localStorage.setItem(TOKEN_KEY, token);
-    } else {
+    } catch {}
+  } else if (!token) {
+    cachedAccessToken = null;
+    try {
+      localStorage.removeItem(GOOGLE_TOKEN_KEY);
       localStorage.removeItem(TOKEN_KEY);
-    }
-  } catch {}
+    } catch {}
+  }
 };
 
 /**

@@ -1,5 +1,5 @@
 import { Transaction, SpendingSummary, CategorySummary, LendItem, TransactionType, LendType, LendStatus } from '../types/finance';
-import { signInWithGoogleWorkspace, getCachedWorkspaceToken } from './workspaceAuth';
+import { signInWithGoogleWorkspace, getCachedWorkspaceToken, setCachedWorkspaceToken } from './workspaceAuth';
 import { sortTransactionsChronological, calculateRunningBalances } from './calculations';
 
 // Use the officially provisioned and authorized OAuth Client ID for this applet
@@ -23,14 +23,56 @@ export const getStoredAccessToken = (): string | null => {
  * Single Google OAuth Access Token Request.
  * Uses official Workspace OAuth integration flow.
  */
-export const requestGoogleAccessToken = async (): Promise<string> => {
+export const requestGoogleAccessToken = async (promptUser = true): Promise<string> => {
   const existing = getStoredAccessToken();
   if (existing && existing !== 'local_token' && !existing.startsWith('eyJ') && existing.length > 20) {
     return existing;
   }
 
-  const { accessToken } = await signInWithGoogleWorkspace();
-  return accessToken;
+  // Attempt Google Identity Services (GIS) token request if loaded
+  if (typeof window !== 'undefined' && (window as any).google?.accounts?.oauth2?.initTokenClient) {
+    try {
+      const tokenPromise = new Promise<string>((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('GIS timeout')), 8000);
+        try {
+          const client = (window as any).google.accounts.oauth2.initTokenClient({
+            client_id: GOOGLE_OAUTH_CLIENT_ID,
+            scope: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email',
+            prompt: promptUser ? '' : 'none',
+            callback: (res: any) => {
+              clearTimeout(timeout);
+              if (res?.access_token && !res.access_token.startsWith('eyJ')) {
+                setCachedWorkspaceToken(res.access_token);
+                resolve(res.access_token);
+              } else if (res?.error) {
+                reject(new Error(res.error_description || res.error));
+              } else {
+                reject(new Error('No token returned from GIS'));
+              }
+            },
+            error_callback: (err: any) => {
+              clearTimeout(timeout);
+              reject(err);
+            },
+          });
+          client.requestAccessToken({ prompt: promptUser ? '' : 'none' });
+        } catch (e) {
+          clearTimeout(timeout);
+          reject(e);
+        }
+      });
+      const resToken = await tokenPromise;
+      if (resToken) return resToken;
+    } catch (e) {
+      console.warn('GIS token request note:', e);
+    }
+  }
+
+  if (promptUser) {
+    const { accessToken } = await signInWithGoogleWorkspace();
+    return accessToken;
+  }
+  return '';
 };
 
 /**

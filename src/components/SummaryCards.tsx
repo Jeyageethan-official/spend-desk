@@ -94,7 +94,7 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
           {/* Current Balance Typography */}
           <div className="space-y-0.5">
             <p className="text-[11px] uppercase tracking-wider text-[#8fa1b3] font-semibold">
-              Current Available Cash
+              Current Balance
             </p>
             <div className="text-3xl sm:text-4xl font-extrabold tracking-tight text-white flex items-baseline gap-2">
               <span className="tabular-nums">
