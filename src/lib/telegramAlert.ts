@@ -38,16 +38,10 @@ export const generateTransactionTelegramAlert = (
     lines.push(`Date & Time: ${dateStr} at ${timeStr}`);
   } else {
     // 3. Cash Added / Income
-    let source = 'Salary / Top-up';
-    if (categoryStr && categoryStr !== 'Cash Added' && noteStr) {
-      source = `${categoryStr} / ${noteStr}`;
-    } else if (noteStr) {
-      source = noteStr;
-    } else if (categoryStr && categoryStr !== 'Cash Added') {
-      source = categoryStr;
-    }
     lines.push(`Cash Added to Wallet: ${formattedAmt}`);
-    lines.push(`Source: ${source}`);
+    if (noteStr) {
+      lines.push(`Notes: ${noteStr}`);
+    }
     lines.push(`Date & Time: ${dateStr} at ${timeStr}`);
   }
 
@@ -75,14 +69,14 @@ export const generateLendTelegramAlert = (
 
   const lines: string[] = ['[SpendDesk Alert]'];
 
+  const statusText = item.status === 'settled' ? 'settled' : (item.type === 'lent' ? 'Pending Return' : 'Pending Payback');
+
   if (item.type === 'lent') {
     // 4. Money Lended
-    const statusText = item.status === 'settled' ? 'Settled' : 'Pending Return';
     lines.push(`Money Lended: ${formattedAmt} (To: ${person})`);
     lines.push(`Status: ${statusText}`);
   } else {
     // 5. Money Borrowed
-    const statusText = item.status === 'settled' ? 'Settled' : 'Pending Payback';
     lines.push(`Money Borrowed: ${formattedAmt} (From: ${person})`);
     lines.push(`Status: ${statusText}`);
   }

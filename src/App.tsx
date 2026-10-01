@@ -1230,7 +1230,25 @@ export default function App() {
       saveSheetLendItems(activeSheet.id, updated);
     }
     const changedItem = updated.find((item) => item.id === id);
-    if (changedItem) markLendUpsert(changedItem, currentUserEmail);
+    if (changedItem) {
+      markLendUpsert(changedItem, currentUserEmail);
+      if (telegramAlertConfig.enabled && telegramAlertConfig.chatId) {
+        const currentSum = calculateSummary(transactions, transactions);
+        const lendAlert = generateLendTelegramAlert(changedItem, currency, currentSum.currentCashBalance);
+        void sendTelegramAlert({ ...lendAlert, chatId: telegramAlertConfig.chatId })
+          .then((res) => {
+            if (!res.queued) {
+              showNotification(
+                changedItem.status === 'settled'
+                  ? 'Telegram alert: Settled status updated.'
+                  : 'Telegram alert: Status updated.',
+                'success'
+              );
+            }
+          })
+          .catch(console.warn);
+      }
+    }
     setLendItems(updated);
     showNotification('Status updated.', 'info');
 

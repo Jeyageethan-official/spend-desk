@@ -41,26 +41,21 @@ Deno.serve(async (request) => {
   }
 
   const chatId = typeof payload.chatId === 'string' ? payload.chatId.trim() : '';
-  const title = typeof payload.title === 'string' ? payload.title.trim() : 'SpendDesk Alert';
   const message = typeof payload.message === 'string' ? payload.message.trim() : '';
-  if (!/^-?\d{4,20}$/.test(chatId) || !message || message.length > 3500 || title.length > 120) {
+  if (!/^-?\d{4,20}$/.test(chatId) || !message || message.length > 3500) {
     return json({ error: 'Invalid Telegram alert details.' }, 400);
   }
 
-  const cleanTitle = title.trim();
-  const cleanMessage = message.trim();
-  const alreadyHasTitle = cleanMessage.toLowerCase().startsWith(cleanTitle.toLowerCase()) ||
-    cleanMessage.toLowerCase().startsWith(`[${cleanTitle.replace(/[\[\]]/g, '').toLowerCase()}]`) ||
-    cleanMessage.toLowerCase().startsWith(`*${cleanTitle.replace(/\*/g, '').toLowerCase()}*`);
-
-  const textToSend = alreadyHasTitle
-    ? cleanMessage
-    : `*${cleanTitle.replaceAll('*', '')}*\n${cleanMessage}`;
+  // Ensure there is only ONE '[SpendDesk Alert]' header at the very top.
+  // Strip any leading titles (with or without markdown, brackets, or duplicates)
+  let cleanMessage = message.trim();
+  cleanMessage = cleanMessage.replace(/^(\*?\[?SpendDesk Alert\]?\*?\s*\n+)+/i, '');
+  const textToSend = `[SpendDesk Alert]\n${cleanMessage}`;
 
   const telegramResponse = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, text: textToSend, parse_mode: 'Markdown' }),
+    body: JSON.stringify({ chat_id: chatId, text: textToSend }),
   });
   const telegramData = await telegramResponse.json();
   if (!telegramResponse.ok || !telegramData.ok) {
