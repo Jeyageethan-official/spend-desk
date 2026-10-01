@@ -263,7 +263,7 @@ export const applyTransactionsSheetDesign = async (
 ) => {
   try {
     const metaRes = await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties`,
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets(properties,conditionalFormats)`,
       {
         headers: { Authorization: `Bearer ${accessToken}` },
       }
@@ -275,86 +275,215 @@ export const applyTransactionsSheetDesign = async (
 
     const darkNavy = { red: 15 / 255, green: 53 / 255, blue: 92 / 255 }; // #0f355c matching screenshot
     const white = { red: 1, green: 1, blue: 1 };
+    const greenText = { red: 13 / 255, green: 115 / 255, blue: 55 / 255 }; // #0d7337
+    const greenBg = { red: 230 / 255, green: 244 / 255, blue: 234 / 255 }; // #e6f4ea
+    const redText = { red: 197 / 255, green: 34 / 255, blue: 31 / 255 }; // #c5221f
+    const redBg = { red: 252 / 255, green: 232 / 255, blue: 230 / 255 }; // #fce8e6
+    const blueText = { red: 26 / 255, green: 115 / 255, blue: 232 / 255 }; // #1a73e8
 
-    const batchBody = {
-      requests: [
-        // 1. Format Row 1 Header A1:H1 (Date to Balance)
+    const requests: any[] = [
+      // 1. Format Row 1 Header A1:H1 (Date to Balance)
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 8 },
+          cell: {
+            userEnteredFormat: {
+              backgroundColor: darkNavy,
+              textFormat: { foregroundColor: white, bold: true, fontSize: 10 },
+              horizontalAlignment: 'CENTER',
+            },
+          },
+          fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)',
+        },
+      },
+      // 2. Format Row 1 Header J1:K1 (Out of Wallet, Card Payment)
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 9, endColumnIndex: 11 },
+          cell: {
+            userEnteredFormat: {
+              backgroundColor: darkNavy,
+              textFormat: { foregroundColor: white, bold: true, fontSize: 10 },
+              horizontalAlignment: 'CENTER',
+            },
+          },
+          fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)',
+        },
+      },
+      // 3. Freeze top 1 row
+      {
+        updateSheetProperties: {
+          properties: {
+            sheetId,
+            gridProperties: {
+              frozenRowCount: 1,
+            },
+          },
+          fields: 'gridProperties.frozenRowCount',
+        },
+      },
+      // 4. Data Validation for Column C (Type: IN / OUT dropdown)
+      {
+        setDataValidation: {
+          range: { sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 2, endColumnIndex: 3 },
+          rule: {
+            condition: {
+              type: 'ONE_OF_LIST',
+              values: [{ userEnteredValue: 'IN' }, { userEnteredValue: 'OUT' }],
+            },
+            showCustomUi: true,
+            strict: false,
+          },
+        },
+      },
+      // 5. Data Validation for Column G (Payment Method: Cash / Card / Bank Transfer dropdown)
+      {
+        setDataValidation: {
+          range: { sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 6, endColumnIndex: 7 },
+          rule: {
+            condition: {
+              type: 'ONE_OF_LIST',
+              values: [{ userEnteredValue: 'Cash' }, { userEnteredValue: 'Card' }, { userEnteredValue: 'Bank Transfer' }],
+            },
+            showCustomUi: true,
+            strict: false,
+          },
+        },
+      },
+      // 6. Base Alignment & Fonts for Date and Time (Blue text, centered)
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 0, endColumnIndex: 2 },
+          cell: {
+            userEnteredFormat: {
+              textFormat: { foregroundColor: blueText },
+              horizontalAlignment: 'CENTER',
+            },
+          },
+          fields: 'userEnteredFormat(textFormat,horizontalAlignment)',
+        },
+      },
+      // 7. Right alignment for Amount, Balance, Out of Wallet, Card Payment
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 4, endColumnIndex: 5 },
+          cell: {
+            userEnteredFormat: {
+              horizontalAlignment: 'RIGHT',
+            },
+          },
+          fields: 'userEnteredFormat(horizontalAlignment)',
+        },
+      },
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 7, endColumnIndex: 8 },
+          cell: {
+            userEnteredFormat: {
+              textFormat: { foregroundColor: blueText },
+              horizontalAlignment: 'RIGHT',
+            },
+          },
+          fields: 'userEnteredFormat(textFormat,horizontalAlignment)',
+        },
+      },
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 9, endColumnIndex: 11 },
+          cell: {
+            userEnteredFormat: {
+              horizontalAlignment: 'RIGHT',
+            },
+          },
+          fields: 'userEnteredFormat(horizontalAlignment)',
+        },
+      },
+    ];
+
+    // Only apply conditional formatting if not already present
+    const existingRules = txSheet?.conditionalFormats || [];
+    if (existingRules.length === 0) {
+      requests.push(
+        // Rule: Type IN -> Green text & soft green pill background
         {
-          repeatCell: {
-            range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 8 },
-            cell: {
-              userEnteredFormat: {
-                backgroundColor: darkNavy,
-                textFormat: { foregroundColor: white, bold: true, fontSize: 10 },
-                horizontalAlignment: 'CENTER',
+          addConditionalFormatRule: {
+            rule: {
+              ranges: [{ sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 2, endColumnIndex: 3 }],
+              booleanRule: {
+                condition: { type: 'TEXT_EQ', values: [{ userEnteredValue: 'IN' }] },
+                format: { backgroundColor: greenBg, textFormat: { foregroundColor: greenText, bold: true } },
               },
             },
-            fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)',
+            index: 0,
           },
         },
-        // 2. Format Row 1 Header J1:K1 (Out of Wallet, Card Payment)
+        // Rule: Type OUT -> Red text & soft red pill background
         {
-          repeatCell: {
-            range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 9, endColumnIndex: 11 },
-            cell: {
-              userEnteredFormat: {
-                backgroundColor: darkNavy,
-                textFormat: { foregroundColor: white, bold: true, fontSize: 10 },
-                horizontalAlignment: 'CENTER',
+          addConditionalFormatRule: {
+            rule: {
+              ranges: [{ sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 2, endColumnIndex: 3 }],
+              booleanRule: {
+                condition: { type: 'TEXT_EQ', values: [{ userEnteredValue: 'OUT' }] },
+                format: { backgroundColor: redBg, textFormat: { foregroundColor: redText, bold: true } },
               },
             },
-            fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)',
+            index: 1,
           },
         },
-        // 3. Format Row 1 LEND MONEY Header N1:P1
+        // Rule: Amount for IN -> Green bold text
         {
-          repeatCell: {
-            range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 13, endColumnIndex: 16 },
-            cell: {
-              userEnteredFormat: {
-                backgroundColor: darkNavy,
-                textFormat: { foregroundColor: white, bold: true, fontSize: 11 },
-                horizontalAlignment: 'CENTER',
+          addConditionalFormatRule: {
+            rule: {
+              ranges: [{ sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 4, endColumnIndex: 5 }],
+              booleanRule: {
+                condition: { type: 'CUSTOM_FORMULA', values: [{ userEnteredValue: '=$C3="IN"' }] },
+                format: { textFormat: { foregroundColor: greenText, bold: true } },
               },
             },
-            fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)',
+            index: 2,
           },
         },
-        // 4. Merge N1:P1 for LEND MONEY
+        // Rule: Amount for OUT -> Red bold text
         {
-          mergeCells: {
-            range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 13, endColumnIndex: 16 },
-            mergeType: 'MERGE_ALL',
-          },
-        },
-        // 5. Format Row 2 Subheaders N2:P2 (Date & Time, Amount, Reason / Person)
-        {
-          repeatCell: {
-            range: { sheetId, startRowIndex: 1, endRowIndex: 2, startColumnIndex: 13, endColumnIndex: 16 },
-            cell: {
-              userEnteredFormat: {
-                backgroundColor: darkNavy,
-                textFormat: { foregroundColor: white, bold: true, fontSize: 10 },
-                horizontalAlignment: 'CENTER',
+          addConditionalFormatRule: {
+            rule: {
+              ranges: [{ sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 4, endColumnIndex: 5 }],
+              booleanRule: {
+                condition: { type: 'CUSTOM_FORMULA', values: [{ userEnteredValue: '=$C3="OUT"' }] },
+                format: { textFormat: { foregroundColor: redText, bold: true } },
               },
             },
-            fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)',
+            index: 3,
           },
         },
-        // 6. Freeze top 2 rows
+        // Rule: Payment Method Cash -> Green text & soft green background
         {
-          updateSheetProperties: {
-            properties: {
-              sheetId,
-              gridProperties: {
-                frozenRowCount: 2,
+          addConditionalFormatRule: {
+            rule: {
+              ranges: [{ sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 6, endColumnIndex: 7 }],
+              booleanRule: {
+                condition: { type: 'TEXT_EQ', values: [{ userEnteredValue: 'Cash' }] },
+                format: { backgroundColor: greenBg, textFormat: { foregroundColor: greenText } },
               },
             },
-            fields: 'gridProperties.frozenRowCount',
+            index: 4,
           },
         },
-      ],
-    };
+        // Rule: Out of Wallet -> Red bold text
+        {
+          addConditionalFormatRule: {
+            rule: {
+              ranges: [{ sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 9, endColumnIndex: 10 }],
+              booleanRule: {
+                condition: { type: 'CUSTOM_FORMULA', values: [{ userEnteredValue: '=$J3<>""' }] },
+                format: { textFormat: { foregroundColor: redText, bold: true } },
+              },
+            },
+            index: 5,
+          },
+        }
+      );
+    }
 
     await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
       method: 'POST',
@@ -362,7 +491,7 @@ export const applyTransactionsSheetDesign = async (
         Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(batchBody),
+      body: JSON.stringify({ requests }),
     });
   } catch (e) {
     console.warn('Sheet formatting notice:', e);
