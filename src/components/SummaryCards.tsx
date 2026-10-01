@@ -9,7 +9,6 @@ import {
   MessageSquare,
   Phone,
   Edit2,
-  Sliders,
   AlertCircle,
   ShieldCheck,
   Sparkles
@@ -65,55 +64,36 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
   return (
     <div className="space-y-3.5">
       {/* 1. Executive Wallet Hero Card */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-slate-850 to-slate-950 text-white p-5 sm:p-7 border border-slate-800/80 shadow-lg">
-        {/* Subtle decorative glow */}
-        <div className="absolute top-0 right-0 -mt-8 -mr-8 w-48 h-48 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-0 left-0 -mb-8 -ml-8 w-48 h-48 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
-
+      <div className="relative overflow-hidden rounded-3xl bg-[#131f2b] text-white p-5 sm:p-7 border border-[#1e2d3b] shadow-xl">
         <div className="relative z-10">
-          {/* Top Bar: Badge & Adjust Cash Button */}
+          {/* Top Bar: Title on left & Status Badge on top right */}
           <div className="flex items-center justify-between gap-2 mb-3">
-            <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/25">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                Physical Cash Wallet
-              </span>
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-[#0e3528] text-[#2bd98d] border border-[#1b5e48]">
+              <Wallet className="w-3.5 h-3.5 text-[#2bd98d]" />
+              Cash Wallet
+            </span>
 
+            {/* Top Right Status Badge */}
+            <div>
               {isBalanceNegative ? (
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#3f1d24] text-[#f87171] border border-[#672733]">
                   <AlertCircle className="w-3 h-3" /> Deficit
                 </span>
-              ) : isBalanceZero ? (
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-500/20 text-slate-300 border border-slate-500/30">
-                  Zero Balance
-                </span>
-              ) : isBalanceLow ? (
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+              ) : isBalanceZero ? null : isBalanceLow ? (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#382a13] text-[#eab308] border border-[#5e431c]">
                   Low Cash
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#0e3528] text-[#34d399] border border-[#1b5e48]">
                   <ShieldCheck className="w-3 h-3" /> Healthy
                 </span>
               )}
             </div>
-
-            {onAdjustBalance && (
-              <button
-                type="button"
-                onClick={onAdjustBalance}
-                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-semibold bg-white/10 hover:bg-white/20 active:scale-95 text-slate-200 border border-white/15 transition-all cursor-pointer shadow-xs"
-                title="Adjust actual cash in hand"
-              >
-                <Sliders className="w-3.5 h-3.5 text-emerald-300" />
-                <span>Adjust Cash</span>
-              </button>
-            )}
           </div>
 
           {/* Current Balance Typography */}
           <div className="space-y-0.5">
-            <p className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">
+            <p className="text-[11px] uppercase tracking-wider text-[#8fa1b3] font-semibold">
               Current Available Cash
             </p>
             <div className="text-3xl sm:text-4xl font-extrabold tracking-tight text-white flex items-baseline gap-2">
@@ -125,18 +105,18 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
 
           {/* Out of Wallet Alert if active */}
           {safeSummary.outOfWallet > 0 && (
-            <div className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-rose-500/20 border border-rose-500/35 text-rose-200 text-xs font-semibold">
-              <AlertCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-              <span>Out of Wallet: <strong>-{formatCurrency(safeSummary.outOfWallet, currency)}</strong> (Spent while wallet was empty)</span>
+            <div className="mt-3 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#3f1d24] border border-[#672733] text-[#f87171] text-xs font-semibold">
+              <AlertCircle className="w-3.5 h-3.5 text-[#f87171] shrink-0" />
+              <span>Out of Wallet: <strong>-{formatCurrency(safeSummary.outOfWallet, currency)}</strong></span>
             </div>
           )}
 
           {/* Fast Action Buttons */}
-          <div className="mt-5 pt-4 border-t border-slate-800/80 flex items-center gap-2.5">
+          <div className="mt-5 pt-4 border-t border-[#1c2c3b] flex items-center gap-2.5">
             <button
               type="button"
               onClick={onAddCash}
-              className="flex-1 py-2.5 sm:py-3 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-slate-950 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-md hover:shadow-emerald-500/20 transition-all cursor-pointer"
+              className="flex-1 py-3 px-4 rounded-2xl bg-[#06be70] hover:bg-[#05a863] active:bg-[#049154] text-slate-950 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer"
             >
               <ArrowDownLeft className="w-4 h-4 stroke-[3]" />
               <span>+ Cash In</span>
@@ -145,27 +125,27 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
             <button
               type="button"
               onClick={onAddExpense}
-              className="flex-1 py-2.5 sm:py-3 px-4 rounded-xl bg-rose-600 hover:bg-rose-500 active:bg-rose-700 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-md hover:shadow-rose-600/20 transition-all cursor-pointer"
+              className="flex-1 py-3 px-4 rounded-2xl bg-[#c52222] hover:bg-[#b01c1c] active:bg-[#991717] text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer"
             >
               <ArrowUpRight className="w-4 h-4 stroke-[2.5]" />
-              <span>- Record Spend</span>
+              <span>- Spend</span>
             </button>
 
             {onOpenSms && (
               <button
                 type="button"
                 onClick={onOpenSms}
-                className="w-11 h-10 sm:w-12 sm:h-11 rounded-xl bg-blue-600/20 hover:bg-blue-600/35 text-blue-300 border border-blue-400/30 flex items-center justify-center transition-all cursor-pointer shadow-xs shrink-0"
+                className="w-12 h-12 rounded-2xl bg-[#1a3650] hover:bg-[#204261] text-[#5fa1d5] border border-[#264e73] flex items-center justify-center transition-all cursor-pointer shadow-xs shrink-0"
                 title="Paste Bank SMS to Auto-Fill"
                 aria-label="Paste Bank SMS"
               >
-                <MessageSquare className="w-4 h-4 text-blue-300" />
+                <MessageSquare className="w-5 h-5 text-[#5fa1d5]" />
               </button>
             )}
           </div>
 
           {/* SMS Notification Quick Settings */}
-          <div className="mt-3.5 pt-3 border-t border-slate-800/60 flex items-center justify-between text-xs text-slate-400">
+          <div className="mt-3.5 pt-3 border-t border-[#1c2c3b] flex items-center justify-between text-xs text-[#8fa1b3]">
             {isEditingPhone ? (
               <form onSubmit={handleSavePhone} className="flex items-center gap-2 w-full">
                 <input
@@ -173,12 +153,12 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
                   placeholder="Enter phone for SMS alerts (e.g. 0771234567)"
                   value={phoneInput}
                   onChange={(e) => setPhoneInput(e.target.value)}
-                  className="flex-1 px-3 py-1.5 text-xs bg-slate-800 text-white rounded-lg border border-slate-700 focus:outline-hidden focus:border-emerald-500"
+                  className="flex-1 px-3 py-1.5 text-xs bg-[#1a2938] text-white rounded-lg border border-[#243a4e] focus:outline-hidden focus:border-[#06be70]"
                   autoFocus
                 />
                 <button
                   type="submit"
-                  className="px-3 py-1.5 bg-emerald-500 text-slate-950 font-bold rounded-lg text-xs cursor-pointer"
+                  className="px-3 py-1.5 bg-[#06be70] text-slate-950 font-bold rounded-lg text-xs cursor-pointer hover:bg-[#05a863]"
                 >
                   Save
                 </button>
@@ -193,8 +173,8 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
             ) : (
               <>
                 <div className="flex items-center gap-2 truncate">
-                  <Phone className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                  <span className="text-slate-300 text-[11px] sm:text-xs">
+                  <Phone className="w-3.5 h-3.5 text-[#2bd98d] shrink-0" />
+                  <span className="text-[#8fa1b3] text-[11px] sm:text-xs">
                     {alertPhone ? `SMS Alert: ${alertPhone}` : 'No SMS notification number set'}
                   </span>
                 </div>
@@ -204,7 +184,7 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
                     setPhoneInput(alertPhone);
                     setIsEditingPhone(true);
                   }}
-                  className="text-emerald-400 hover:text-emerald-300 text-xs font-semibold flex items-center gap-1 cursor-pointer shrink-0"
+                  className="text-[#2bd98d] hover:text-[#25be7b] text-xs font-semibold flex items-center gap-1 cursor-pointer shrink-0"
                 >
                   <Edit2 className="w-3 h-3" />
                   <span>{alertPhone ? 'Change' : 'Set Phone'}</span>
