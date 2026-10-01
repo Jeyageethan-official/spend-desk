@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { 
   Wallet, 
   ArrowDownLeft, 
@@ -6,9 +6,7 @@ import {
   CreditCard, 
   Receipt, 
   TrendingDown,
-  MessageSquare,
-  Phone,
-  Edit2
+  MessageSquare
 } from 'lucide-react';
 import { SpendingSummary } from '../types/finance';
 import { formatCurrency } from '../lib/calculations';
@@ -29,12 +27,7 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
   onAddCash,
   onAddExpense,
   onOpenSms,
-  alertPhone = '',
-  onUpdateAlertPhone,
 }) => {
-  const [isEditingPhone, setIsEditingPhone] = useState(false);
-  const [phoneInput, setPhoneInput] = useState(alertPhone);
-
   const safeSummary: SpendingSummary = summary || {
     currentCashBalance: 0,
     cashAdded: 0,
@@ -44,24 +37,34 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
     outOfWallet: 0,
   };
 
-  const handleSavePhone = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (onUpdateAlertPhone) {
-      onUpdateAlertPhone(phoneInput.trim());
-    }
-    setIsEditingPhone(false);
-  };
+  const isBalanceNegative = safeSummary.currentCashBalance < 0;
+  const isBalanceLow = safeSummary.currentCashBalance < 1500;
 
   return (
     <div className="space-y-3">
       {/* 1. Main Hero Wallet Card - Mobile First */}
       <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-950 text-white rounded-3xl p-5 sm:p-6 shadow-md border border-slate-700/60 relative overflow-hidden">
         <div className="relative z-10">
-          <div className="flex items-center gap-2 mb-2">
+          {/* Top Row: Cash Wallet Badge (Left) & Healthy/Low Cash Badge (Top Right) */}
+          <div className="flex items-center justify-between gap-2 mb-5">
             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
               <Wallet className="w-3 h-3" />
               Cash Wallet
             </span>
+
+            {isBalanceNegative ? (
+              <span className="inline-flex px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                Negative Cash
+              </span>
+            ) : isBalanceLow ? (
+              <span className="inline-flex px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                Low Cash
+              </span>
+            ) : (
+              <span className="inline-flex px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                Healthy
+              </span>
+            )}
           </div>
 
           <p className="text-[11px] uppercase tracking-wider text-slate-300 font-semibold">
@@ -71,18 +74,6 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
           <div className="mt-1 text-2xl sm:text-4xl font-extrabold tracking-tight text-white flex items-baseline gap-2">
             <span>{formatCurrency(safeSummary.currentCashBalance, currency)}</span>
           </div>
-
-          {/* Out of Wallet Prominent Display (replaces old health status pill) */}
-          {safeSummary.outOfWallet > 0 && (
-            <div className="mt-2.5 inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-rose-500/25 text-rose-100 border border-rose-400/30 shadow-2xs">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-rose-300">
-                Out of Wallet:
-              </span>
-              <span className="text-sm sm:text-base font-black text-white">
-                {formatCurrency(safeSummary.outOfWallet, currency)}
-              </span>
-            </div>
-          )}
 
           {/* Quick Action Buttons: Cash In, Spend, and sleek SMS Icon Button */}
           <div className="mt-4 pt-3 border-t border-slate-700/60 flex items-center gap-2">
@@ -117,53 +108,14 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
             )}
           </div>
 
-          {/* SMS Notification Phone Setup (Compact) */}
-          <div className="mt-3 pt-2.5 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
-            {isEditingPhone ? (
-              <form onSubmit={handleSavePhone} className="flex items-center gap-1.5 w-full">
-                <input
-                  type="tel"
-                  placeholder="Enter phone for SMS alerts (e.g. 0771234567)"
-                  value={phoneInput}
-                  onChange={(e) => setPhoneInput(e.target.value)}
-                  className="flex-1 px-2.5 py-1 text-xs bg-slate-800 text-white rounded-lg border border-slate-700 focus:outline-hidden focus:border-emerald-500"
-                  autoFocus
-                />
-                <button
-                  type="submit"
-                  className="px-2 py-1 bg-emerald-500 text-slate-950 font-bold rounded-lg text-[10px] cursor-pointer"
-                >
-                  Save
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsEditingPhone(false)}
-                  className="px-2 py-1 text-slate-400 hover:text-white text-[10px] cursor-pointer"
-                >
-                  Cancel
-                </button>
-              </form>
-            ) : (
-              <>
-                <div className="flex items-center gap-1.5 truncate">
-                  <Phone className="w-3 h-3 text-emerald-400 shrink-0" />
-                  <span className="text-slate-300">
-                    {alertPhone ? `SMS Alert: ${alertPhone}` : 'No SMS notification number set'}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPhoneInput(alertPhone);
-                    setIsEditingPhone(true);
-                  }}
-                  className="text-emerald-400 hover:text-emerald-300 font-semibold flex items-center gap-0.5 cursor-pointer shrink-0"
-                >
-                  <Edit2 className="w-2.5 h-2.5" />
-                  <span>{alertPhone ? 'Edit' : 'Set Phone'}</span>
-                </button>
-              </>
-            )}
+          {/* Bottom Bar (Replaces Set Phone): Left side Amount, Right side Out of Wallet text */}
+          <div className="mt-3 pt-2.5 border-t border-slate-800 flex items-center justify-between">
+            <span className="text-base sm:text-lg font-black text-rose-300 tracking-tight">
+              {formatCurrency(safeSummary.outOfWallet, currency)}
+            </span>
+            <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-rose-300/80">
+              Out of Wallet
+            </span>
           </div>
         </div>
       </div>
