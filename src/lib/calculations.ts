@@ -292,3 +292,22 @@ export const calculateWeeklyDailyTrend = (
 
   return { trendItems, dayTotals: flatTotals };
 };
+
+/**
+ * Strictly sanitizes transaction list:
+ * Removes ghost/corrupt records with amount <= 0, invalid dates (1899/1900/1970/blank),
+ * and phantom rows caused by Google Sheets formula/grid artifacts.
+ */
+export const sanitizeTransactions = (txs: Transaction[]): Transaction[] => {
+  if (!Array.isArray(txs)) return [];
+  return txs.filter((tx) => {
+    if (!tx || typeof tx !== 'object') return false;
+    if (typeof tx.amount !== 'number' || isNaN(tx.amount) || tx.amount <= 0) return false;
+    const date = String(tx.date || '').trim();
+    if (!date || date.startsWith('1899') || date.startsWith('1900') || date.startsWith('1970')) return false;
+    const year = parseInt(date.split('-')[0], 10);
+    if (isNaN(year) || year < 2000 || year > 2100) return false;
+    if (tx.notes === '1000' && (tx.category === '1000' || !tx.category)) return false;
+    return true;
+  });
+};

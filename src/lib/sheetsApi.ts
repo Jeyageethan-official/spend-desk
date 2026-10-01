@@ -213,15 +213,38 @@ export const createMoneyTrackerSpreadsheet = async (
 };
 
 export const initializeSheetLayout = async (accessToken: string, spreadsheetId: string) => {
-  // Set up Transactions headers (matches user's screenshot layout + Transaction ID)
+  // Set up Transactions headers matching user screenshot layout:
+  // Cols: Date, Time, Type, Category, Amount, Note, Payment Method, Balance, [spacer], Out of Wallet, Card Payment, [spacer], [spacer], Date & Time, Amount, Reason / Person, ID
   const txHeaderBody = {
     values: [
-      ['Date', 'Time', 'Type', 'Category', 'Amount', 'Note', 'Payment Method', 'Balance', 'Out of Wallet', 'Transaction ID'],
+      [
+        'Date',
+        'Time',
+        'Type',
+        'Category',
+        'Amount',
+        'Note',
+        'Payment Method',
+        'Balance',
+        '',
+        'Out of Wallet',
+        'Card Payment',
+        '',
+        '',
+        'Date & Time',
+        'Amount',
+        'Reason / Person',
+        'Transaction ID'
+      ],
+      [
+        '', '', '', '', '', '', '', '', '', '', '', '', '',
+        'LEND MONEY', '', '', ''
+      ]
     ],
   };
 
   const txHeaderResponse = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Transactions!A1:J1?valueInputOption=USER_ENTERED`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Transactions!A1:Q2?valueInputOption=USER_ENTERED`,
     {
       method: 'PUT',
       headers: {
@@ -235,7 +258,7 @@ export const initializeSheetLayout = async (accessToken: string, spreadsheetId: 
     throw parseGoogleApiError(txHeaderResponse.status, await txHeaderResponse.text(), 'Failed to create transaction headers');
   }
 
-  // Set up Lend_Borrow headers
+  // Set up Lend_Borrow headers (Tab 3: dedicated full Lend & Borrow ledger)
   const lendHeaderBody = {
     values: [
       ['Record ID', 'Person Name', 'Type (Lent/Borrowed)', 'Things / Reason', 'Amount (Rs)', 'Date', 'Due Date', 'Status', 'Phone'],
@@ -425,7 +448,7 @@ export const fetchAllTransactionsFromSheet = async (
   spreadsheetId: string
 ): Promise<Transaction[]> => {
   const res = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Transactions!A1:Z1000`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Transactions!A1:Z2000`,
     {
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -457,8 +480,8 @@ export const fetchAllTransactionsFromSheet = async (
   const amtCol = findCol(/amount|rs|price|cost/i, 4);
   const notesCol = findCol(/note|desc|reason|remark/i, 5);
   const paymentCol = findCol(/payment|method|mode/i, 6);
-  const idCol = findCol(/id/i, 9);
-  const createdCol = findCol(/created/i, 10);
+  const idCol = findCol(/id/i, 16);
+  const createdCol = findCol(/created/i, 17);
 
   const parsedTxs: Transaction[] = [];
 
@@ -467,9 +490,15 @@ export const fetchAllTransactionsFromSheet = async (
     const hasAnyContent = row.some((cell) => cell !== undefined && String(cell).trim() !== '');
     if (!hasAnyContent) return;
 
+    // Skip secondary header rows (e.g. "LEND MONEY" row)
+    const firstCell = String(row[0] || '').trim().toLowerCase();
+    const secondCell = String(row[1] || '').trim().toLowerCase();
+    const rowStr = row.map((c) => String(c || '').toLowerCase()).join(' ');
+    if (rowStr.includes('lend money') || firstCell === 'date' || secondCell === 'time') return;
+
     let rawAmount = row[amtCol];
     if (rawAmount === undefined || String(rawAmount).trim() === '') {
-      for (let c = 0; c < row.length; c++) {
+      for (let c = 0; c < Math.min(row.length, 9); c++) {
         if (c !== dateCol && c !== timeCol && c !== idCol) {
           const testNum = parseFloat(String(row[c] || '').replace(/[^0-9.-]+/g, ''));
           if (!isNaN(testNum) && testNum > 0) {
@@ -481,11 +510,21 @@ export const fetchAllTransactionsFromSheet = async (
     }
     const amount = parseFloat(String(rawAmount || '0').replace(/[^0-9.-]+/g, '')) || 0;
 
+    // Strict validation: Transaction must have positive amount
+    if (amount <= 0 || isNaN(amount)) return;
+
     let rawDate = String(row[dateCol] || '').trim();
     if (!rawDate && String(row[0] || '').match(/^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}$/)) {
       rawDate = String(row[0]).trim();
     }
-    let dateStr = new Date().toISOString().split('T')[0];
+    if (!rawDate) return;
+
+    // Discard Excel date zero / 1899 / 1900 / 1970
+    if (rawDate === '0' || rawDate.includes('1899') || rawDate.includes('1900') || rawDate.includes('1970')) {
+      return;
+    }
+
+    let dateStr = '';
     if (rawDate) {
       if (/^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}$/.test(rawDate)) {
         const parts = rawDate.split(/[-/.]/);
@@ -501,6 +540,12 @@ export const fetchAllTransactionsFromSheet = async (
       }
     }
 
+    if (!dateStr || dateStr.startsWith('1899') || dateStr.startsWith('1900') || dateStr.startsWith('1970')) {
+      return;
+    }
+    const year = parseInt(dateStr.split('-')[0], 10);
+    if (isNaN(year) || year < 2000 || year > 2100) return;
+
     const rawType = String(row[typeCol] || '').toLowerCase().trim();
     let type: TransactionType = 'cash_expense';
     if (rawType === 'in' || rawType.startsWith('in') || rawType.includes('add') || rawType.includes('income') || rawType.includes('receiv') || rawType.includes('credit')) {
@@ -512,7 +557,7 @@ export const fetchAllTransactionsFromSheet = async (
     }
 
     let category = String(row[catCol] || 'Other').trim();
-    if (!category) category = 'Other';
+    if (!category || category === '1000' || category === '0') category = 'Other';
 
     const rawPayment = String(row[paymentCol] || '').trim();
     let paymentMethod = 'Cash';
@@ -520,7 +565,8 @@ export const fetchAllTransactionsFromSheet = async (
     else if (rawPayment.toLowerCase().includes('bank') || rawPayment.toLowerCase().includes('transfer')) paymentMethod = 'Bank Transfer';
     else if (type === 'card_expense') paymentMethod = 'Card';
 
-    const notes = String(row[notesCol] || '').trim();
+    let notes = String(row[notesCol] || '').trim();
+    if (notes === '1000' && rawDate.includes('1899')) return; // ignore ghost row artifact
 
     let rawId = String(row[idCol] || '').trim();
     if (!rawId || rawId.includes('/') || rawId.includes(' ') || rawId.length < 3) {
@@ -553,11 +599,13 @@ export const fetchAllTransactionsFromSheet = async (
 export const overwriteTransactionsInSheet = async (
   accessToken: string,
   spreadsheetId: string,
-  transactions: Transaction[]
+  transactions: Transaction[],
+  lendItems?: LendItem[]
 ) => {
-  if (transactions.length === 0) {
+  // CRITICAL: Always clear all transaction rows from row 3 downwards first so deleted rows NEVER stay!
+  try {
     await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Transactions!A2:J1000:clear`,
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Transactions!A3:Q5000:clear`,
       {
         method: 'POST',
         headers: {
@@ -566,33 +614,70 @@ export const overwriteTransactionsInSheet = async (
         },
       }
     );
+  } catch (clearErr) {
+    console.warn('Could not clear old transaction rows:', clearErr);
+  }
+
+  if (transactions.length === 0 && (!lendItems || lendItems.length === 0)) {
     return;
   }
 
   const sorted = sortTransactionsChronological(transactions);
   const runningBalances = calculateRunningBalances(sorted);
+  const safeLends = lendItems || [];
 
-  const rows = sorted.map((tx) => {
-    const rb = runningBalances.get(tx.id);
-    const bal = rb ? rb.balance : 0;
-    const oow = rb ? rb.outOfWallet : 0;
+  const maxRowCount = Math.max(sorted.length, safeLends.length);
+  const rows: any[][] = [];
 
-    return [
-      tx.date || '',
-      tx.time || '',
-      tx.type === 'cash_added' ? 'IN' : 'OUT',
-      tx.category || 'Other',
-      tx.amount || 0,
-      tx.notes || '',
-      tx.paymentMethod || 'Cash',
-      `Rs ${bal.toLocaleString('en-US')}`,
-      oow > 0 ? `Rs -${oow.toLocaleString('en-US')}` : '',
-      tx.id,
-    ];
-  });
+  for (let i = 0; i < maxRowCount; i++) {
+    const tx = sorted[i];
+    const lend = safeLends[i];
 
-  const endRow = rows.length + 1;
-  const targetRange = `Transactions!A2:J${endRow}`;
+    let rowData: any[] = [];
+    if (tx) {
+      const rb = runningBalances.get(tx.id);
+      const bal = rb ? rb.balance : 0;
+      const oow = rb ? rb.outOfWallet : 0;
+      const isCard = tx.paymentMethod === 'Card' || tx.paymentMethod === 'Bank Transfer' || tx.type === 'card_expense';
+
+      rowData = [
+        tx.date || '',
+        tx.time || '',
+        tx.type === 'cash_added' ? 'IN' : 'OUT',
+        tx.category || 'Other',
+        `Rs ${tx.amount.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`,
+        tx.notes || '',
+        tx.paymentMethod || 'Cash',
+        `Rs ${bal.toLocaleString('en-US')}`,
+        '', // Col I spacer
+        oow > 0 ? `Rs -${oow.toLocaleString('en-US')}` : '', // Col J Out of Wallet
+        isCard ? `Rs ${tx.amount.toLocaleString('en-US')}` : '', // Col K Card Payment
+        '', // Col L spacer
+        '', // Col M spacer
+      ];
+    } else {
+      // Empty transaction cells
+      rowData = ['', '', '', '', '', '', '', '', '', '', '', '', ''];
+    }
+
+    // Append LEND MONEY side widget columns (N, O, P)
+    if (lend) {
+      const lendDateTime = lend.date || '';
+      const lendAmt = `Rs ${lend.amount.toLocaleString('en-US')}`;
+      const lendReason = `${lend.personName}${lend.thingsOrReason ? ` - ${lend.thingsOrReason}` : ''}`;
+      rowData.push(lendDateTime, lendAmt, lendReason);
+    } else {
+      rowData.push('', '', '');
+    }
+
+    // Col Q: Transaction ID metadata
+    rowData.push(tx ? tx.id : '');
+
+    rows.push(rowData);
+  }
+
+  const endRow = rows.length + 2; // Rows start at row 3
+  const targetRange = `Transactions!A3:Q${endRow}`;
 
   const writeResponse = await fetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${targetRange}?valueInputOption=USER_ENTERED`,
@@ -612,19 +697,6 @@ export const overwriteTransactionsInSheet = async (
   if (!writeResponse.ok) {
     throw parseGoogleApiError(writeResponse.status, await writeResponse.text(), 'Failed to save transactions to sheet');
   }
-
-  if (endRow < 1000) {
-    void fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Transactions!A${endRow + 1}:J1000:clear`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-      }
-    ).catch(console.warn);
-  }
 };
 
 export const overwriteLendItemsInSheet = async (
@@ -632,9 +704,10 @@ export const overwriteLendItemsInSheet = async (
   spreadsheetId: string,
   lendItems: LendItem[]
 ) => {
-  if (lendItems.length === 0) {
+  // Clear existing rows first
+  try {
     await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Lend_Borrow!A2:I500:clear`,
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Lend_Borrow!A2:Z1000:clear`,
       {
         method: 'POST',
         headers: {
@@ -643,6 +716,11 @@ export const overwriteLendItemsInSheet = async (
         },
       }
     );
+  } catch (err) {
+    console.warn('Could not clear Lend_Borrow sheet:', err);
+  }
+
+  if (lendItems.length === 0) {
     return;
   }
 

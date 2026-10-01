@@ -52,7 +52,8 @@ import {
   calculateCategoryBreakdown, 
   calculateWeeklyDailyTrend, 
   filterTransactions,
-  formatCurrency 
+  formatCurrency,
+  sanitizeTransactions
 } from './lib/calculations';
 import { 
   syncDashboardStats, 
@@ -146,7 +147,7 @@ export default function App() {
   const initialSheet = loadStoredSheetMeta(initialScope);
   const [activeSheet, setActiveSheet] = useState<GoogleSheetMeta | null>(initialSheet);
   const [transactions, setTransactions] = useState<Transaction[]>(() => {
-    return loadStoredTransactions(initialScope);
+    return sanitizeTransactions(loadStoredTransactions(initialScope));
   });
   const [lendItems, setLendItems] = useState<LendItem[]>(() => {
     return loadStoredLendItems(initialScope);
@@ -281,6 +282,25 @@ export default function App() {
     user?.email && pendingSheetPushEmail && user.email.trim().toLowerCase() === pendingSheetPushEmail
   );
   const isSignedOutLocalMode = Boolean(!user?.email && offlineWorkspaceEmail);
+
+  // Automatic one-time cleanup on startup to remove any ghost/corrupt records from localStorage and Supabase
+  useEffect(() => {
+    const rawStored = loadStoredTransactions(currentUserEmail);
+    const sanitized = sanitizeTransactions(rawStored);
+    if (sanitized.length !== rawStored.length) {
+      setTransactions(sanitized);
+      saveStoredTransactions(sanitized, currentUserEmail);
+      saveStoredTransactions(sanitized, 'guest');
+      if (activeSheet?.id) {
+        saveSheetTransactions(activeSheet.id, sanitized);
+      }
+      if (user?.email) {
+        const nextWs = buildCloudWorkspace(Date.now() + 20);
+        nextWs.transactions = sanitized;
+        void saveCloudWorkspace(nextWs).catch(console.warn);
+      }
+    }
+  }, [currentUserEmail, activeSheet?.id, user?.email]);
 
   // Realtime Online / Offline Listener & Reconnect Auto-Sync
   useEffect(() => {
@@ -463,7 +483,7 @@ export default function App() {
     suppressNextCloudSyncRef.current = true;
     cloudVersionRef.current = workspace.updatedAt;
     const scope = currentUserEmail;
-    const remoteTxs = Array.isArray(workspace.transactions) ? workspace.transactions : [];
+    const remoteTxs = sanitizeTransactions(Array.isArray(workspace.transactions) ? workspace.transactions : []);
     const remoteLends = Array.isArray(workspace.lendItems) ? workspace.lendItems : [];
 
     setTransactions(remoteTxs);
@@ -687,8 +707,8 @@ export default function App() {
       const remoteTxs = await fetchAllTransactionsFromSheet(token, sId);
       const remoteLends = await fetchAllLendItemsFromSheet(token, sId);
 
-      // Cleanly replace: show ONLY the records from this connected Google Sheet
-      const sortedTxs = [...remoteTxs].sort((a, b) => {
+      // Cleanly replace: show ONLY the valid sanitized records from this connected Google Sheet
+      const sortedTxs = sanitizeTransactions(remoteTxs).sort((a, b) => {
         const dateDiff = new Date(b.date).getTime() - new Date(a.date).getTime();
         if (dateDiff !== 0) return dateDiff;
         return (b.createdAt || 0) - (a.createdAt || 0);
@@ -748,17 +768,20 @@ export default function App() {
 
   const handleBulkDeleteTransactions = (txIds: string[]) => {
     txIds.forEach((id) => markTransactionDelete(id, currentUserEmail));
-    setTransactions(prev => {
-      const updated = prev.filter(t => !txIds.includes(t.id));
-      saveStoredTransactions(updated, currentUserEmail);
-      if (activeSheet?.id) {
-        saveSheetTransactions(activeSheet.id, updated);
-      }
-      return updated;
-    });
+    const updated = transactions.filter(t => !txIds.includes(t.id));
+    setTransactions(updated);
+    saveStoredTransactions(updated, currentUserEmail);
+    if (activeSheet?.id) {
+      saveSheetTransactions(activeSheet.id, updated);
+    }
     setSelectedTransactionIds([]);
+    if (user?.email) {
+      const nextWs = buildCloudWorkspace(Date.now() + 50);
+      nextWs.transactions = updated;
+      void saveCloudWorkspace(nextWs).catch(console.warn);
+    }
     if (activeSheet) {
-      queueSheetPush();
+      queueSheetPush({ transactions: updated, lendItems });
     }
     showNotification(`Deleted ${txIds.length} transactions.`, 'info');
   };
@@ -839,95 +862,19 @@ export default function App() {
       setIsSyncing(true);
     }
     try {
-      // 1. Read existing rows currently in Google Sheet (so manual edits or sheet rows are never lost!)
-      let remoteTxs: Transaction[] = [];
-      let remoteLends: LendItem[] = [];
-      try {
-        remoteTxs = await fetchAllTransactionsFromSheet(sheetToken, activeSheet.id);
-        remoteLends = await fetchAllLendItemsFromSheet(sheetToken, activeSheet.id);
-      } catch (fetchErr) {
-        console.warn('Could not read existing sheet rows before push:', fetchErr);
-      }
-
-      // 2. Intelligent 2-way merge:
-      const currentLocalTxs = snapshot?.transactions ?? latestStateRef.current.transactions;
+      const currentLocalTxs = sanitizeTransactions(snapshot?.transactions ?? latestStateRef.current.transactions);
       const currentLocalLends = snapshot?.lendItems ?? latestStateRef.current.lendItems;
 
-      const localTxIdMap = new Map(currentLocalTxs.map(t => [t.id, t]));
-      const localCompositeSet = new Set(
-        currentLocalTxs.map(t => `${t.date}_${t.amount}_${t.category}_${t.paymentMethod}`)
-      );
-
-      const mergedTxs = [...currentLocalTxs];
-      let newTxsCount = 0;
-
-      for (const rTx of remoteTxs) {
-        if (!localTxIdMap.has(rTx.id)) {
-          const compKey = `${rTx.date}_${rTx.amount}_${rTx.category}_${rTx.paymentMethod}`;
-          if (!localCompositeSet.has(compKey)) {
-            mergedTxs.push(rTx);
-            localTxIdMap.set(rTx.id, rTx);
-            localCompositeSet.add(compKey);
-            newTxsCount++;
-          }
-        }
-      }
-
-      // Sort newest date first
-      mergedTxs.sort((a, b) => {
-        const dateDiff = (b.date || '').localeCompare(a.date || '');
-        if (dateDiff !== 0) return dateDiff;
-        return (b.createdAt || 0) - (a.createdAt || 0);
-      });
-
-      // Merge lend items
-      const localLendIdMap = new Map(currentLocalLends.map(l => [l.id, l]));
-      const localLendCompositeSet = new Set(
-        currentLocalLends.map(l => `${l.personName.toLowerCase()}_${l.type}_${l.amount}_${l.date}`)
-      );
-      const mergedLends = [...currentLocalLends];
-      let newLendsCount = 0;
-
-      for (const rLend of remoteLends) {
-        if (!localLendIdMap.has(rLend.id)) {
-          const compKey = `${rLend.personName.toLowerCase()}_${rLend.type}_${rLend.amount}_${rLend.date}`;
-          if (!localLendCompositeSet.has(compKey)) {
-            mergedLends.push(rLend);
-            localLendIdMap.set(rLend.id, rLend);
-            localLendCompositeSet.add(compKey);
-            newLendsCount++;
-          }
-        }
-      }
-
-      // If new records were imported from Google Sheet, update local state & cloud workspace immediately!
-      if (newTxsCount > 0 || newLendsCount > 0) {
-        setTransactions(mergedTxs);
-        saveStoredTransactions(mergedTxs, currentUserEmail);
-        saveSheetTransactions(activeSheet.id, mergedTxs);
-
-        setLendItems(mergedLends);
-        saveStoredLendItems(mergedLends, currentUserEmail);
-        saveSheetLendItems(activeSheet.id, mergedLends);
-
-        if (user?.email) {
-          const nextWs = buildCloudWorkspace(Date.now());
-          nextWs.transactions = mergedTxs;
-          nextWs.lendItems = mergedLends;
-          void saveCloudWorkspace(nextWs).catch(console.warn);
-        }
-      }
-
-      // 3. Write merged complete records to Transactions sheet
-      await overwriteTransactionsInSheet(sheetToken, activeSheet.id, mergedTxs);
+      // 1. Write complete records to Transactions sheet (including Out of Wallet, Card Payment & Lend widget)
+      await overwriteTransactionsInSheet(sheetToken, activeSheet.id, currentLocalTxs, currentLocalLends);
       
-      // 4. Write merged Lend & Borrow backup tab records
-      await overwriteLendItemsInSheet(sheetToken, activeSheet.id, mergedLends);
+      // 2. Write Lend & Borrow records to dedicated Lend_Borrow tab
+      await overwriteLendItemsInSheet(sheetToken, activeSheet.id, currentLocalLends);
 
-      // 5. Update Dashboard KPI Totals & Trends
-      const allSummary = calculateSummary(mergedTxs, mergedTxs);
-      const catSummary = calculateCategoryBreakdown(mergedTxs);
-      const { dayTotals } = calculateWeeklyDailyTrend(mergedTxs);
+      // 3. Update Dashboard KPI Totals & Trends
+      const allSummary = calculateSummary(currentLocalTxs, currentLocalTxs);
+      const catSummary = calculateCategoryBreakdown(currentLocalTxs);
+      const { dayTotals } = calculateWeeklyDailyTrend(currentLocalTxs);
       await syncDashboardStats(sheetToken, activeSheet.id, allSummary, catSummary, dayTotals);
 
       const updatedMeta: GoogleSheetMeta = {
@@ -939,11 +886,7 @@ export default function App() {
       saveStoredSheetMeta(updatedMeta, currentUserEmail);
 
       if (!options.silent) {
-        if (newTxsCount > 0 || newLendsCount > 0) {
-          showNotification(`Synced! Imported ${newTxsCount} transactions & ${newLendsCount} borrow items from Google Sheet.`, 'success');
-        } else {
-          showNotification(`Synced all records with "${activeSheet.name}"!`, 'success');
-        }
+        showNotification(`Synced ${currentLocalTxs.length} records with "${activeSheet.name}"!`, 'success');
       }
       return true;
     } catch (err: any) {
@@ -1113,6 +1056,12 @@ export default function App() {
     setTransactions(remaining);
     setDeleteCandidate(null);
     showNotification('Transaction deleted.', 'info');
+
+    if (user?.email) {
+      const nextWs = buildCloudWorkspace(Date.now() + 50);
+      nextWs.transactions = remaining;
+      void saveCloudWorkspace(nextWs).catch(console.warn);
+    }
 
     if (activeSheet) {
       queueSheetPush({ transactions: remaining, lendItems });
@@ -1529,16 +1478,29 @@ export default function App() {
               onResetAllData={() => {
                 setTransactions([]);
                 setLendItems([]);
+                setSelectedTransactionIds([]);
                 saveStoredTransactions([], currentUserEmail);
+                saveStoredTransactions([], 'guest');
                 saveStoredLendItems([], currentUserEmail);
+                saveStoredLendItems([], 'guest');
+                clearPendingSync(currentUserEmail);
+                clearPendingSync('guest');
                 if (activeSheet?.id) {
+                  clearSheetCache(activeSheet.id);
                   saveSheetTransactions(activeSheet.id, []);
                   saveSheetLendItems(activeSheet.id, []);
+                  if (accessToken) {
+                    void overwriteTransactionsInSheet(accessToken, activeSheet.id, [], []).catch(console.warn);
+                    void overwriteLendItemsInSheet(accessToken, activeSheet.id, []).catch(console.warn);
+                    void syncDashboardStats(accessToken, activeSheet.id, { currentCashBalance: 0, cashAdded: 0, cashSpent: 0, cardSpend: 0, totalSpend: 0, outOfWallet: 0 }, [], {}).catch(console.warn);
+                  }
                 }
                 if (user?.email) {
+                  const wipeTimestamp = Math.max(Date.now(), cloudVersionRef.current + 5000);
+                  cloudVersionRef.current = wipeTimestamp;
                   void saveCloudWorkspace({
                     version: 1,
-                    updatedAt: Date.now(),
+                    updatedAt: wipeTimestamp,
                     transactions: [],
                     lendItems: [],
                     categories: loadStoredCategoryDefs(currentUserEmail),
@@ -1550,7 +1512,7 @@ export default function App() {
                     currency,
                   }).catch(console.warn);
                 }
-                showNotification('All records cleared successfully from device & cloud.', 'info');
+                showNotification('All records reset successfully! Storage and Google Sheet refreshed.', 'info');
               }}
               onRestoreTransactions={() => {
                 setTransactions(loadStoredTransactions(currentUserEmail));
@@ -1634,6 +1596,7 @@ export default function App() {
                     setIsTxModalOpen(true);
                   }}
                   onDelete={handleDeleteTransaction}
+                  onBulkDelete={handleBulkDeleteTransactions}
                   selectedTxIds={selectedTransactionIds}
                   onSelectedTxIdsChange={setSelectedTransactionIds}
                 />
@@ -1668,6 +1631,7 @@ export default function App() {
                   setIsTxModalOpen(true);
                 }}
                 onDelete={handleDeleteTransaction}
+                onBulkDelete={handleBulkDeleteTransactions}
                 selectedTxIds={selectedTransactionIds}
                 onSelectedTxIdsChange={setSelectedTransactionIds}
               />
