@@ -29,7 +29,12 @@ export const requestGoogleAccessToken = async (promptUser = true): Promise<strin
     return existing;
   }
 
-  // Attempt Google Identity Services (GIS) token request if loaded
+  // In background or silent mode, never invoke GIS or OAuth redirects to avoid browser popup blocks
+  if (!promptUser) {
+    return '';
+  }
+
+  // Attempt Google Identity Services (GIS) token request only when user initiated an action
   if (typeof window !== 'undefined' && (window as any).google?.accounts?.oauth2?.initTokenClient) {
     try {
       const tokenPromise = new Promise<string>((resolve, reject) => {
@@ -38,7 +43,7 @@ export const requestGoogleAccessToken = async (promptUser = true): Promise<strin
           const client = (window as any).google.accounts.oauth2.initTokenClient({
             client_id: GOOGLE_OAUTH_CLIENT_ID,
             scope: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email',
-            prompt: promptUser ? '' : 'none',
+            prompt: '',
             callback: (res: any) => {
               clearTimeout(timeout);
               if (res?.access_token && !res.access_token.startsWith('eyJ')) {
@@ -55,7 +60,7 @@ export const requestGoogleAccessToken = async (promptUser = true): Promise<strin
               reject(err);
             },
           });
-          client.requestAccessToken({ prompt: promptUser ? '' : 'none' });
+          client.requestAccessToken({ prompt: '' });
         } catch (e) {
           clearTimeout(timeout);
           reject(e);
@@ -68,11 +73,8 @@ export const requestGoogleAccessToken = async (promptUser = true): Promise<strin
     }
   }
 
-  if (promptUser) {
-    const { accessToken } = await signInWithGoogleWorkspace();
-    return accessToken;
-  }
-  return '';
+  const { accessToken } = await signInWithGoogleWorkspace();
+  return accessToken;
 };
 
 /**

@@ -91,15 +91,17 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
-  // Auto load Drive sheets when switching to 'drive' tab or on mount or account change
+  // Auto load Drive sheets when switching to 'drive' tab or on account change
   useEffect(() => {
-    if (activeTab === 'drive' || spreadsheets.length === 0) {
+    if (activeTab === 'drive') {
       loadDriveSheets();
     }
-  }, [accessToken, activeTab, storageEmail]);
+  }, [activeTab, storageEmail]);
 
   const loadDriveSheets = async () => {
-    setLoadingList(true);
+    if (spreadsheets.length === 0) {
+      setLoadingList(true);
+    }
     setErrorMsg('');
 
     // If logged in with Google token, query the live Google Drive for THIS account

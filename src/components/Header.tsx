@@ -26,6 +26,7 @@ import { SpendDeskLogo } from './SpendDeskLogo';
 interface HeaderProps {
   user: any;
   userProfile?: UserProfile;
+  storageEmail?: string | null;
   activeSheet: GoogleSheetMeta | null;
   isSyncing: boolean;
   totalCashBalance?: number;
@@ -50,6 +51,7 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({
   user,
   userProfile,
+  storageEmail,
   activeSheet,
   isSyncing,
   totalCashBalance = 0,
@@ -88,15 +90,25 @@ export const Header: React.FC<HeaderProps> = ({
     };
   }, [isProfileOpen]);
 
-  // Determine effective display name, avatar, and email
-  const effectiveName = user
+  // Determine effective display name, avatar, and email strictly isolated per account
+  const isOnlineUser = Boolean(user && user.email);
+  const effectiveEmail = isOnlineUser 
+    ? user.email 
+    : (storageEmail && storageEmail !== 'guest' ? storageEmail : 'Local Offline Mode');
+    
+  const effectiveName = isOnlineUser
     ? (user.displayName || user.email?.split('@')[0] || 'Google User')
-    : (userProfile?.name && userProfile.name !== 'Jeyaram Tech' ? userProfile.name : 'My Wallet');
-  const effectiveAvatar = user ? (user.photoURL || userProfile?.avatar || null) : (userProfile?.avatar || null);
-  const effectiveEmail = user
-    ? user.email
-    : (userProfile?.email && userProfile.email !== 'jeyaramantech05@gmail.com' ? userProfile.email : 'Local Offline Mode');
-  const effectiveInitial = effectiveName.charAt(0).toUpperCase() || 'M';
+    : (userProfile?.name && userProfile.name !== 'Jeyaram Tech' && userProfile.name !== 'My Wallet'
+        ? userProfile.name
+        : (storageEmail && storageEmail !== 'guest' ? storageEmail.split('@')[0] : 'My Wallet'));
+
+  const effectiveAvatar = isOnlineUser 
+    ? (user.photoURL || userProfile?.avatar || null) 
+    : (userProfile?.avatar || null);
+
+  const effectiveInitial = (effectiveName && effectiveName.trim().length > 0 
+    ? effectiveName.trim().charAt(0).toUpperCase() 
+    : (effectiveEmail && effectiveEmail.includes('@') ? effectiveEmail.charAt(0).toUpperCase() : 'M'));
 
   const handleGoToProfile = () => {
     setIsProfileOpen(false);

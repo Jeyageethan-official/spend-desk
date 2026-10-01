@@ -353,11 +353,6 @@ export default function App() {
     setLoadedStorageScope('');
     setSelectedTransactionIds([]);
 
-    // Merge any existing guest records into the logged-in user's account
-    if (user?.email) {
-      mergeGuestDataIntoUser(user.email);
-    }
-
     const storedSheet = loadStoredSheetMeta(scope);
     setActiveSheet(storedSheet);
 
@@ -558,9 +553,6 @@ export default function App() {
       void saveCloudWorkspace(ws)
         .then(() => {
           clearPendingSync(currentUserEmail);
-          if (activeSheet && queueSheetPushRef.current) {
-            queueSheetPushRef.current({ transactions: ws.transactions, lendItems: ws.lendItems });
-          }
         })
         .catch((error) => console.error('Cloud workspace sync failed:', error));
     }, 600);
@@ -860,8 +852,12 @@ export default function App() {
     }
 
     if (!hasGoogleSheetsToken) {
+      if (!options.interactive) {
+        isPushingToSheetRef.current = false;
+        return false;
+      }
       try {
-        const freshToken = await requestGoogleAccessToken(Boolean(options.interactive));
+        const freshToken = await requestGoogleAccessToken(true);
         if (freshToken && !freshToken.startsWith('eyJ') && freshToken !== 'local_token' && freshToken.length > 20) {
           sheetToken = freshToken;
           setAccessToken(freshToken);
@@ -879,9 +875,8 @@ export default function App() {
       return false;
     }
     
-    if (!options.silent) {
-      setIsSyncing(true);
-    }
+    // Always trigger visual sync indicator on header icon
+    setIsSyncing(true);
     try {
       const currentLocalTxs = sanitizeTransactions(snapshot?.transactions ?? latestStateRef.current.transactions);
       const currentLocalLends = snapshot?.lendItems ?? latestStateRef.current.lendItems;
@@ -902,9 +897,9 @@ export default function App() {
         ...activeSheet,
         lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
-      // CRITICAL: Update state and storage directly without re-triggering handleSetActiveSheet push loop
-      setActiveSheet(updatedMeta);
       saveStoredSheetMeta(updatedMeta, currentUserEmail);
+      suppressNextCloudSyncRef.current = true;
+      setActiveSheet(updatedMeta);
 
       if (!options.silent) {
         showNotification(`Synced ${currentLocalTxs.length} records with "${activeSheet.name}"!`, 'success');
@@ -931,15 +926,14 @@ export default function App() {
       return false;
     } finally {
       isPushingToSheetRef.current = false;
-      if (!options.silent) {
-        setIsSyncing(false);
-      }
+      setIsSyncing(false);
     }
   }, [activeSheet, accessToken, currentUserEmail, user?.email, buildCloudWorkspace]);
 
   const sheetPushTimerRef = useRef<number | null>(null);
   const queueSheetPush = useCallback((snapshot?: { transactions: Transaction[]; lendItems: LendItem[] }) => {
-    if (!activeSheet) return;
+    // Only queue background Google Sheet push if user is signed in, online, and active sheet exists
+    if (!activeSheet || !user?.email || !isOnline) return;
     if (sheetPushTimerRef.current) window.clearTimeout(sheetPushTimerRef.current);
     const currentSnapshot = snapshot || {
       transactions: latestStateRef.current.transactions,
@@ -949,8 +943,8 @@ export default function App() {
       void handlePushToSheet({ silent: true }, currentSnapshot).catch((err) => {
         console.warn('Background sheet push note:', err);
       });
-    }, 1000);
-  }, [activeSheet, handlePushToSheet]);
+    }, 1200);
+  }, [activeSheet, user?.email, isOnline, handlePushToSheet]);
 
   useEffect(() => {
     queueSheetPushRef.current = queueSheetPush;
@@ -1252,6 +1246,7 @@ export default function App() {
         <Header
           user={user}
           userProfile={userProfile}
+          storageEmail={currentUserEmail}
           activeSheet={activeSheet}
           isSyncing={isSyncing}
           totalCashBalance={overallSummary.currentCashBalance}
