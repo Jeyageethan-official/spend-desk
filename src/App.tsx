@@ -1281,6 +1281,13 @@ export default function App() {
       .reduce((sum, t) => sum + t.amount, 0);
   }, [transactions, todayStr]);
 
+  const thisMonthSpend = useMemo(() => {
+    const currentMonthPrefix = todayStr.substring(0, 7);
+    return transactions
+      .filter((t) => (t.date || '').startsWith(currentMonthPrefix) && (t.type === 'cash_expense' || t.type === 'card_expense'))
+      .reduce((sum, t) => sum + t.amount, 0);
+  }, [transactions, todayStr]);
+
   const categoryBreakdown = useMemo(() => {
     return calculateCategoryBreakdown(filteredTransactions);
   }, [filteredTransactions]);
@@ -1468,10 +1475,9 @@ export default function App() {
         <div className="flex items-center justify-center bg-white p-1.5 rounded-2xl border border-slate-200/90 shadow-xs">
           <div className="flex items-center gap-1.5 flex-wrap justify-center">
             {[
-              { id: 'dashboard', label: 'Overview & Wallet' },
-              { id: 'transactions', label: 'Transaction Ledger' },
-              { id: 'lend', label: `Lend & Borrow${pendingLendCount > 0 ? ` (${pendingLendCount})` : ''}` },
-              { id: 'analytics', label: 'Category & Trends' },
+              { id: 'dashboard', label: 'Dashboard' },
+              { id: 'transactions', label: 'Transactions' },
+              { id: 'analytics', label: 'Analytics' },
               { id: 'sheets', label: 'Google Sheets' },
             ].map((tab) => (
               <button

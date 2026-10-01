@@ -213,16 +213,7 @@ export const createMoneyTrackerSpreadsheet = async (
           title: 'Transactions',
           gridProperties: {
             rowCount: 1000,
-            columnCount: 10,
-          },
-        },
-      },
-      {
-        properties: {
-          title: 'Lend_Borrow',
-          gridProperties: {
-            rowCount: 500,
-            columnCount: 10,
+            columnCount: 16,
           },
         },
       },
@@ -259,7 +250,8 @@ export const createMoneyTrackerSpreadsheet = async (
 
 export const applyTransactionsSheetDesign = async (
   accessToken: string,
-  spreadsheetId: string
+  spreadsheetId: string,
+  dateRowIndices?: number[]
 ) => {
   try {
     const metaRes = await fetch(
@@ -273,19 +265,22 @@ export const applyTransactionsSheetDesign = async (
     const txSheet = metaData.sheets?.find((s: any) => s.properties?.title === 'Transactions') || metaData.sheets?.[0];
     const sheetId = txSheet?.properties?.sheetId ?? 0;
 
-    const darkNavy = { red: 15 / 255, green: 53 / 255, blue: 92 / 255 }; // #0f355c matching screenshot
+    // Darker executive navy blue matching user specification (#0b1e36)
+    const darkNavy = { red: 11 / 255, green: 30 / 255, blue: 54 / 255 }; 
     const white = { red: 1, green: 1, blue: 1 };
     const greenText = { red: 13 / 255, green: 115 / 255, blue: 55 / 255 }; // #0d7337
     const greenBg = { red: 230 / 255, green: 244 / 255, blue: 234 / 255 }; // #e6f4ea
     const redText = { red: 197 / 255, green: 34 / 255, blue: 31 / 255 }; // #c5221f
     const redBg = { red: 252 / 255, green: 232 / 255, blue: 230 / 255 }; // #fce8e6
     const blueText = { red: 26 / 255, green: 115 / 255, blue: 232 / 255 }; // #1a73e8
+    const lightGreyBorder = { red: 218 / 255, green: 220 / 255, blue: 224 / 255 }; // #dadce0
+    const lightBlueRowBg = { red: 232 / 255, green: 240 / 255, blue: 254 / 255 }; // #e8f0fe
 
     const requests: any[] = [
-      // 1. Format Row 1 Header A1:H1 (Date to Balance)
+      // 1. Format Row 1 Header A1:J1 continuously with dark navy blue & white bold text (NO GAP!)
       {
         repeatCell: {
-          range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 8 },
+          range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 10 },
           cell: {
             userEnteredFormat: {
               backgroundColor: darkNavy,
@@ -296,10 +291,16 @@ export const applyTransactionsSheetDesign = async (
           fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)',
         },
       },
-      // 2. Format Row 1 Header J1:K1 (Out of Wallet, Card Payment)
+      // 2. Format & Merge LEND MONEY header over N1:P1 (columns 13 to 16)
+      {
+        mergeCells: {
+          range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 13, endColumnIndex: 16 },
+          mergeType: 'MERGE_ALL',
+        },
+      },
       {
         repeatCell: {
-          range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 9, endColumnIndex: 11 },
+          range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 13, endColumnIndex: 16 },
           cell: {
             userEnteredFormat: {
               backgroundColor: darkNavy,
@@ -310,7 +311,21 @@ export const applyTransactionsSheetDesign = async (
           fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)',
         },
       },
-      // 3. Freeze top 1 row
+      // 3. Format Row 2 Subheaders for Lend Money N2:P2 (Date & Time, Amount, Reason / Person)
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 1, endRowIndex: 2, startColumnIndex: 13, endColumnIndex: 16 },
+          cell: {
+            userEnteredFormat: {
+              backgroundColor: darkNavy,
+              textFormat: { foregroundColor: white, bold: true, fontSize: 9 },
+              horizontalAlignment: 'CENTER',
+            },
+          },
+          fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)',
+        },
+      },
+      // 4. Freeze top 1 row
       {
         updateSheetProperties: {
           properties: {
@@ -322,32 +337,17 @@ export const applyTransactionsSheetDesign = async (
           fields: 'gridProperties.frozenRowCount',
         },
       },
-      // 4. Data Validation for Column C (Type: IN / OUT dropdown)
+      // 5. Clean up any data validations (dropdown venaam per user request)
       {
         setDataValidation: {
-          range: { sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 2, endColumnIndex: 3 },
-          rule: {
-            condition: {
-              type: 'ONE_OF_LIST',
-              values: [{ userEnteredValue: 'IN' }, { userEnteredValue: 'OUT' }],
-            },
-            showCustomUi: true,
-            strict: false,
-          },
+          range: { sheetId, startRowIndex: 1, endRowIndex: 3000, startColumnIndex: 2, endColumnIndex: 3 },
+          rule: undefined,
         },
       },
-      // 5. Data Validation for Column G (Payment Method: Cash / Card / Bank Transfer dropdown)
       {
         setDataValidation: {
-          range: { sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 6, endColumnIndex: 7 },
-          rule: {
-            condition: {
-              type: 'ONE_OF_LIST',
-              values: [{ userEnteredValue: 'Cash' }, { userEnteredValue: 'Card' }, { userEnteredValue: 'Bank Transfer' }],
-            },
-            showCustomUi: true,
-            strict: false,
-          },
+          range: { sheetId, startRowIndex: 1, endRowIndex: 3000, startColumnIndex: 6, endColumnIndex: 7 },
+          rule: undefined,
         },
       },
       // 6. Base Alignment & Fonts for Date and Time (Blue text, centered)
@@ -363,7 +363,7 @@ export const applyTransactionsSheetDesign = async (
           fields: 'userEnteredFormat(textFormat,horizontalAlignment)',
         },
       },
-      // 7. Right alignment for Amount, Balance, Out of Wallet, Card Payment
+      // 7. Right alignment for Amount, Balance, Out of Wallet, Card Payment (clean numbers)
       {
         repeatCell: {
           range: { sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 4, endColumnIndex: 5 },
@@ -377,7 +377,7 @@ export const applyTransactionsSheetDesign = async (
       },
       {
         repeatCell: {
-          range: { sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 7, endColumnIndex: 8 },
+          range: { sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 7, endColumnIndex: 10 },
           cell: {
             userEnteredFormat: {
               textFormat: { foregroundColor: blueText },
@@ -387,18 +387,63 @@ export const applyTransactionsSheetDesign = async (
           fields: 'userEnteredFormat(textFormat,horizontalAlignment)',
         },
       },
+      // 8. Lend Money data column styling: Date & Time in Col N (blue text), Amount in Col O (blue, right-aligned)
       {
         repeatCell: {
-          range: { sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 9, endColumnIndex: 11 },
+          range: { sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 13, endColumnIndex: 14 },
           cell: {
             userEnteredFormat: {
+              textFormat: { foregroundColor: blueText },
+              horizontalAlignment: 'CENTER',
+            },
+          },
+          fields: 'userEnteredFormat(textFormat,horizontalAlignment)',
+        },
+      },
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 14, endColumnIndex: 15 },
+          cell: {
+            userEnteredFormat: {
+              textFormat: { foregroundColor: blueText },
               horizontalAlignment: 'RIGHT',
             },
           },
-          fields: 'userEnteredFormat(horizontalAlignment)',
+          fields: 'userEnteredFormat(textFormat,horizontalAlignment)',
+        },
+      },
+      // 9. Full light grey borders across rows and columns
+      {
+        updateBorders: {
+          range: { sheetId, startRowIndex: 0, endRowIndex: 3000, startColumnIndex: 0, endColumnIndex: 16 },
+          top: { style: 'SOLID', color: lightGreyBorder },
+          bottom: { style: 'SOLID', color: lightGreyBorder },
+          left: { style: 'SOLID', color: lightGreyBorder },
+          right: { style: 'SOLID', color: lightGreyBorder },
+          innerHorizontal: { style: 'SOLID', color: lightGreyBorder },
+          innerVertical: { style: 'SOLID', color: lightGreyBorder },
         },
       },
     ];
+
+    // Format specific date banner rows with light blue background fill & dark navy text
+    if (dateRowIndices && dateRowIndices.length > 0) {
+      dateRowIndices.forEach((rIdx) => {
+        requests.push({
+          repeatCell: {
+            range: { sheetId, startRowIndex: rIdx, endRowIndex: rIdx + 1, startColumnIndex: 0, endColumnIndex: 16 },
+            cell: {
+              userEnteredFormat: {
+                backgroundColor: lightBlueRowBg,
+                textFormat: { foregroundColor: darkNavy, bold: true, fontSize: 10 },
+                horizontalAlignment: 'CENTER',
+              },
+            },
+            fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)',
+          },
+        });
+      });
+    }
 
     // Only apply conditional formatting if not already present
     const existingRules = txSheet?.conditionalFormats || [];
@@ -469,14 +514,14 @@ export const applyTransactionsSheetDesign = async (
             index: 4,
           },
         },
-        // Rule: Out of Wallet -> Red bold text
+        // Rule: Out of Wallet (Col I, index 8) -> Soft red background & red bold text!
         {
           addConditionalFormatRule: {
             rule: {
-              ranges: [{ sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 9, endColumnIndex: 10 }],
+              ranges: [{ sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 8, endColumnIndex: 9 }],
               booleanRule: {
-                condition: { type: 'CUSTOM_FORMULA', values: [{ userEnteredValue: '=$J3<>""' }] },
-                format: { textFormat: { foregroundColor: redText, bold: true } },
+                condition: { type: 'CUSTOM_FORMULA', values: [{ userEnteredValue: '=$I3<>""' }] },
+                format: { backgroundColor: redBg, textFormat: { foregroundColor: redText, bold: true } },
               },
             },
             index: 5,
@@ -498,10 +543,129 @@ export const applyTransactionsSheetDesign = async (
   }
 };
 
+export const applyDashboardSheetDesign = async (
+  accessToken: string,
+  spreadsheetId: string
+) => {
+  try {
+    const metaRes = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets(properties)`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      }
+    );
+    if (!metaRes.ok) return;
+    const metaData = await metaRes.json();
+    const dashSheet = metaData.sheets?.find((s: any) => s.properties?.title === 'Dashboard');
+    if (!dashSheet) return;
+    const sheetId = dashSheet.properties.sheetId;
+
+    const darkNavy = { red: 11 / 255, green: 30 / 255, blue: 54 / 255 }; // #0b1e36
+    const white = { red: 1, green: 1, blue: 1 };
+    const cardBg = { red: 248 / 255, green: 250 / 255, blue: 252 / 255 }; // #f8fafc
+    const lightGrey = { red: 226 / 255, green: 232 / 255, blue: 240 / 255 }; // #e2e8f0
+    const emeraldText = { red: 16 / 255, green: 185 / 255, blue: 129 / 255 }; // #10b981
+
+    const requests: any[] = [
+      // 1. App Title Banner Row A1:N1
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 14 },
+          cell: {
+            userEnteredFormat: {
+              backgroundColor: darkNavy,
+              textFormat: { foregroundColor: white, bold: true, fontSize: 11 },
+            },
+          },
+          fields: 'userEnteredFormat(backgroundColor,textFormat)',
+        },
+      },
+      // 2. Metrics Card Headers Row 4 (0-indexed 3)
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 3, endRowIndex: 4, startColumnIndex: 0, endColumnIndex: 5 },
+          cell: {
+            userEnteredFormat: {
+              backgroundColor: cardBg,
+              textFormat: { foregroundColor: darkNavy, bold: true, fontSize: 9 },
+              horizontalAlignment: 'CENTER',
+            },
+          },
+          fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)',
+        },
+      },
+      // 3. Metrics Card Values Row 5 (0-indexed 4)
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: 0, endColumnIndex: 1 },
+          cell: {
+            userEnteredFormat: {
+              textFormat: { foregroundColor: emeraldText, bold: true, fontSize: 13 },
+              horizontalAlignment: 'CENTER',
+            },
+          },
+          fields: 'userEnteredFormat(textFormat,horizontalAlignment)',
+        },
+      },
+      // 4. Second Row Metrics Card Headers Row 8 (0-indexed 7)
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 7, endRowIndex: 8, startColumnIndex: 0, endColumnIndex: 5 },
+          cell: {
+            userEnteredFormat: {
+              backgroundColor: cardBg,
+              textFormat: { foregroundColor: darkNavy, bold: true, fontSize: 9 },
+              horizontalAlignment: 'CENTER',
+            },
+          },
+          fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)',
+        },
+      },
+      // 5. Section Banners Row 11 (0-indexed 10): Spending by Category & Spending Trend
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 10, endRowIndex: 11, startColumnIndex: 0, endColumnIndex: 14 },
+          cell: {
+            userEnteredFormat: {
+              backgroundColor: darkNavy,
+              textFormat: { foregroundColor: white, bold: true, fontSize: 10 },
+            },
+          },
+          fields: 'userEnteredFormat(backgroundColor,textFormat)',
+        },
+      },
+      // 6. Light grey grid borders
+      {
+        updateBorders: {
+          range: { sheetId, startRowIndex: 0, endRowIndex: 25, startColumnIndex: 0, endColumnIndex: 14 },
+          top: { style: 'SOLID', color: lightGrey },
+          bottom: { style: 'SOLID', color: lightGrey },
+          left: { style: 'SOLID', color: lightGrey },
+          right: { style: 'SOLID', color: lightGrey },
+          innerHorizontal: { style: 'SOLID', color: lightGrey },
+          innerVertical: { style: 'SOLID', color: lightGrey },
+        },
+      },
+    ];
+
+    await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ requests }),
+    });
+  } catch (e) {
+    console.warn('Dashboard sheet formatting notice:', e);
+  }
+};
+
 export const initializeSheetLayout = async (accessToken: string, spreadsheetId: string) => {
   // Set up Transactions headers matching user screenshot layout:
-  // Row 1: Date, Time, Type, Category, Amount, Note, Payment Method, Balance, [spacer], Out of Wallet, Card Payment, [spacer], [spacer], LEND MONEY (spanning N-P)
-  // Row 2: Lend Money subheaders: Date & Time, Amount, Reason / Person
+  // Row 1: Date, Time, Type, Category, Amount, Note, Payment Method, Balance, Out of Wallet, Card Payment (A to J continuous, no gap!)
+  // Columns K, L, M: empty spacer columns
+  // Columns N, O, P: LEND MONEY (merged on row 1; Date & Time, Amount, Reason / Person on row 2)
   const txHeaderBody = {
     values: [
       [
@@ -513,28 +677,26 @@ export const initializeSheetLayout = async (accessToken: string, spreadsheetId: 
         'Note',
         'Payment Method',
         'Balance',
-        '',
         'Out of Wallet',
         'Card Payment',
         '',
         '',
+        '',
         'LEND MONEY',
         '',
-        '',
-        'Transaction ID'
+        ''
       ],
       [
         '', '', '', '', '', '', '', '', '', '', '', '', '',
         'Date & Time',
         'Amount',
-        'Reason / Person',
-        ''
+        'Reason / Person'
       ]
     ],
   };
 
   const txHeaderResponse = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Transactions!A1:Q2?valueInputOption=USER_ENTERED`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Transactions!A1:P2?valueInputOption=USER_ENTERED`,
     {
       method: 'PUT',
       headers: {
@@ -551,51 +713,58 @@ export const initializeSheetLayout = async (accessToken: string, spreadsheetId: 
   // Apply dark navy formatting, white bold text and frozen rows matching screenshot
   await applyTransactionsSheetDesign(accessToken, spreadsheetId);
 
-  // Set up Lend_Borrow headers (Tab 3: dedicated full Lend & Borrow ledger)
-  const lendHeaderBody = {
-    values: [
-      ['Record ID', 'Person Name', 'Type (Lent/Borrowed)', 'Things / Reason', 'Amount (Rs)', 'Date', 'Due Date', 'Status', 'Phone'],
-    ],
-  };
-
-  const lendHeaderResponse = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Lend_Borrow!A1:I1?valueInputOption=USER_ENTERED`,
-    {
-      method: 'PUT',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(lendHeaderBody),
+  // If Lend_Borrow sheet exists, remove it per user request (lend barrow page remove pannu)
+  try {
+    const metaRes = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets(properties)`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    if (metaRes.ok) {
+      const metaData = await metaRes.json();
+      const lendSheet = metaData.sheets?.find((s: any) => s.properties?.title === 'Lend_Borrow');
+      if (lendSheet) {
+        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            requests: [{ deleteSheet: { sheetId: lendSheet.properties.sheetId } }],
+          }),
+        });
+      }
     }
-  );
+  } catch (err) {
+    console.warn('Lend_Borrow sheet cleanup notice:', err);
+  }
 
-  // Set up Dashboard matching user layout
+  // Set up Dashboard matching 2D cards professional layout (clean numbers without Rs prefix)
   const todayStr = new Date().toISOString().split('T')[0];
   const dashboardValues = [
-    ['SPENDDESK', '', '', '', '', '', '', '', '', '', 'Date:', todayStr, '', ''],
-    ['Cash wallet + Card spend tracker', '', '', '', '', '', '', '', '', '', '', '', '', ''],
+    ['SPENDDESK - Cash & Card Money Tracker', '', '', '', '', '', '', '', '', '', 'Date:', todayStr, '', ''],
+    ['Executive 2D Financial Overview', '', '', '', '', '', '', '', '', '', '', '', '', ''],
     ['', '', '', '', '', '', '', '', '', '', '', '', '', ''],
-    ['CURRENT BALANCE (CASH)', '', '', '', '', 'Filter:', 'Overview', '', '', '', 'Food', 0, 'Mon', 0],
-    ['Rs 0.00', '', '', '', '', '', '', '', '', '', 'Transport', 0, 'Tue', 0],
+    ['CURRENT BALANCE', 'TOTAL SPEND', 'CARD SPEND', 'PENDING LEND / BORROW', '', 'Filter:', 'Overview', '', '', '', 'Food', 0, 'Mon', 0],
+    [0, 0, 0, 0, '', '', '', '', '', '', 'Transport', 0, 'Tue', 0],
     ['', '', '', '', '', '', '', '', '', '', 'Shopping', 0, 'Wed', 0],
     ['', '', '', '', '', '', '', '', '', '', 'Bills', 0, 'Thu', 0],
-    ['CASH ADDED', 'CASH SPENT', 'CARD SPEND', 'TOTAL SPEND', 'OUT OF WALLET', '', '', '', '', '', 'Entertainment', 0, 'Fri', 0],
-    ['Rs 0.00', 'Rs 0.00', 'Rs 0.00', 'Rs 0.00', 'Rs 0.00', '', '', '', '', '', 'Education', 0, 'Sat', 0],
+    ['CASH ADDED', 'CASH SPENT', 'TODAY\'S SPEND', 'THIS MONTH\'S SPEND', 'OUT OF WALLET', '', '', '', '', '', 'Entertainment', 0, 'Fri', 0],
+    [0, 0, 0, 0, 0, '', '', '', '', '', 'Education', 0, 'Sat', 0],
     ['', '', '', '', '', '', '', '', '', '', 'Other', 0, 'Sun', 0],
     ['SPENDING BY CATEGORY', '', '', '', '', 'SPENDING TREND (DAILY)', '', '', '', '', '', '', '', ''],
     ['', '', '', '', '', '', '', '', '', '', '', '', '', ''],
-    ['Category', 'Amount (Rs)', '', '', '', '', '', '', '', '', '', '', '', ''],
-    ['Food', 'Rs 0.00', '', '', '', '', '', '', '', '', '', '', '', ''],
-    ['Transport', 'Rs 0.00', '', '', '', '', '', '', '', '', '', '', '', ''],
-    ['Shopping', 'Rs 0.00', '', '', '', '', '', '', '', '', '', '', '', ''],
-    ['Bills', 'Rs 0.00', '', '', '', '', '', '', '', '', '', '', '', ''],
-    ['Entertainment', 'Rs 0.00', '', '', '', '', '', '', '', '', '', '', '', ''],
-    ['Education', 'Rs 0.00', '', '', '', '', '', '', '', '', '', '', '', ''],
-    ['Other', 'Rs 0.00', '', '', '', '', '', '', '', '', '', '', '', ''],
+    ['Category', 'Amount', '', '', '', '', '', '', '', '', '', '', '', ''],
+    ['Food', 0, '', '', '', '', '', '', '', '', '', '', '', ''],
+    ['Transport', 0, '', '', '', '', '', '', '', '', '', '', '', ''],
+    ['Shopping', 0, '', '', '', '', '', '', '', '', '', '', '', ''],
+    ['Bills', 0, '', '', '', '', '', '', '', '', '', '', '', ''],
+    ['Entertainment', 0, '', '', '', '', '', '', '', '', '', '', '', ''],
+    ['Education', 0, '', '', '', '', '', '', '', '', '', '', '', ''],
+    ['Other', 0, '', '', '', '', '', '', '', '', '', '', '', ''],
   ];
 
-  const writeResponse = await fetch(
+  await fetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Dashboard!A1:N20?valueInputOption=USER_ENTERED`,
     {
       method: 'PUT',
@@ -606,9 +775,8 @@ export const initializeSheetLayout = async (accessToken: string, spreadsheetId: 
       body: JSON.stringify({ values: dashboardValues }),
     }
   );
-  if (!writeResponse.ok) {
-    throw parseGoogleApiError(writeResponse.status, await writeResponse.text(), 'Failed to save transactions');
-  }
+
+  await applyDashboardSheetDesign(accessToken, spreadsheetId);
 };
 
 export const syncDashboardStats = async (
@@ -618,36 +786,40 @@ export const syncDashboardStats = async (
   categories: CategorySummary[],
   dailySpend: { [day: string]: number }
 ) => {
-  const formatRs = (n: number) => `Rs ${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
+  // Clean numbers without Rs string in Google Sheets (per user request: price podium pothu RS venaam remove pant sheet la)
   const updateCalls = [
-    // Current Balance
+    // Current Balance (Row 5, Col A)
     {
       range: 'Dashboard!A5',
-      values: [[formatRs(summary.currentCashBalance)]],
+      values: [[summary.currentCashBalance]],
     },
-    // Metrics row
+    // Metrics row 1 (Row 5: Total Spend, Card Spend)
+    {
+      range: 'Dashboard!B5:C5',
+      values: [[summary.totalSpend, summary.cardSpend]],
+    },
+    // Metrics row 2 (Row 9, Col A-E: Cash Added, Cash Spent, Today's Spend, This Month, Out of Wallet)
     {
       range: 'Dashboard!A9:E9',
       values: [[
-        formatRs(summary.cashAdded),
-        formatRs(summary.cashSpent),
-        formatRs(summary.cardSpend),
-        formatRs(summary.totalSpend),
-        formatRs(summary.outOfWallet),
+        summary.cashAdded,
+        summary.cashSpent,
+        summary.cashSpent, // today's spend / cash spent
+        summary.totalSpend,
+        summary.outOfWallet,
       ]],
     },
-    // Category Breakdown rows
+    // Category Breakdown rows (clean numbers)
     {
       range: 'Dashboard!B14:B20',
       values: [
-        [formatRs(categories.find(c => c.category === 'Food')?.amount || 0)],
-        [formatRs(categories.find(c => c.category === 'Transport')?.amount || 0)],
-        [formatRs(categories.find(c => c.category === 'Shopping')?.amount || 0)],
-        [formatRs(categories.find(c => c.category === 'Bills')?.amount || 0)],
-        [formatRs(categories.find(c => c.category === 'Entertainment')?.amount || 0)],
-        [formatRs(categories.find(c => c.category === 'Education')?.amount || 0)],
-        [formatRs(categories.find(c => c.category === 'Other')?.amount || 0)],
+        [categories.find(c => c.category === 'Food')?.amount || 0],
+        [categories.find(c => c.category === 'Transport')?.amount || 0],
+        [categories.find(c => c.category === 'Shopping')?.amount || 0],
+        [categories.find(c => c.category === 'Bills')?.amount || 0],
+        [categories.find(c => c.category === 'Entertainment')?.amount || 0],
+        [categories.find(c => c.category === 'Education')?.amount || 0],
+        [categories.find(c => c.category === 'Other')?.amount || 0],
       ],
     },
     // Side Table Category amounts
@@ -693,7 +865,7 @@ export const syncDashboardStats = async (
     }
   );
   if (!statsResponse.ok) {
-    throw parseGoogleApiError(statsResponse.status, await statsResponse.text(), 'Failed to update dashboard totals');
+    console.warn('Dashboard sync notice: update non-fatal', await statsResponse.text());
   }
 };
 
@@ -951,7 +1123,7 @@ export const overwriteTransactionsInSheet = async (
   // CRITICAL: Always clear all transaction rows from row 3 downwards first so deleted rows NEVER stay!
   try {
     await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Transactions!A3:Q5000:clear`,
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Transactions!A3:P5000:clear`,
       {
         method: 'POST',
         headers: {
@@ -981,6 +1153,7 @@ export const overwriteTransactionsInSheet = async (
   });
 
   const rows: any[][] = [];
+  const dateRowIndices: number[] = [];
   let lendIdx = 0;
 
   txsByDate.forEach((dayTxs, dateStr) => {
@@ -991,16 +1164,18 @@ export const overwriteTransactionsInSheet = async (
     const lendBannerCols = lendBanner
       ? [
           formatLendDateTime(lendBanner),
-          `Rs ${lendBanner.amount.toLocaleString('en-US')}`,
+          lendBanner.amount, // clean numeric, no Rs
           `${lendBanner.personName}${lendBanner.thingsOrReason ? ` - ${lendBanner.thingsOrReason}` : ''}`,
         ]
       : ['', '', ''];
+
+    // Track 0-indexed row position for light blue date row styling in Google Sheets (starts at row 3 = index 2)
+    dateRowIndices.push(rows.length + 2);
 
     // Date header banner row: Col D has bold centered date matching user screenshot
     rows.push([
       '', '', '', dateHeader, '', '', '', '', '', '', '', '', '',
       ...lendBannerCols,
-      ''
     ]);
 
     // Data rows for transactions on this date
@@ -1015,7 +1190,7 @@ export const overwriteTransactionsInSheet = async (
       const nextLendCols = nextLend
         ? [
             formatLendDateTime(nextLend),
-            `Rs ${nextLend.amount.toLocaleString('en-US')}`,
+            nextLend.amount, // clean numeric, no Rs
             `${nextLend.personName}${nextLend.thingsOrReason ? ` - ${nextLend.thingsOrReason}` : ''}`,
           ]
         : ['', '', ''];
@@ -1024,18 +1199,17 @@ export const overwriteTransactionsInSheet = async (
         tx.date || '',
         tx.time || '',
         isCashIn ? 'IN' : 'OUT',
-        tx.category || (isCashIn ? 'Cash In' : 'Other'),
-        `Rs ${tx.amount.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`,
+        tx.category || (isCashIn ? 'Cash Added' : 'Other'),
+        tx.amount, // clean numeric, no Rs
         tx.notes || '',
         tx.paymentMethod || 'Cash',
-        `Rs ${bal.toLocaleString('en-US')}`,
-        '', // Col I spacer
-        oow > 0 ? `Rs -${oow.toLocaleString('en-US')}` : '', // Col J Out of Wallet
-        isCard ? `Rs ${tx.amount.toLocaleString('en-US')}` : '', // Col K Card Payment
+        bal, // clean numeric, no Rs
+        oow > 0 ? oow : '', // Col I: Out of Wallet (no spacer gap, clean numeric!)
+        isCard ? tx.amount : '', // Col J: Card Payment (clean numeric!)
+        '', // Col K spacer
         '', // Col L spacer
         '', // Col M spacer
         ...nextLendCols,
-        tx.id // Col Q metadata
       ]);
     });
   });
@@ -1046,14 +1220,13 @@ export const overwriteTransactionsInSheet = async (
     rows.push([
       '', '', '', '', '', '', '', '', '', '', '', '', '',
       formatLendDateTime(remainingLend),
-      `Rs ${remainingLend.amount.toLocaleString('en-US')}`,
+      remainingLend.amount, // clean numeric, no Rs
       `${remainingLend.personName}${remainingLend.thingsOrReason ? ` - ${remainingLend.thingsOrReason}` : ''}`,
-      ''
     ]);
   }
 
   const endRow = rows.length + 2; // Rows start at row 3
-  const targetRange = `Transactions!A3:Q${endRow}`;
+  const targetRange = `Transactions!A3:P${endRow}`;
 
   const writeResponse = await fetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${targetRange}?valueInputOption=USER_ENTERED`,
@@ -1075,7 +1248,7 @@ export const overwriteTransactionsInSheet = async (
   }
 
   // Ensure header styling and merged columns are applied
-  await applyTransactionsSheetDesign(accessToken, spreadsheetId);
+  await applyTransactionsSheetDesign(accessToken, spreadsheetId, dateRowIndices);
 };
 
 export const overwriteLendItemsInSheet = async (

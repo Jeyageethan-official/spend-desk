@@ -139,7 +139,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       setReceiptImage(undefined);
 
       if (defaultType === 'cash_added') {
-        setCategory('Income / Top-up');
+        setCategory('Cash Added');
         setPaymentMethod('Cash');
       } else if (defaultType === 'card_expense') {
         setCategory('Shopping');
@@ -203,10 +203,10 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   const handleTypeChange = (newType: TransactionType) => {
     setType(newType);
     if (newType === 'cash_added') {
-      setCategory('Income / Top-up');
+      setCategory('Cash Added');
       setPaymentMethod('Cash');
     } else {
-      if (category === 'Income / Top-up') setCategory('Food');
+      if (category === 'Income / Top-up' || category === 'Cash Added') setCategory('Food');
       setPaymentMethod('Cash');
     }
   };
@@ -314,7 +314,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
               }`}
             >
               <ArrowUpRight className="w-4 h-4 text-emerald-600" />
-              <span>Add Cash / Income</span>
+              <span>Cash Added</span>
             </button>
           </div>
 

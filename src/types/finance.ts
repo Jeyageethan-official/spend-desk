@@ -8,7 +8,8 @@ export type StandardCategory =
   | 'Entertainment'
   | 'Education'
   | 'Other'
-  | 'Income / Top-up';
+  | 'Income / Top-up'
+  | 'Cash Added';
 
 export type Category = StandardCategory | string;
 

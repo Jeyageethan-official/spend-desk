@@ -119,7 +119,7 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
               className="flex-1 py-3 px-4 rounded-2xl bg-[#06be70] hover:bg-[#05a863] active:bg-[#049154] text-slate-950 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer"
             >
               <ArrowDownLeft className="w-4 h-4 stroke-[3]" />
-              <span>+ Cash In</span>
+              <span>+ Cash Added</span>
             </button>
 
             <button
@@ -204,7 +204,7 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
               <ArrowDownLeft className="w-4 h-4 stroke-[2.5]" />
             </span>
             <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50/80 px-2 py-0.5 rounded-full">
-              Cash In
+              Cash Added
             </span>
           </div>
           <div>

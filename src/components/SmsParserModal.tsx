@@ -186,7 +186,7 @@ export const SmsParserModal: React.FC<SmsParserModalProps> = ({
                     {parsed.type === 'cash_added' ? (
                       <>
                         <ArrowDownLeft className="w-3.5 h-3.5 text-emerald-600" />
-                        <span className="text-emerald-700">Cash Top-up</span>
+                        <span className="text-emerald-700">Cash Added</span>
                       </>
                     ) : parsed.type === 'card_expense' ? (
                       <>
