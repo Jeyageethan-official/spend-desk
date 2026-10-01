@@ -80,7 +80,6 @@ import { SheetManagerView } from './components/SheetManagerView';
 import { ConfirmModal } from './components/ConfirmModal';
 import { SmsParserModal } from './components/SmsParserModal';
 import { AuthHelpModal } from './components/AuthHelpModal';
-import { AdjustBalanceModal } from './components/AdjustBalanceModal';
 import { BottomNav } from './components/BottomNav';
 import { LendBorrowView } from './components/LendBorrowView';
 import { AnalyticsView } from './components/AnalyticsView';
@@ -171,7 +170,6 @@ export default function App() {
 
   // Modal & View States
   const [isTxModalOpen, setIsTxModalOpen] = useState(false);
-  const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
   const [isLendModalOpen, setIsLendModalOpen] = useState(false);
   const [modalDefaultType, setModalDefaultType] = useState<TransactionType>('cash_expense');
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
@@ -1078,25 +1076,6 @@ export default function App() {
     }
   };
 
-  const handleConfirmBalanceAdjustment = (actualCashAmount: number, difference: number) => {
-    if (Math.abs(difference) < 0.001) return;
-    const now = new Date();
-    const pad = (n: number) => String(n).padStart(2, '0');
-    const timeStr = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
-    const dateStr = now.toISOString().split('T')[0];
-
-    handleSaveTransaction({
-      date: dateStr,
-      time: timeStr,
-      type: difference > 0 ? 'cash_added' : 'cash_expense',
-      category: 'Other',
-      amount: Math.abs(difference),
-      paymentMethod: 'Cash',
-      notes: 'Cash Balance Adjustment',
-    });
-    showNotification(`Cash in hand adjusted to ${formatCurrency(actualCashAmount, currency)}`, 'success');
-  };
-
   // Safe Deletion Handler
   const handleDeleteTransaction = (tx: Transaction) => {
     setDeleteCandidate(tx);
@@ -1578,7 +1557,6 @@ export default function App() {
                   setModalDefaultType('cash_expense');
                   setIsTxModalOpen(true);
                 }}
-                onAdjustBalance={() => setIsAdjustModalOpen(true)}
                 onOpenSms={() => setIsSmsModalOpen(true)}
                 alertPhone={alertPhone}
                 onUpdateAlertPhone={handleUpdateAlertPhone}
@@ -1720,15 +1698,6 @@ export default function App() {
           }
         }}
         pendingLendCount={pendingLendCount}
-      />
-
-      {/* Quick Cash Balance Adjustment Modal */}
-      <AdjustBalanceModal
-        isOpen={isAdjustModalOpen}
-        onClose={() => setIsAdjustModalOpen(false)}
-        currentBalance={summary.currentCashBalance}
-        currency={currency}
-        onConfirmAdjustment={handleConfirmBalanceAdjustment}
       />
 
       {/* Transaction Add / Edit Modal */}

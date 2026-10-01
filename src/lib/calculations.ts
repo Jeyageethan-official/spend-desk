@@ -148,19 +148,15 @@ export const calculateSummary = (
   const isCashPayment = (method?: string) => !method || method.toLowerCase() === 'cash';
   const isCardOrBankPayment = (method?: string) => method && (method.toLowerCase() === 'card' || method.toLowerCase() === 'bank' || method.toLowerCase().includes('transfer'));
 
-  // Calculate chronological running balances across all transactions
-  const runningBalances = calculateRunningBalances(allTxs);
-  const sortedAll = sortTransactionsChronological(allTxs);
+  const allCashAdded = allTxs
+    .filter((tx) => tx && tx.type === 'cash_added')
+    .reduce((sum, tx) => sum + (tx.amount || 0), 0);
 
-  let finalCashBalance = 0;
-  let totalOutOfWalletAll = 0;
-  for (const tx of sortedAll) {
-    const rb = runningBalances.get(tx.id);
-    if (rb) {
-      finalCashBalance = rb.balance;
-      totalOutOfWalletAll += rb.outOfWallet;
-    }
-  }
+  const allCashSpent = allTxs
+    .filter((tx) => tx && tx.type === 'cash_expense' && isCashPayment(tx.paymentMethod))
+    .reduce((sum, tx) => sum + (tx.amount || 0), 0);
+
+  const currentCashBalance = allCashAdded - allCashSpent;
 
   const cashAdded = filtTxs
     .filter((tx) => tx && tx.type === 'cash_added')
@@ -174,24 +170,11 @@ export const calculateSummary = (
     .filter((tx) => tx && (tx.type === 'card_expense' || (tx.type === 'cash_expense' && isCardOrBankPayment(tx.paymentMethod))))
     .reduce((sum, tx) => sum + (tx.amount || 0), 0);
 
-  // Out of wallet for filtered range (or all-time if no specific filter)
-  const isAllFilter = filtTxs.length === allTxs.length;
-  let outOfWallet = 0;
-  if (isAllFilter) {
-    outOfWallet = totalOutOfWalletAll;
-  } else {
-    for (const tx of filtTxs) {
-      const rb = runningBalances.get(tx.id);
-      if (rb) {
-        outOfWallet += rb.outOfWallet;
-      }
-    }
-  }
-
   const totalSpend = cashSpent + cardSpend;
+  const outOfWallet = 0;
 
   return {
-    currentCashBalance: finalCashBalance,
+    currentCashBalance,
     cashAdded,
     cashSpent,
     cardSpend,
