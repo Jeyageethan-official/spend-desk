@@ -256,9 +256,13 @@ export default function App() {
       }
 
       const providerToken = params.get('provider_token');
+      const grantedScope = params.get('scope') || '';
       if (providerToken) {
         setAccessToken(providerToken);
         try { localStorage.setItem('money_tracker_access_token', providerToken); } catch {}
+        if (grantedScope && (!grantedScope.includes('spreadsheets') && !grantedScope.includes('drive'))) {
+          showNotification('Notice: Please check "Select all" permissions to enable Google Sheets syncing.', 'info');
+        }
       }
     } catch (e) {
       console.warn('Hash parse error:', e);
@@ -760,7 +764,7 @@ export default function App() {
   // Google Login handler via Supabase Google OAuth (shows all Gmails, zero origin_mismatch)
   const handleSignIn = async () => {
     try {
-      showNotification('Opening Google account picker...', 'info');
+      showNotification('Opening Google Sign-In... Please check "Select all" on the screen.', 'info');
       const res = await signInWithGoogleSupabase();
       if (!res.success && res.errorMessage) {
         showNotification(res.errorMessage, 'error');
@@ -777,23 +781,21 @@ export default function App() {
   const handleSignOut = async () => {
     const signedOutScope = user?.email || currentUserEmail;
     if (signedOutScope) {
-      // Keep this exact user's local workspace on this device
       stageWorkspaceForReplay(transactions, lendItems, signedOutScope);
-      setOfflineWorkspaceEmail(signedOutScope);
-      try {
-        localStorage.setItem(LAST_OFFLINE_WORKSPACE_KEY, signedOutScope);
-      } catch {}
     }
-    await signOutGoogleWorkspace();
-    await signOutSupabase();
-    setUser(null);
-    setAccessToken(null);
+    setOfflineWorkspaceEmail(null);
+    setActiveSheet(null);
     try {
+      localStorage.removeItem(LAST_OFFLINE_WORKSPACE_KEY);
       localStorage.removeItem('money_tracker_user');
       localStorage.removeItem('money_tracker_user_info');
       localStorage.removeItem('money_tracker_access_token');
     } catch (e) {}
-    showNotification('Signed out. Local records for this account remain active on this device.', 'info');
+    await signOutGoogleWorkspace();
+    await signOutSupabase();
+    setUser(null);
+    setAccessToken(null);
+    showNotification('Signed out successfully.', 'info');
   };
 
   const isPushingToSheetRef = useRef(false);
@@ -1460,6 +1462,7 @@ export default function App() {
               totalLendCount={lendItems.length}
               transactions={transactions}
               lendItems={lendItems}
+              storageEmail={currentUserEmail}
               onNotification={showNotification}
             />
           )}

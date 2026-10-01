@@ -66,6 +66,8 @@ export const signInWithGoogleSupabase = async (): Promise<AuthResult> => {
         queryParams: {
           access_type: 'offline',
           prompt: 'select_account consent',
+          enable_granular_consent: 'false',
+          include_granted_scopes: 'true',
         },
       },
     });

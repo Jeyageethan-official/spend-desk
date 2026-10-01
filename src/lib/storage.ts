@@ -366,15 +366,6 @@ export const mergeGuestDataIntoUser = (
     saveStoredTransactions(mergedTxs, userEmail);
     saveStoredLendItems(mergedLends, userEmail);
 
-    // Also migrate sheet meta if user doesn't have one
-    const userSheet = loadStoredSheetMeta(userEmail);
-    if (!userSheet) {
-      const guestSheet = loadStoredSheetMeta('guest');
-      if (guestSheet) {
-        saveStoredSheetMeta(guestSheet, userEmail);
-      }
-    }
-
     // Clear guest storage after successful migration so it doesn't duplicate on future logins
     saveStoredTransactions([], 'guest');
     saveStoredLendItems([], 'guest');
@@ -525,8 +516,11 @@ export const importFullBackupJson = (jsonString: string, email?: string | null):
   }
 };
 
-// Known Google Spreadsheets Registry (Ensures created sheets always show in Drive tab)
+// Known Google Spreadsheets Registry (Strictly isolated per account)
 const KNOWN_SPREADSHEETS_KEY = 'spenddesk_known_spreadsheets_v2';
+try {
+  localStorage.removeItem(KNOWN_SPREADSHEETS_KEY);
+} catch {}
 
 export interface KnownSpreadsheetItem {
   id: string;
@@ -539,7 +533,7 @@ export interface KnownSpreadsheetItem {
 export const loadKnownSpreadsheets = (email?: string | null): KnownSpreadsheetItem[] => {
   try {
     const key = getScopedKey(KNOWN_SPREADSHEETS_KEY, email);
-    const raw = localStorage.getItem(key) || localStorage.getItem(KNOWN_SPREADSHEETS_KEY);
+    const raw = localStorage.getItem(key);
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
@@ -565,7 +559,6 @@ export const saveKnownSpreadsheet = (
       ...existing.filter((s) => s.id !== sheet.id),
     ];
     localStorage.setItem(key, JSON.stringify(updated));
-    localStorage.setItem(KNOWN_SPREADSHEETS_KEY, JSON.stringify(updated));
   } catch (e) {
     console.warn('Could not save known spreadsheet:', e);
   }
@@ -578,7 +571,6 @@ export const removeKnownSpreadsheet = (sheetId: string, email?: string | null) =
     const existing = loadKnownSpreadsheets(email);
     const updated = existing.filter((s) => s.id !== sheetId);
     localStorage.setItem(key, JSON.stringify(updated));
-    localStorage.setItem(KNOWN_SPREADSHEETS_KEY, JSON.stringify(updated));
   } catch (e) {
     console.warn('Could not remove known spreadsheet:', e);
   }

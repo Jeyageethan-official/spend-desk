@@ -54,6 +54,7 @@ interface SheetManagerViewProps {
   totalLendCount?: number;
   transactions?: Transaction[];
   lendItems?: LendItem[];
+  storageEmail?: string | null;
   onNotification?: (msg: string, type?: 'success' | 'info' | 'error') => void;
 }
 
@@ -73,6 +74,7 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
   totalLendCount = 0,
   transactions = [],
   lendItems = [],
+  storageEmail,
   onNotification,
 }) => {
   const [activeTab, setActiveTab] = useState<SheetMenuTab>('sheets');
@@ -89,28 +91,64 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
-  // Auto load Drive sheets when switching to 'drive' tab or on mount
+  // Auto load Drive sheets when switching to 'drive' tab or on mount or account change
   useEffect(() => {
     if (activeTab === 'drive' || spreadsheets.length === 0) {
       loadDriveSheets();
     }
-  }, [accessToken, activeTab]);
+  }, [accessToken, activeTab, storageEmail]);
 
   const loadDriveSheets = async () => {
     setLoadingList(true);
     setErrorMsg('');
 
-    // 1. Gather all locally created / known spreadsheets
-    const localKnown = loadKnownSpreadsheets();
-    const localItems: DriveSpreadsheetItem[] = localKnown.map((k) => ({
-      id: k.id,
-      name: k.name,
-      webViewLink: k.url,
-      modifiedTime: k.modifiedTime,
-    }));
+    // If logged in with Google token, query the live Google Drive for THIS account
+    if (accessToken && accessToken !== 'local_token' && !accessToken.startsWith('eyJ')) {
+      try {
+        const driveItems = await listUserSpreadsheets(accessToken);
+        // Strictly deduplicate by id
+        const uniqueDriveMap = new Map<string, DriveSpreadsheetItem>();
+        driveItems.forEach((item) => {
+          if (item?.id) uniqueDriveMap.set(item.id.trim(), item);
+        });
 
-    if (activeSheet && !localItems.some((s) => s.id === activeSheet.id)) {
-      localItems.unshift({
+        const list = Array.from(uniqueDriveMap.values());
+        setSpreadsheets(list);
+
+        // Cache exclusively for this user email
+        if (storageEmail) {
+          list.forEach((item) => {
+            saveKnownSpreadsheet({
+              id: item.id,
+              name: item.name,
+              url: item.webViewLink,
+              modifiedTime: item.modifiedTime,
+            }, storageEmail);
+          });
+        }
+        setLoadingList(false);
+        return;
+      } catch (err: any) {
+        console.warn('Google Drive list error:', err);
+      }
+    }
+
+    // Offline / No token: show ONLY this account's saved spreadsheets
+    const localKnown = loadKnownSpreadsheets(storageEmail);
+    const uniqueLocal = new Map<string, DriveSpreadsheetItem>();
+    localKnown.forEach((k) => {
+      if (k?.id) {
+        uniqueLocal.set(k.id.trim(), {
+          id: k.id,
+          name: k.name,
+          webViewLink: k.url,
+          modifiedTime: k.modifiedTime,
+        });
+      }
+    });
+
+    if (activeSheet && !uniqueLocal.has(activeSheet.id.trim())) {
+      uniqueLocal.set(activeSheet.id.trim(), {
         id: activeSheet.id,
         name: activeSheet.name,
         webViewLink: activeSheet.url,
@@ -118,29 +156,8 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
       });
     }
 
-    // If no valid Google token yet, display all known created sheets immediately
-    if (!accessToken || accessToken === 'local_token' || accessToken.startsWith('eyJ')) {
-      setSpreadsheets(localItems);
-      setLoadingList(false);
-      return;
-    }
-
-    try {
-      const items = await listUserSpreadsheets(accessToken);
-      // Merge remote Drive items and locally known items (deduplicating by id)
-      const mergedMap = new Map<string, DriveSpreadsheetItem>();
-      items.forEach((item) => mergedMap.set(item.id, item));
-      localItems.forEach((item) => {
-        if (!mergedMap.has(item.id)) mergedMap.set(item.id, item);
-      });
-      setSpreadsheets(Array.from(mergedMap.values()));
-    } catch (err: any) {
-      console.warn('Google Drive list error:', err);
-      // Fallback: still show locally created sheets
-      setSpreadsheets(localItems);
-    } finally {
-      setLoadingList(false);
-    }
+    setSpreadsheets(Array.from(uniqueLocal.values()));
+    setLoadingList(false);
   };
 
   const handleCreateNewSheet = async () => {
@@ -183,8 +200,8 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
         lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
 
-      // Save to known spreadsheets registry so it is ALWAYS visible in Drive tab
-      saveKnownSpreadsheet(newMeta);
+      // Save to known spreadsheets registry strictly for this user account
+      saveKnownSpreadsheet(newMeta, storageEmail);
       onSetActiveSheet(newMeta);
 
       // Instantly add to Drive spreadsheet list
@@ -230,7 +247,7 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
       url: item.webViewLink || `https://docs.google.com/spreadsheets/d/${item.id}/edit`,
       lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
-    saveKnownSpreadsheet(meta);
+    saveKnownSpreadsheet(meta, storageEmail);
     onSetActiveSheet(meta);
     setSuccessMsg(`Connected to "${item.name}"! Syncing records...`);
     onNotification?.(`Connected to "${item.name}"!`, 'success');
@@ -293,7 +310,7 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
         lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
 
-      saveKnownSpreadsheet(meta);
+      saveKnownSpreadsheet(meta, storageEmail);
       onSetActiveSheet(meta);
       setLinkUrlInput('');
       setSuccessMsg(`Connected to "${title}"! Syncing records...`);
@@ -321,7 +338,7 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
       let token = accessToken;
       if (!token || token === 'local_token' || token.startsWith('eyJ')) token = await requestGoogleAccessToken();
       await deleteUserSpreadsheet(token, item.id);
-      removeKnownSpreadsheet(item.id);
+      removeKnownSpreadsheet(item.id, storageEmail);
       setSpreadsheets((current) => current.filter((sheet) => sheet.id !== item.id));
       if (activeSheet?.id === item.id) onSetActiveSheet(null);
       const message = `Deleted "${item.name}" from Google Drive.`;
