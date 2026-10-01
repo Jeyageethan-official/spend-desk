@@ -8,7 +8,8 @@ import {
   TrendingDown,
   MessageSquare,
   Phone,
-  Edit2
+  Edit2,
+  Sliders
 } from 'lucide-react';
 import { SpendingSummary } from '../types/finance';
 import { formatCurrency } from '../lib/calculations';
@@ -19,6 +20,7 @@ interface SummaryCardsProps {
   onAddCash: () => void;
   onAddExpense: () => void;
   onOpenSms?: () => void;
+  onAdjustBalance?: () => void;
   alertPhone?: string;
   onUpdateAlertPhone?: (phone: string) => void;
 }
@@ -29,6 +31,7 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
   onAddCash,
   onAddExpense,
   onOpenSms,
+  onAdjustBalance,
   alertPhone = '',
   onUpdateAlertPhone,
 }) => {
@@ -60,32 +63,25 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
       {/* 1. Main Hero Wallet Card - Mobile First */}
       <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-950 text-white rounded-3xl p-5 sm:p-6 shadow-md border border-slate-700/60 relative overflow-hidden">
         <div className="relative z-10">
-          {/* Top Bar: Left = Cash Wallet Badge (Original compact size), Right = Healthy / Low Cash Status Badge */}
-          <div className="flex items-center justify-between gap-2 mb-3.5 sm:mb-4">
+          <div className="flex items-center justify-between gap-2 mb-2">
             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
               <Wallet className="w-3 h-3" />
               Cash Wallet
             </span>
 
-            {/* Badges on Top Right Side */}
-            <div className="flex items-center gap-1.5 flex-wrap justify-end">
-              {isBalanceNegative ? (
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
-                  Negative Cash
-                </span>
-              ) : isBalanceLow ? (
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                  Low Cash
-                </span>
-              ) : (
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                  Healthy
-                </span>
-              )}
-            </div>
+            {onAdjustBalance && (
+              <button
+                type="button"
+                onClick={onAdjustBalance}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-bold bg-white/10 hover:bg-white/20 active:bg-white/30 text-slate-200 border border-white/15 transition-all cursor-pointer shadow-2xs"
+                title="Adjust actual cash in hand"
+              >
+                <Sliders className="w-3 h-3 text-emerald-300" />
+                <span>Adjust Cash</span>
+              </button>
+            )}
           </div>
 
-          {/* Current Balance Label & Amount */}
           <p className="text-[11px] uppercase tracking-wider text-slate-300 font-semibold">
             CURRENT BALANCE (CASH)
           </p>
@@ -94,20 +90,33 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
             <span>{formatCurrency(safeSummary.currentCashBalance, currency)}</span>
           </div>
 
-          {/* Out of Wallet - Reverted back to original position below balance */}
-          {safeSummary.outOfWallet > 0 && (
-            <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+          <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+            {isBalanceNegative ? (
+              <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                Negative Cash
+              </span>
+            ) : isBalanceLow ? (
+              <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                Low Cash
+              </span>
+            ) : (
+              <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                Healthy
+              </span>
+            )}
+
+            {safeSummary.outOfWallet > 0 && (
               <span 
                 className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/25 text-rose-200 border border-rose-500/40"
                 title="Total expenses recorded when cash wallet had Rs 0"
               >
                 Out of Wallet: {formatCurrency(safeSummary.outOfWallet, currency)}
               </span>
-            </div>
-          )}
+            )}
+          </div>
 
           {/* Quick Action Buttons: Cash In, Spend, and sleek SMS Icon Button */}
-          <div className="mt-5 pt-3.5 border-t border-slate-700/60 flex items-center gap-2">
+          <div className="mt-4 pt-3 border-t border-slate-700/60 flex items-center gap-2">
             <button
               type="button"
               onClick={onAddCash}
