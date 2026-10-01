@@ -203,7 +203,7 @@ export const createMoneyTrackerSpreadsheet = async (
         properties: {
           title: 'Dashboard',
           gridProperties: {
-            rowCount: 35,
+            rowCount: 45,
             columnCount: 16,
           },
         },
@@ -265,8 +265,8 @@ export const applyTransactionsSheetDesign = async (
     const txSheet = metaData.sheets?.find((s: any) => s.properties?.title === 'Transactions') || metaData.sheets?.[0];
     const sheetId = txSheet?.properties?.sheetId ?? 0;
 
-    // Softer, modern corporate slate navy (#2B4C7E) per user request - avoids harsh dark blue
-    const softNavy = { red: 43 / 255, green: 76 / 255, blue: 126 / 255 }; // #2B4C7E
+    // 10% Darker Corporate Navy (#1F3A64) per user request
+    const softNavy = { red: 31 / 255, green: 58 / 255, blue: 100 / 255 }; // #1F3A64 (10% darker)
     const white = { red: 1, green: 1, blue: 1 };
     const greenText = { red: 13 / 255, green: 115 / 255, blue: 55 / 255 }; // #0d7337
     const greenBg = { red: 230 / 255, green: 244 / 255, blue: 234 / 255 }; // #e6f4ea
@@ -653,39 +653,46 @@ export const applyDashboardSheetDesign = async (
     if (!dashSheet) return;
     const sheetId = dashSheet.properties.sheetId;
 
-    // Corporate SaaS color palette (#2B4C7E accent, #F8F9FA canvas, #ECFDF5 balance highlight)
-    const softNavy = { red: 43 / 255, green: 76 / 255, blue: 126 / 255 }; // #2B4C7E Soft Slate Navy
+    // 10% Darker Corporate Navy (#1F3A64) & Modern Executive Palette
+    const darkNavy = { red: 31 / 255, green: 58 / 255, blue: 100 / 255 }; // #1F3A64 (10% darker)
+    const darkNavyText = { red: 22 / 255, green: 42 / 255, blue: 74 / 255 }; // #162A4A
     const canvasBg = { red: 248 / 255, green: 249 / 255, blue: 250 / 255 }; // #F8F9FA
     const white = { red: 1, green: 1, blue: 1 };
-    const subtleBorder = { red: 229 / 255, green: 231 / 255, blue: 235 / 255 }; // #E5E7EB
-    const balanceBg = { red: 236 / 255, green: 253 / 255, blue: 245 / 255 }; // #ECFDF5
-    const balanceText = { red: 4 / 255, green: 120 / 255, blue: 87 / 255 }; // #047857
-    const balanceBorder = { red: 167 / 255, green: 243 / 255, blue: 208 / 255 }; // #A7F3D0
+    const subtleBorder = { red: 226 / 255, green: 232 / 255, blue: 240 / 255 }; // #E2E8F0
+    const headerPillBg = { red: 241 / 255, green: 245 / 255, blue: 249 / 255 }; // #F1F5F9
+    const zebraBg = { red: 249 / 255, green: 250 / 255, blue: 251 / 255 }; // #F9FAFB
+
+    // Unique standout color for CURRENT BALANCE card:
+    const balanceBg = { red: 236 / 255, green: 253 / 255, blue: 245 / 255 }; // #ECFDF5 Soft Emerald
+    const balanceBorder = { red: 134 / 255, green: 239 / 255, blue: 172 / 255 }; // #86EFAC Emerald Border
+    const balanceDark = { red: 22 / 255, green: 101 / 255, blue: 52 / 255 }; // #166534 Forest Green
+    const balanceText = { red: 5 / 255, green: 150 / 255, blue: 105 / 255 }; // #059669 Vibrant Emerald
+
     const mutedLabel = { red: 100 / 255, green: 116 / 255, blue: 139 / 255 }; // #64748B
     const darkText = { red: 15 / 255, green: 23 / 255, blue: 42 / 255 }; // #0F172A
     const roseText = { red: 225 / 255, green: 29 / 255, blue: 72 / 255 }; // #E11D48
     const blueText = { red: 37 / 255, green: 99 / 255, blue: 235 / 255 }; // #2563EB
     const redText = { red: 220 / 255, green: 38 / 255, blue: 38 / 255 }; // #DC2626
-    const headerPillBg = { red: 241 / 255, green: 245 / 255, blue: 249 / 255 }; // #F1F5F9
-    const zebraBg = { red: 249 / 255, green: 250 / 255, blue: 251 / 255 }; // #F9FAFB
 
     const requests: any[] = [
-      // 1. Remove raw gridlines across entire Dashboard sheet per user request!
+      // 1. Remove raw gridlines across entire Dashboard sheet
       {
         updateSheetProperties: {
           properties: {
             sheetId,
             gridProperties: {
               showGridlines: false,
+              rowCount: 45,
+              columnCount: 16,
             },
           },
-          fields: 'gridProperties.showGridlines',
+          fields: 'gridProperties(showGridlines,rowCount,columnCount)',
         },
       },
-      // 2. Fill canvas A1:N25 with light background (#F8F9FA) so white cards pop
+      // 2. Fill canvas A1:N45 with light background (#F8F9FA) so cards pop
       {
         repeatCell: {
-          range: { sheetId, startRowIndex: 0, endRowIndex: 25, startColumnIndex: 0, endColumnIndex: 14 },
+          range: { sheetId, startRowIndex: 0, endRowIndex: 45, startColumnIndex: 0, endColumnIndex: 14 },
           cell: {
             userEnteredFormat: {
               backgroundColor: canvasBg,
@@ -694,26 +701,45 @@ export const applyDashboardSheetDesign = async (
           fields: 'userEnteredFormat(backgroundColor)',
         },
       },
-      // 3. Row Heights (30px-45px for generous whitespace and breathing room)
+      // 3. Row Heights for generous professional whitespace
       { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: 0, endIndex: 1 }, properties: { pixelSize: 15 }, fields: 'pixelSize' } }, // Row 1 margin
       { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: 1, endIndex: 2 }, properties: { pixelSize: 38 }, fields: 'pixelSize' } }, // Row 2 Header
-      { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: 2, endIndex: 3 }, properties: { pixelSize: 26 }, fields: 'pixelSize' } }, // Row 3 Subtitle
+      { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: 2, endIndex: 3 }, properties: { pixelSize: 24 }, fields: 'pixelSize' } }, // Row 3 Subtitle
       { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: 3, endIndex: 4 }, properties: { pixelSize: 10 }, fields: 'pixelSize' } }, // Row 4 spacer
-      { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: 4, endIndex: 5 }, properties: { pixelSize: 34 }, fields: 'pixelSize' } }, // Row 5 Filter & Date bar
-      { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: 5, endIndex: 6 }, properties: { pixelSize: 12 }, fields: 'pixelSize' } }, // Row 6 spacer
-      { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: 6, endIndex: 7 }, properties: { pixelSize: 26 }, fields: 'pixelSize' } }, // Row 7 KPI Labels
-      { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: 7, endIndex: 8 }, properties: { pixelSize: 44 }, fields: 'pixelSize' } }, // Row 8 KPI Values (44px)
-      { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: 8, endIndex: 9 }, properties: { pixelSize: 20 }, fields: 'pixelSize' } }, // Row 9 spacer
-      { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: 9, endIndex: 10 }, properties: { pixelSize: 32 }, fields: 'pixelSize' } }, // Row 10 Section titles
-      { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: 10, endIndex: 11 }, properties: { pixelSize: 28 }, fields: 'pixelSize' } }, // Row 11 Table headers
-      { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: 11, endIndex: 18 }, properties: { pixelSize: 30 }, fields: 'pixelSize' } }, // Rows 12-18 Data rows
-      { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: 18, endIndex: 19 }, properties: { pixelSize: 32 }, fields: 'pixelSize' } }, // Row 19 Total rows
-      // 4. Column Widths (Cols B through M = 100px each)
+      { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: 4, endIndex: 5 }, properties: { pixelSize: 32 }, fields: 'pixelSize' } }, // Row 5 Controls 1
+      { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: 5, endIndex: 6 }, properties: { pixelSize: 32 }, fields: 'pixelSize' } }, // Row 6 Controls 2
+      { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: 6, endIndex: 7 }, properties: { pixelSize: 12 }, fields: 'pixelSize' } }, // Row 7 spacer
+      { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: 7, endIndex: 8 }, properties: { pixelSize: 28 }, fields: 'pixelSize' } }, // Row 8 Hero Balance Top
+      { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: 8, endIndex: 9 }, properties: { pixelSize: 48 }, fields: 'pixelSize' } }, // Row 9 Hero Balance Big
+      { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: 9, endIndex: 10 }, properties: { pixelSize: 14 }, fields: 'pixelSize' } }, // Row 10 spacer
+      { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: 10, endIndex: 11 }, properties: { pixelSize: 26 }, fields: 'pixelSize' } }, // Row 11 5 KPI Labels
+      { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: 11, endIndex: 12 }, properties: { pixelSize: 42 }, fields: 'pixelSize' } }, // Row 12 5 KPI Values
+      { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: 12, endIndex: 13 }, properties: { pixelSize: 16 }, fields: 'pixelSize' } }, // Row 13 spacer
+      { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: 13, endIndex: 14 }, properties: { pixelSize: 32 }, fields: 'pixelSize' } }, // Row 14 Section titles
+      { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: 14, endIndex: 15 }, properties: { pixelSize: 28 }, fields: 'pixelSize' } }, // Row 15 Table headers
+      { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: 15, endIndex: 22 }, properties: { pixelSize: 28 }, fields: 'pixelSize' } }, // Rows 16-22 Data rows
+      { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: 22, endIndex: 23 }, properties: { pixelSize: 32 }, fields: 'pixelSize' } }, // Row 23 Total rows
+      { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: 23, endIndex: 24 }, properties: { pixelSize: 16 }, fields: 'pixelSize' } }, // Row 24 spacer
+      { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: 24, endIndex: 25 }, properties: { pixelSize: 30 }, fields: 'pixelSize' } }, // Row 25 Chart titles
+      { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: 25, endIndex: 37 }, properties: { pixelSize: 25 }, fields: 'pixelSize' } }, // Rows 26-37 Chart area
+
+      // 4. Column Widths
       { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 0, endIndex: 1 }, properties: { pixelSize: 20 }, fields: 'pixelSize' } }, // Col A margin
-      { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 1, endIndex: 13 }, properties: { pixelSize: 100 }, fields: 'pixelSize' } }, // Cols B to M
+      { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 1, endIndex: 2 }, properties: { pixelSize: 110 }, fields: 'pixelSize' } }, // Col B Category
+      { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 2, endIndex: 3 }, properties: { pixelSize: 60 }, fields: 'pixelSize' } }, // Col C Count
+      { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 3, endIndex: 4 }, properties: { pixelSize: 100 }, fields: 'pixelSize' } }, // Col D Amount
+      { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 4, endIndex: 5 }, properties: { pixelSize: 70 }, fields: 'pixelSize' } }, // Col E Share %
+      { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 5, endIndex: 6 }, properties: { pixelSize: 75 }, fields: 'pixelSize' } }, // Col F Bar 1
+      { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 6, endIndex: 7 }, properties: { pixelSize: 75 }, fields: 'pixelSize' } }, // Col G Bar 2
+      { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 7, endIndex: 8 }, properties: { pixelSize: 70 }, fields: 'pixelSize' } }, // Col H Day
+      { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 8, endIndex: 9 }, properties: { pixelSize: 90 }, fields: 'pixelSize' } }, // Col I Activity
+      { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 9, endIndex: 10 }, properties: { pixelSize: 100 }, fields: 'pixelSize' } }, // Col J Amount
+      { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 10, endIndex: 11 }, properties: { pixelSize: 80 }, fields: 'pixelSize' } }, // Col K Trend
+      { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 11, endIndex: 12 }, properties: { pixelSize: 75 }, fields: 'pixelSize' } }, // Col L Bar 1
+      { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 12, endIndex: 13 }, properties: { pixelSize: 75 }, fields: 'pixelSize' } }, // Col M Bar 2
       { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 13, endIndex: 14 }, properties: { pixelSize: 20 }, fields: 'pixelSize' } }, // Col N margin
 
-      // 5. Header: Two separate rows merged and centered per user request
+      // 5. Header: Two separate rows merged and centered with 10% darker navy
       { mergeCells: { range: { sheetId, startRowIndex: 1, endRowIndex: 2, startColumnIndex: 1, endColumnIndex: 13 }, mergeType: 'MERGE_ALL' } },
       { mergeCells: { range: { sheetId, startRowIndex: 2, endRowIndex: 3, startColumnIndex: 1, endColumnIndex: 13 }, mergeType: 'MERGE_ALL' } },
       {
@@ -721,7 +747,7 @@ export const applyDashboardSheetDesign = async (
           range: { sheetId, startRowIndex: 1, endRowIndex: 2, startColumnIndex: 1, endColumnIndex: 13 },
           cell: {
             userEnteredFormat: {
-              textFormat: { foregroundColor: softNavy, bold: true, fontSize: 16 },
+              textFormat: { foregroundColor: darkNavy, bold: true, fontSize: 16 },
               horizontalAlignment: 'CENTER',
             },
           },
@@ -741,69 +767,133 @@ export const applyDashboardSheetDesign = async (
         },
       },
 
-      // 6. Filter & Date Picker Bar (Row 5): 4 neatly organized blocks
-      { mergeCells: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: 1, endColumnIndex: 4 }, mergeType: 'MERGE_ALL' } },
-      { mergeCells: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: 4, endColumnIndex: 7 }, mergeType: 'MERGE_ALL' } },
-      { mergeCells: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: 7, endColumnIndex: 10 }, mergeType: 'MERGE_ALL' } },
-      { mergeCells: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: 10, endColumnIndex: 13 }, mergeType: 'MERGE_ALL' } },
-      ...[
-        { startCol: 1, endCol: 4 },
-        { startCol: 4, endCol: 7 },
-        { startCol: 7, endCol: 10 },
-        { startCol: 10, endCol: 13 },
-      ].flatMap((block) => [
-        {
-          repeatCell: {
-            range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: block.startCol, endColumnIndex: block.endCol },
-            cell: {
-              userEnteredFormat: {
-                backgroundColor: headerPillBg,
-                textFormat: { foregroundColor: softNavy, bold: true, fontSize: 9 },
-                horizontalAlignment: 'CENTER',
-              },
-            },
-            fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)',
-          },
-        },
-        {
-          updateBorders: {
-            range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: block.startCol, endColumnIndex: block.endCol },
-            top: { style: 'SOLID', color: subtleBorder },
-            bottom: { style: 'SOLID', color: subtleBorder },
-            left: { style: 'SOLID', color: subtleBorder },
-            right: { style: 'SOLID', color: subtleBorder },
-          },
-        },
-      ]),
+      // 6. Top Control Panels (Rows 5 & 6):
+      // Left Panel: Filter & Date Range (Cols B to G)
+      { mergeCells: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: 1, endColumnIndex: 3 }, mergeType: 'MERGE_ALL' } }, // B5:C5
+      { mergeCells: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: 3, endColumnIndex: 7 }, mergeType: 'MERGE_ALL' } }, // D5:G5 (Clickable Dropdown!)
+      { mergeCells: { range: { sheetId, startRowIndex: 5, endRowIndex: 6, startColumnIndex: 1, endColumnIndex: 3 }, mergeType: 'MERGE_ALL' } }, // B6:C6
+      { mergeCells: { range: { sheetId, startRowIndex: 5, endRowIndex: 6, startColumnIndex: 3, endColumnIndex: 7 }, mergeType: 'MERGE_ALL' } }, // D6:G6
+      // Right Panel: Sync Status & Last Updated (Cols H to M)
+      { mergeCells: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: 7, endColumnIndex: 9 }, mergeType: 'MERGE_ALL' } }, // H5:I5
+      { mergeCells: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: 9, endColumnIndex: 13 }, mergeType: 'MERGE_ALL' } }, // J5:M5
+      { mergeCells: { range: { sheetId, startRowIndex: 5, endRowIndex: 6, startColumnIndex: 7, endColumnIndex: 9 }, mergeType: 'MERGE_ALL' } }, // H6:I6
+      { mergeCells: { range: { sheetId, startRowIndex: 5, endRowIndex: 6, startColumnIndex: 9, endColumnIndex: 13 }, mergeType: 'MERGE_ALL' } }, // J6:M6
 
-      // 7. KPI Cards Merging (Rows 7 & 8) - In exact requested order:
-      // Card 1: CURRENT BALANCE (Cols B-C)
-      // Card 2: CASH ADDED (Cols D-E)
-      // Card 3: CASH SPENT (Cols F-G)
-      // Card 4: CARD SPENT (Cols H-I)
-      // Card 5: TOTAL SPENT (Cols J-K)
-      // Card 6: OUT OF WALLET (Cols L-M)
-      { mergeCells: { range: { sheetId, startRowIndex: 6, endRowIndex: 7, startColumnIndex: 1, endColumnIndex: 3 }, mergeType: 'MERGE_ALL' } },
-      { mergeCells: { range: { sheetId, startRowIndex: 7, endRowIndex: 8, startColumnIndex: 1, endColumnIndex: 3 }, mergeType: 'MERGE_ALL' } },
-      { mergeCells: { range: { sheetId, startRowIndex: 6, endRowIndex: 7, startColumnIndex: 3, endColumnIndex: 5 }, mergeType: 'MERGE_ALL' } },
-      { mergeCells: { range: { sheetId, startRowIndex: 7, endRowIndex: 8, startColumnIndex: 3, endColumnIndex: 5 }, mergeType: 'MERGE_ALL' } },
-      { mergeCells: { range: { sheetId, startRowIndex: 6, endRowIndex: 7, startColumnIndex: 5, endColumnIndex: 7 }, mergeType: 'MERGE_ALL' } },
-      { mergeCells: { range: { sheetId, startRowIndex: 7, endRowIndex: 8, startColumnIndex: 5, endColumnIndex: 7 }, mergeType: 'MERGE_ALL' } },
-      { mergeCells: { range: { sheetId, startRowIndex: 6, endRowIndex: 7, startColumnIndex: 7, endColumnIndex: 9 }, mergeType: 'MERGE_ALL' } },
-      { mergeCells: { range: { sheetId, startRowIndex: 7, endRowIndex: 8, startColumnIndex: 7, endColumnIndex: 9 }, mergeType: 'MERGE_ALL' } },
-      { mergeCells: { range: { sheetId, startRowIndex: 6, endRowIndex: 7, startColumnIndex: 9, endColumnIndex: 11 }, mergeType: 'MERGE_ALL' } },
-      { mergeCells: { range: { sheetId, startRowIndex: 7, endRowIndex: 8, startColumnIndex: 9, endColumnIndex: 11 }, mergeType: 'MERGE_ALL' } },
-      { mergeCells: { range: { sheetId, startRowIndex: 6, endRowIndex: 7, startColumnIndex: 11, endColumnIndex: 13 }, mergeType: 'MERGE_ALL' } },
-      { mergeCells: { range: { sheetId, startRowIndex: 7, endRowIndex: 8, startColumnIndex: 11, endColumnIndex: 13 }, mergeType: 'MERGE_ALL' } },
-
-      // 8. Card 1 Styling: CURRENT BALANCE (Soft Emerald Highlight #ECFDF5, text #047857)
+      // Format Control Labels (B5:C6 and H5:I6)
       {
         repeatCell: {
-          range: { sheetId, startRowIndex: 6, endRowIndex: 7, startColumnIndex: 1, endColumnIndex: 3 },
+          range: { sheetId, startRowIndex: 4, endRowIndex: 6, startColumnIndex: 1, endColumnIndex: 3 },
+          cell: {
+            userEnteredFormat: {
+              backgroundColor: headerPillBg,
+              textFormat: { foregroundColor: darkNavy, bold: true, fontSize: 9 },
+              horizontalAlignment: 'CENTER',
+            },
+          },
+          fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)',
+        },
+      },
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 4, endRowIndex: 6, startColumnIndex: 7, endColumnIndex: 9 },
+          cell: {
+            userEnteredFormat: {
+              backgroundColor: headerPillBg,
+              textFormat: { foregroundColor: darkNavy, bold: true, fontSize: 9 },
+              horizontalAlignment: 'CENTER',
+            },
+          },
+          fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)',
+        },
+      },
+      // Format Control Values (D5:G6 and J5:M6)
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 4, endRowIndex: 6, startColumnIndex: 3, endColumnIndex: 7 },
+          cell: {
+            userEnteredFormat: {
+              backgroundColor: white,
+              textFormat: { foregroundColor: darkNavyText, bold: true, fontSize: 9 },
+              horizontalAlignment: 'CENTER',
+            },
+          },
+          fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)',
+        },
+      },
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 4, endRowIndex: 6, startColumnIndex: 9, endColumnIndex: 13 },
+          cell: {
+            userEnteredFormat: {
+              backgroundColor: white,
+              textFormat: { foregroundColor: darkNavyText, bold: false, fontSize: 9 },
+              horizontalAlignment: 'CENTER',
+            },
+          },
+          fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)',
+        },
+      },
+      // Borders for Control Panels
+      {
+        updateBorders: {
+          range: { sheetId, startRowIndex: 4, endRowIndex: 6, startColumnIndex: 1, endColumnIndex: 7 },
+          top: { style: 'SOLID', color: subtleBorder },
+          bottom: { style: 'SOLID', color: subtleBorder },
+          left: { style: 'SOLID', color: subtleBorder },
+          right: { style: 'SOLID', color: subtleBorder },
+          innerHorizontal: { style: 'SOLID', color: subtleBorder },
+          innerVertical: { style: 'SOLID', color: subtleBorder },
+        },
+      },
+      {
+        updateBorders: {
+          range: { sheetId, startRowIndex: 4, endRowIndex: 6, startColumnIndex: 7, endColumnIndex: 13 },
+          top: { style: 'SOLID', color: subtleBorder },
+          bottom: { style: 'SOLID', color: subtleBorder },
+          left: { style: 'SOLID', color: subtleBorder },
+          right: { style: 'SOLID', color: subtleBorder },
+          innerHorizontal: { style: 'SOLID', color: subtleBorder },
+          innerVertical: { style: 'SOLID', color: subtleBorder },
+        },
+      },
+
+      // 7. Interactive Dropdown Data Validation on Period Filter (D5:G5)
+      {
+        setDataValidation: {
+          range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: 3, endColumnIndex: 7 },
+          rule: {
+            condition: {
+              type: 'ONE_OF_LIST',
+              values: [
+                { userEnteredValue: 'ALL TIME' },
+                { userEnteredValue: 'TODAY' },
+                { userEnteredValue: 'THIS WEEK' },
+                { userEnteredValue: 'THIS MONTH' },
+                { userEnteredValue: 'CUSTOM' },
+              ],
+            },
+            showCustomUi: true,
+            strict: false,
+          },
+        },
+      },
+
+      // 8. HERO CARD: CURRENT BALANCE (ON ITS OWN LINE - Rows 8 & 9!)
+      // Top row of Hero Card (Row 8): Title on left, subtitle on right
+      { mergeCells: { range: { sheetId, startRowIndex: 7, endRowIndex: 8, startColumnIndex: 1, endColumnIndex: 7 }, mergeType: 'MERGE_ALL' } }, // B8:G8
+      { mergeCells: { range: { sheetId, startRowIndex: 7, endRowIndex: 8, startColumnIndex: 7, endColumnIndex: 13 }, mergeType: 'MERGE_ALL' } }, // H8:M8
+      // Bottom row of Hero Card (Row 9): Badge on left, BIG BALANCE on right
+      { mergeCells: { range: { sheetId, startRowIndex: 8, endRowIndex: 9, startColumnIndex: 1, endColumnIndex: 6 }, mergeType: 'MERGE_ALL' } }, // B9:F9
+      { mergeCells: { range: { sheetId, startRowIndex: 8, endRowIndex: 9, startColumnIndex: 5, endColumnIndex: 13 }, mergeType: 'MERGE_ALL' } }, // F9:M9
+
+      // Hero Card Styling (Unique Emerald Background #ECFDF5 with Forest Green text)
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 7, endRowIndex: 8, startColumnIndex: 1, endColumnIndex: 7 },
           cell: {
             userEnteredFormat: {
               backgroundColor: balanceBg,
-              textFormat: { foregroundColor: balanceText, bold: true, fontSize: 8 },
+              textFormat: { foregroundColor: balanceDark, bold: true, fontSize: 10 },
               horizontalAlignment: 'LEFT',
             },
           },
@@ -812,11 +902,11 @@ export const applyDashboardSheetDesign = async (
       },
       {
         repeatCell: {
-          range: { sheetId, startRowIndex: 7, endRowIndex: 8, startColumnIndex: 1, endColumnIndex: 3 },
+          range: { sheetId, startRowIndex: 7, endRowIndex: 8, startColumnIndex: 7, endColumnIndex: 13 },
           cell: {
             userEnteredFormat: {
               backgroundColor: balanceBg,
-              textFormat: { foregroundColor: balanceText, bold: true, fontSize: 16 },
+              textFormat: { foregroundColor: balanceText, bold: false, fontSize: 9 },
               horizontalAlignment: 'RIGHT',
             },
           },
@@ -824,8 +914,35 @@ export const applyDashboardSheetDesign = async (
         },
       },
       {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 8, endRowIndex: 9, startColumnIndex: 1, endColumnIndex: 6 },
+          cell: {
+            userEnteredFormat: {
+              backgroundColor: balanceBg,
+              textFormat: { foregroundColor: balanceDark, bold: true, fontSize: 10 },
+              horizontalAlignment: 'LEFT',
+            },
+          },
+          fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)',
+        },
+      },
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 8, endRowIndex: 9, startColumnIndex: 5, endColumnIndex: 13 },
+          cell: {
+            userEnteredFormat: {
+              backgroundColor: balanceBg,
+              textFormat: { foregroundColor: balanceText, bold: true, fontSize: 18 },
+              numberFormat: { type: 'CURRENCY', pattern: '"Rs "#,##0.00' },
+              horizontalAlignment: 'RIGHT',
+            },
+          },
+          fields: 'userEnteredFormat(backgroundColor,textFormat,numberFormat,horizontalAlignment)',
+        },
+      },
+      {
         updateBorders: {
-          range: { sheetId, startRowIndex: 6, endRowIndex: 8, startColumnIndex: 1, endColumnIndex: 3 },
+          range: { sheetId, startRowIndex: 7, endRowIndex: 9, startColumnIndex: 1, endColumnIndex: 13 },
           top: { style: 'SOLID', color: balanceBorder },
           bottom: { style: 'SOLID', color: balanceBorder },
           left: { style: 'SOLID', color: balanceBorder },
@@ -833,17 +950,34 @@ export const applyDashboardSheetDesign = async (
         },
       },
 
-      // 9. Cards 2 to 6 Styling: White background with subtle thin gray borders (#E5E7EB)
+      // 9. OTHER 5 KPI CARDS ON THE NEXT LINE (Rows 11 & 12!)
+      // Card 1: + CASH ADDED (Cols B-C)
+      { mergeCells: { range: { sheetId, startRowIndex: 10, endRowIndex: 11, startColumnIndex: 1, endColumnIndex: 3 }, mergeType: 'MERGE_ALL' } },
+      { mergeCells: { range: { sheetId, startRowIndex: 11, endRowIndex: 12, startColumnIndex: 1, endColumnIndex: 3 }, mergeType: 'MERGE_ALL' } },
+      // Card 2: - CASH SPENT (Cols D-E)
+      { mergeCells: { range: { sheetId, startRowIndex: 10, endRowIndex: 11, startColumnIndex: 3, endColumnIndex: 5 }, mergeType: 'MERGE_ALL' } },
+      { mergeCells: { range: { sheetId, startRowIndex: 11, endRowIndex: 12, startColumnIndex: 3, endColumnIndex: 5 }, mergeType: 'MERGE_ALL' } },
+      // Card 3: CARD SPENT (Cols F-G)
+      { mergeCells: { range: { sheetId, startRowIndex: 10, endRowIndex: 11, startColumnIndex: 5, endColumnIndex: 7 }, mergeType: 'MERGE_ALL' } },
+      { mergeCells: { range: { sheetId, startRowIndex: 11, endRowIndex: 12, startColumnIndex: 5, endColumnIndex: 7 }, mergeType: 'MERGE_ALL' } },
+      // Card 4: TOTAL SPENT (Cols H-J)
+      { mergeCells: { range: { sheetId, startRowIndex: 10, endRowIndex: 11, startColumnIndex: 7, endColumnIndex: 10 }, mergeType: 'MERGE_ALL' } },
+      { mergeCells: { range: { sheetId, startRowIndex: 11, endRowIndex: 12, startColumnIndex: 7, endColumnIndex: 10 }, mergeType: 'MERGE_ALL' } },
+      // Card 5: OUT OF WALLET (Cols K-M)
+      { mergeCells: { range: { sheetId, startRowIndex: 10, endRowIndex: 11, startColumnIndex: 10, endColumnIndex: 13 }, mergeType: 'MERGE_ALL' } },
+      { mergeCells: { range: { sheetId, startRowIndex: 11, endRowIndex: 12, startColumnIndex: 10, endColumnIndex: 13 }, mergeType: 'MERGE_ALL' } },
+
+      // Style 5 KPI Cards:
       ...[
-        { startCol: 3, endCol: 5, valColor: darkText }, // Card 2: Cash Added
-        { startCol: 5, endCol: 7, valColor: roseText }, // Card 3: Cash Spent
-        { startCol: 7, endCol: 9, valColor: blueText }, // Card 4: Card Spent
-        { startCol: 9, endCol: 11, valColor: darkText }, // Card 5: Total Spent
-        { startCol: 11, endCol: 13, valColor: redText }, // Card 6: Out of Wallet
+        { startCol: 1, endCol: 3, valColor: balanceText }, // Cash Added
+        { startCol: 3, endCol: 5, valColor: roseText }, // Cash Spent
+        { startCol: 5, endCol: 7, valColor: blueText }, // Card Spent
+        { startCol: 7, endCol: 10, valColor: darkText }, // Total Spent
+        { startCol: 10, endCol: 13, valColor: redText }, // Out of Wallet
       ].flatMap((card) => [
         {
           repeatCell: {
-            range: { sheetId, startRowIndex: 6, endRowIndex: 7, startColumnIndex: card.startCol, endColumnIndex: card.endCol },
+            range: { sheetId, startRowIndex: 10, endRowIndex: 11, startColumnIndex: card.startCol, endColumnIndex: card.endCol },
             cell: {
               userEnteredFormat: {
                 backgroundColor: white,
@@ -856,20 +990,21 @@ export const applyDashboardSheetDesign = async (
         },
         {
           repeatCell: {
-            range: { sheetId, startRowIndex: 7, endRowIndex: 8, startColumnIndex: card.startCol, endColumnIndex: card.endCol },
+            range: { sheetId, startRowIndex: 11, endRowIndex: 12, startColumnIndex: card.startCol, endColumnIndex: card.endCol },
             cell: {
               userEnteredFormat: {
                 backgroundColor: white,
                 textFormat: { foregroundColor: card.valColor, bold: true, fontSize: 14 },
+                numberFormat: { type: 'CURRENCY', pattern: '"Rs "#,##0.00' },
                 horizontalAlignment: 'RIGHT',
               },
             },
-            fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)',
+            fields: 'userEnteredFormat(backgroundColor,textFormat,numberFormat,horizontalAlignment)',
           },
         },
         {
           updateBorders: {
-            range: { sheetId, startRowIndex: 6, endRowIndex: 8, startColumnIndex: card.startCol, endColumnIndex: card.endCol },
+            range: { sheetId, startRowIndex: 10, endRowIndex: 12, startColumnIndex: card.startCol, endColumnIndex: card.endCol },
             top: { style: 'SOLID', color: subtleBorder },
             bottom: { style: 'SOLID', color: subtleBorder },
             left: { style: 'SOLID', color: subtleBorder },
@@ -878,17 +1013,15 @@ export const applyDashboardSheetDesign = async (
         },
       ]),
 
-      // 10. Section Headers (Row 10)
-      { mergeCells: { range: { sheetId, startRowIndex: 9, endRowIndex: 10, startColumnIndex: 1, endColumnIndex: 4 }, mergeType: 'MERGE_ALL' } },
-      { mergeCells: { range: { sheetId, startRowIndex: 9, endRowIndex: 10, startColumnIndex: 4, endColumnIndex: 7 }, mergeType: 'MERGE_ALL' } },
-      { mergeCells: { range: { sheetId, startRowIndex: 9, endRowIndex: 10, startColumnIndex: 7, endColumnIndex: 10 }, mergeType: 'MERGE_ALL' } },
-      { mergeCells: { range: { sheetId, startRowIndex: 9, endRowIndex: 10, startColumnIndex: 10, endColumnIndex: 13 }, mergeType: 'MERGE_ALL' } },
+      // 10. Section Headers (Row 14)
+      { mergeCells: { range: { sheetId, startRowIndex: 13, endRowIndex: 14, startColumnIndex: 1, endColumnIndex: 7 }, mergeType: 'MERGE_ALL' } },
+      { mergeCells: { range: { sheetId, startRowIndex: 13, endRowIndex: 14, startColumnIndex: 7, endColumnIndex: 13 }, mergeType: 'MERGE_ALL' } },
       {
         repeatCell: {
-          range: { sheetId, startRowIndex: 9, endRowIndex: 10, startColumnIndex: 1, endColumnIndex: 13 },
+          range: { sheetId, startRowIndex: 13, endRowIndex: 14, startColumnIndex: 1, endColumnIndex: 13 },
           cell: {
             userEnteredFormat: {
-              textFormat: { foregroundColor: softNavy, bold: true, fontSize: 10 },
+              textFormat: { foregroundColor: darkNavy, bold: true, fontSize: 10 },
               horizontalAlignment: 'LEFT',
             },
           },
@@ -896,29 +1029,29 @@ export const applyDashboardSheetDesign = async (
         },
       },
 
-      // 11. Table Headers (Row 11) - Light gray header pills (#F1F5F9)
-      { mergeCells: { range: { sheetId, startRowIndex: 10, endRowIndex: 11, startColumnIndex: 2, endColumnIndex: 4 }, mergeType: 'MERGE_ALL' } },
-      { mergeCells: { range: { sheetId, startRowIndex: 10, endRowIndex: 11, startColumnIndex: 5, endColumnIndex: 7 }, mergeType: 'MERGE_ALL' } },
+      // 11. Table Column Headers (Row 15)
+      { mergeCells: { range: { sheetId, startRowIndex: 14, endRowIndex: 15, startColumnIndex: 5, endColumnIndex: 7 }, mergeType: 'MERGE_ALL' } }, // Progress Bar Col F-G
+      { mergeCells: { range: { sheetId, startRowIndex: 14, endRowIndex: 15, startColumnIndex: 11, endColumnIndex: 13 }, mergeType: 'MERGE_ALL' } }, // Progress Bar Col L-M
       {
         repeatCell: {
-          range: { sheetId, startRowIndex: 10, endRowIndex: 11, startColumnIndex: 1, endColumnIndex: 7 },
+          range: { sheetId, startRowIndex: 14, endRowIndex: 15, startColumnIndex: 1, endColumnIndex: 13 },
           cell: {
             userEnteredFormat: {
               backgroundColor: headerPillBg,
-              textFormat: { foregroundColor: mutedLabel, bold: true, fontSize: 9 },
+              textFormat: { foregroundColor: darkNavy, bold: true, fontSize: 9 },
             },
           },
           fields: 'userEnteredFormat(backgroundColor,textFormat)',
         },
       },
 
-      // 12. Alternating white / zebra rows for Category Table & Daily Trend Table (Rows 12-18)
-      ...[11, 12, 13, 14, 15, 16, 17].flatMap((rIdx) => [
-        { mergeCells: { range: { sheetId, startRowIndex: rIdx, endRowIndex: rIdx + 1, startColumnIndex: 2, endColumnIndex: 4 }, mergeType: 'MERGE_ALL' } },
+      // 12. Data Rows (Rows 16-22): Alternating white & light zebra rows + merge visual sparkline cells
+      ...[15, 16, 17, 18, 19, 20, 21].flatMap((rIdx) => [
         { mergeCells: { range: { sheetId, startRowIndex: rIdx, endRowIndex: rIdx + 1, startColumnIndex: 5, endColumnIndex: 7 }, mergeType: 'MERGE_ALL' } },
+        { mergeCells: { range: { sheetId, startRowIndex: rIdx, endRowIndex: rIdx + 1, startColumnIndex: 11, endColumnIndex: 13 }, mergeType: 'MERGE_ALL' } },
         {
           repeatCell: {
-            range: { sheetId, startRowIndex: rIdx, endRowIndex: rIdx + 1, startColumnIndex: 1, endColumnIndex: 7 },
+            range: { sheetId, startRowIndex: rIdx, endRowIndex: rIdx + 1, startColumnIndex: 1, endColumnIndex: 13 },
             cell: {
               userEnteredFormat: {
                 backgroundColor: rIdx % 2 === 1 ? white : zebraBg,
@@ -930,202 +1063,138 @@ export const applyDashboardSheetDesign = async (
         },
       ]),
 
-      // 13. Right alignment for monetary amounts (Cols C-D and F-G, Rows 11 to 19)
+      // 13. Column Alignments & Number Formats
+      // Counts (Col C, Col index 2) -> Center aligned
       {
         repeatCell: {
-          range: { sheetId, startRowIndex: 10, endRowIndex: 19, startColumnIndex: 2, endColumnIndex: 4 },
-          cell: { userEnteredFormat: { horizontalAlignment: 'RIGHT' } },
+          range: { sheetId, startRowIndex: 15, endRowIndex: 22, startColumnIndex: 2, endColumnIndex: 3 },
+          cell: {
+            userEnteredFormat: {
+              horizontalAlignment: 'CENTER',
+              numberFormat: { type: 'NUMBER', pattern: '#,##0' },
+            },
+          },
+          fields: 'userEnteredFormat(horizontalAlignment,numberFormat)',
+        },
+      },
+      // Category Amount (Col D, Col index 3) -> Currency right-aligned
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 15, endRowIndex: 23, startColumnIndex: 3, endColumnIndex: 4 },
+          cell: {
+            userEnteredFormat: {
+              horizontalAlignment: 'RIGHT',
+              numberFormat: { type: 'CURRENCY', pattern: '"Rs "#,##0.00' },
+              textFormat: { bold: true },
+            },
+          },
+          fields: 'userEnteredFormat(horizontalAlignment,numberFormat,textFormat)',
+        },
+      },
+      // Category Share % (Col E, Col index 4) -> Percentage centered
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 15, endRowIndex: 23, startColumnIndex: 4, endColumnIndex: 5 },
+          cell: {
+            userEnteredFormat: {
+              horizontalAlignment: 'CENTER',
+              numberFormat: { type: 'PERCENT', pattern: '0.0%' },
+            },
+          },
+          fields: 'userEnteredFormat(horizontalAlignment,numberFormat)',
+        },
+      },
+      // Day Activity & Trend (Col I & Col K) -> Centered
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 15, endRowIndex: 22, startColumnIndex: 8, endColumnIndex: 9 },
+          cell: { userEnteredFormat: { horizontalAlignment: 'CENTER' } },
           fields: 'userEnteredFormat(horizontalAlignment)',
         },
       },
       {
         repeatCell: {
-          range: { sheetId, startRowIndex: 10, endRowIndex: 19, startColumnIndex: 5, endColumnIndex: 7 },
-          cell: { userEnteredFormat: { horizontalAlignment: 'RIGHT' } },
+          range: { sheetId, startRowIndex: 15, endRowIndex: 22, startColumnIndex: 10, endColumnIndex: 11 },
+          cell: { userEnteredFormat: { horizontalAlignment: 'CENTER' } },
           fields: 'userEnteredFormat(horizontalAlignment)',
+        },
+      },
+      // Daily Amount (Col J, Col index 9) -> Currency right-aligned
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 15, endRowIndex: 23, startColumnIndex: 9, endColumnIndex: 10 },
+          cell: {
+            userEnteredFormat: {
+              horizontalAlignment: 'RIGHT',
+              numberFormat: { type: 'CURRENCY', pattern: '"Rs "#,##0.00' },
+              textFormat: { bold: true },
+            },
+          },
+          fields: 'userEnteredFormat(horizontalAlignment,numberFormat,textFormat)',
         },
       },
 
-      // 14. Total Rows (Row 19)
-      { mergeCells: { range: { sheetId, startRowIndex: 18, endRowIndex: 19, startColumnIndex: 2, endColumnIndex: 4 }, mergeType: 'MERGE_ALL' } },
-      { mergeCells: { range: { sheetId, startRowIndex: 18, endRowIndex: 19, startColumnIndex: 5, endColumnIndex: 7 }, mergeType: 'MERGE_ALL' } },
+      // 14. Total Rows (Row 23)
+      { mergeCells: { range: { sheetId, startRowIndex: 22, endRowIndex: 23, startColumnIndex: 1, endColumnIndex: 3 }, mergeType: 'MERGE_ALL' } },
+      { mergeCells: { range: { sheetId, startRowIndex: 22, endRowIndex: 23, startColumnIndex: 5, endColumnIndex: 7 }, mergeType: 'MERGE_ALL' } },
+      { mergeCells: { range: { sheetId, startRowIndex: 22, endRowIndex: 23, startColumnIndex: 7, endColumnIndex: 9 }, mergeType: 'MERGE_ALL' } },
+      { mergeCells: { range: { sheetId, startRowIndex: 22, endRowIndex: 23, startColumnIndex: 11, endColumnIndex: 13 }, mergeType: 'MERGE_ALL' } },
       {
         repeatCell: {
-          range: { sheetId, startRowIndex: 18, endRowIndex: 19, startColumnIndex: 1, endColumnIndex: 7 },
+          range: { sheetId, startRowIndex: 22, endRowIndex: 23, startColumnIndex: 1, endColumnIndex: 13 },
           cell: {
             userEnteredFormat: {
               backgroundColor: headerPillBg,
-              textFormat: { foregroundColor: softNavy, bold: true, fontSize: 9 },
+              textFormat: { foregroundColor: darkNavy, bold: true, fontSize: 9 },
             },
           },
           fields: 'userEnteredFormat(backgroundColor,textFormat)',
         },
       },
 
-      // 15. Subtle thin borders on Category and Daily Trend tables
+      // 15. Clean borders for both tables
       {
         updateBorders: {
-          range: { sheetId, startRowIndex: 10, endRowIndex: 19, startColumnIndex: 1, endColumnIndex: 4 },
+          range: { sheetId, startRowIndex: 14, endRowIndex: 23, startColumnIndex: 1, endColumnIndex: 7 },
           top: { style: 'SOLID', color: subtleBorder },
           bottom: { style: 'SOLID', color: subtleBorder },
           left: { style: 'SOLID', color: subtleBorder },
           right: { style: 'SOLID', color: subtleBorder },
           innerHorizontal: { style: 'SOLID', color: subtleBorder },
+          innerVertical: { style: 'SOLID', color: subtleBorder },
         },
       },
       {
         updateBorders: {
-          range: { sheetId, startRowIndex: 10, endRowIndex: 19, startColumnIndex: 4, endColumnIndex: 7 },
+          range: { sheetId, startRowIndex: 14, endRowIndex: 23, startColumnIndex: 7, endColumnIndex: 13 },
           top: { style: 'SOLID', color: subtleBorder },
           bottom: { style: 'SOLID', color: subtleBorder },
           left: { style: 'SOLID', color: subtleBorder },
           right: { style: 'SOLID', color: subtleBorder },
           innerHorizontal: { style: 'SOLID', color: subtleBorder },
+          innerVertical: { style: 'SOLID', color: subtleBorder },
+        },
+      },
+
+      // 16. Chart Section Titles (Row 25)
+      { mergeCells: { range: { sheetId, startRowIndex: 24, endRowIndex: 25, startColumnIndex: 1, endColumnIndex: 7 }, mergeType: 'MERGE_ALL' } },
+      { mergeCells: { range: { sheetId, startRowIndex: 24, endRowIndex: 25, startColumnIndex: 7, endColumnIndex: 13 }, mergeType: 'MERGE_ALL' } },
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 24, endRowIndex: 25, startColumnIndex: 1, endColumnIndex: 13 },
+          cell: {
+            userEnteredFormat: {
+              textFormat: { foregroundColor: darkNavy, bold: true, fontSize: 10 },
+              horizontalAlignment: 'LEFT',
+            },
+          },
+          fields: 'userEnteredFormat(textFormat,horizontalAlignment)',
         },
       },
     ];
 
-    // 16. Charts Management: Clear outdated charts and add fresh modern charts
-    if (dashSheet.charts && dashSheet.charts.length > 0) {
-      dashSheet.charts.forEach((c: any) => {
-        requests.push({
-          deleteEmbeddedObject: {
-            objectId: c.chartId,
-          },
-        });
-      });
-    }
-
-    // Chart 1: Daily Spending Trend Graph (Column Chart on Cols H-J, Rows 11-20)
-    requests.push({
-      addChart: {
-        chart: {
-          spec: {
-            title: 'Daily Spend Trend',
-            titleTextFormat: {
-              foregroundColor: softNavy,
-              fontSize: 10,
-              bold: true,
-            },
-            backgroundColor: white,
-            basicChart: {
-              chartType: 'COLUMN',
-              legendPosition: 'NO_LEGEND',
-              axis: [
-                { position: 'BOTTOM_AXIS', title: 'Day' },
-                { position: 'LEFT_AXIS', title: 'Amount' },
-              ],
-              domains: [
-                {
-                  domain: {
-                    sourceRange: {
-                      sources: [
-                        {
-                          sheetId,
-                          startRowIndex: 11,
-                          endRowIndex: 18,
-                          startColumnIndex: 4,
-                          endColumnIndex: 5,
-                        },
-                      ],
-                    },
-                  },
-                },
-              ],
-              series: [
-                {
-                  series: {
-                    sourceRange: {
-                      sources: [
-                        {
-                          sheetId,
-                          startRowIndex: 11,
-                          endRowIndex: 18,
-                          startColumnIndex: 5,
-                          endColumnIndex: 6,
-                        },
-                      ],
-                    },
-                  },
-                  targetAxis: 'LEFT_AXIS',
-                },
-              ],
-            },
-          },
-          position: {
-            overlayPosition: {
-              anchorCell: {
-                sheetId,
-                rowIndex: 10,
-                columnIndex: 7,
-              },
-              widthPixels: 330,
-              heightPixels: 285,
-            },
-          },
-        },
-      },
-    });
-
-    // Chart 2: Category Distribution Donut Chart (Cols K-M, Rows 11-20)
-    requests.push({
-      addChart: {
-        chart: {
-          spec: {
-            title: 'Category Share',
-            titleTextFormat: {
-              foregroundColor: softNavy,
-              fontSize: 10,
-              bold: true,
-            },
-            backgroundColor: white,
-            pieChart: {
-              legendPosition: 'RIGHT_LEGEND',
-              pieHole: 0.45,
-              domain: {
-                sourceRange: {
-                  sources: [
-                    {
-                      sheetId,
-                      startRowIndex: 11,
-                      endRowIndex: 18,
-                      startColumnIndex: 1,
-                      endColumnIndex: 2,
-                    },
-                  ],
-                },
-              },
-              series: {
-                sourceRange: {
-                  sources: [
-                    {
-                      sheetId,
-                      startRowIndex: 11,
-                      endRowIndex: 18,
-                      startColumnIndex: 2,
-                      endColumnIndex: 3,
-                    },
-                  ],
-                },
-              },
-            },
-          },
-          position: {
-            overlayPosition: {
-              anchorCell: {
-                sheetId,
-                rowIndex: 10,
-                columnIndex: 10,
-              },
-              widthPixels: 330,
-              heightPixels: 285,
-            },
-          },
-        },
-      },
-    });
-
-    await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
+    // Batch Update 1: Apply layout, formatting, hero cards, borders, dropdowns
+    const formatRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -1133,6 +1202,173 @@ export const applyDashboardSheetDesign = async (
       },
       body: JSON.stringify({ requests }),
     });
+
+    if (!formatRes.ok) {
+      console.warn('Dashboard format update notice:', await formatRes.text());
+    }
+
+    // Batch Update 2: Embedded Google Sheets API Charts (Anchored under tables at Row 26)
+    try {
+      const chartRequests: any[] = [];
+
+      // Clear existing charts first to avoid duplicates
+      if (dashSheet.charts && dashSheet.charts.length > 0) {
+        dashSheet.charts.forEach((c: any) => {
+          if (c?.chartId !== undefined) {
+            chartRequests.push({
+              deleteEmbeddedObject: {
+                objectId: c.chartId,
+              },
+            });
+          }
+        });
+      }
+
+      // Chart 1: Category Expense Breakdown (Pie/Donut Chart over Cols B-G, Rows 26-37)
+      chartRequests.push({
+        addChart: {
+          chart: {
+            spec: {
+              title: 'Category Expense Breakdown',
+              titleTextFormat: {
+                foregroundColor: darkNavy,
+                fontSize: 11,
+                bold: true,
+              },
+              backgroundColor: white,
+              pieChart: {
+                legendPosition: 'RIGHT_LEGEND',
+                pieHole: 0.45,
+                domain: {
+                  sourceRange: {
+                    sources: [
+                      {
+                        sheetId,
+                        startRowIndex: 14,
+                        endRowIndex: 22,
+                        startColumnIndex: 1,
+                        endColumnIndex: 2,
+                      },
+                    ],
+                  },
+                },
+                series: {
+                  sourceRange: {
+                    sources: [
+                      {
+                        sheetId,
+                        startRowIndex: 14,
+                        endRowIndex: 22,
+                        startColumnIndex: 3,
+                        endColumnIndex: 4,
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+            position: {
+              overlayPosition: {
+                anchorCell: {
+                  sheetId,
+                  rowIndex: 25,
+                  columnIndex: 1,
+                },
+                widthPixels: 490,
+                heightPixels: 270,
+              },
+            },
+          },
+        },
+      });
+
+      // Chart 2: 7-Day Spending Comparison (Column Chart over Cols H-M, Rows 26-37)
+      chartRequests.push({
+        addChart: {
+          chart: {
+            spec: {
+              title: '7-Day Daily Spending Comparison',
+              titleTextFormat: {
+                foregroundColor: darkNavy,
+                fontSize: 11,
+                bold: true,
+              },
+              backgroundColor: white,
+              basicChart: {
+                chartType: 'COLUMN',
+                legendPosition: 'NO_LEGEND',
+                headerCount: 1,
+                axis: [
+                  { position: 'BOTTOM_AXIS', title: 'Day' },
+                  { position: 'LEFT_AXIS', title: 'Amount (Rs)' },
+                ],
+                domains: [
+                  {
+                    domain: {
+                      sourceRange: {
+                        sources: [
+                          {
+                            sheetId,
+                            startRowIndex: 14,
+                            endRowIndex: 22,
+                            startColumnIndex: 7,
+                            endColumnIndex: 8,
+                          },
+                        ],
+                      },
+                    },
+                  },
+                ],
+                series: [
+                  {
+                    series: {
+                      sourceRange: {
+                        sources: [
+                          {
+                            sheetId,
+                            startRowIndex: 14,
+                            endRowIndex: 22,
+                            startColumnIndex: 9,
+                            endColumnIndex: 10,
+                          },
+                        ],
+                      },
+                    },
+                    targetAxis: 'LEFT_AXIS',
+                  },
+                ],
+              },
+            },
+            position: {
+              overlayPosition: {
+                anchorCell: {
+                  sheetId,
+                  rowIndex: 25,
+                  columnIndex: 7,
+                },
+                widthPixels: 490,
+                heightPixels: 270,
+              },
+            },
+          },
+        },
+      });
+
+      const chartRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ requests: chartRequests }),
+      });
+
+      if (!chartRes.ok) {
+        console.warn('Dashboard embedded chart notice:', await chartRes.text());
+      }
+    } catch (chartErr) {
+      console.warn('Chart creation notice:', chartErr);
+    }
   } catch (e) {
     console.warn('Dashboard sheet formatting notice:', e);
   }
@@ -1229,7 +1465,7 @@ export const syncDashboardStats = async (
           method: 'POST',
           headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            requests: [{ addSheet: { properties: { title: 'Dashboard', gridProperties: { rowCount: 35, columnCount: 16 } } } }],
+            requests: [{ addSheet: { properties: { title: 'Dashboard', gridProperties: { rowCount: 45, columnCount: 16 } } } }],
           }),
         });
       }
@@ -1242,7 +1478,15 @@ export const syncDashboardStats = async (
   const dateStr = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
   const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-  // Complete Dashboard values matrix (Rows 1 to 19, Cols A to M)
+  const catFood = categories.find((c) => c.category === 'Food') || { amount: 0, count: 0 };
+  const catTransport = categories.find((c) => c.category === 'Transport') || { amount: 0, count: 0 };
+  const catShopping = categories.find((c) => c.category === 'Shopping') || { amount: 0, count: 0 };
+  const catBills = categories.find((c) => c.category === 'Bills') || { amount: 0, count: 0 };
+  const catEnt = categories.find((c) => c.category === 'Entertainment') || { amount: 0, count: 0 };
+  const catEdu = categories.find((c) => c.category === 'Education') || { amount: 0, count: 0 };
+  const catOther = categories.find((c) => c.category === 'Other') || { amount: 0, count: 0 };
+
+  // Complete Dashboard values matrix (Rows 1 to 25, Cols A to M)
   const dashboardValues = [
     // Row 1 (margin)
     ['', '', '', '', '', '', '', '', '', '', '', '', ''],
@@ -1252,123 +1496,150 @@ export const syncDashboardStats = async (
     ['', 'Executive Financial Dashboard • Real-time Sync & Cash Management', '', '', '', '', '', '', '', '', '', '', ''],
     // Row 4 (spacer)
     ['', '', '', '', '', '', '', '', '', '', '', '', ''],
-    // Row 5: Filter & Date Range Bar
+    // Row 5: Top Control Row 1 (Period Filter with interactive dropdown on left, Sync Status on right)
     [
       '',
-      '⚡ PERIOD: [ ALL TIME | TODAY | THIS WEEK | THIS MONTH ]', '', '',
-      '🗓️ DATE RANGE: [ All Time / Live ]', '', '',
-      `🕒 LAST SYNCED: ${dateStr} ${timeStr}`, '', '',
-      '🟢 LIVE SYNC: Connected & Active', '', '',
+      '🔍 PERIOD FILTER', '', 'ALL TIME', '', '', '',
+      '🟢 SYNC STATUS', '', 'Connected & Real-Time Active', '', '', '',
     ],
-    // Row 6 (spacer)
+    // Row 6: Top Control Row 2 (Date Range on left, Last Synced on right)
+    [
+      '',
+      '📅 DATE RANGE', '', 'Live Synced (All Records)', '', '', '',
+      '🕒 LAST SYNCED', '', `${dateStr} at ${timeStr}`, '', '', '',
+    ],
+    // Row 7 (spacer)
     ['', '', '', '', '', '', '', '', '', '', '', '', ''],
-    // Row 7: KPI Labels (Current Balance, Cash Added, Cash Spent, Card Spent, Total Spent, Out of Wallet)
+    // Row 8: HERO CARD - CURRENT BALANCE (ON ITS OWN LINE! UNIQUE COLOR!)
     [
       '',
-      'CURRENT BALANCE', '',
-      'CASH ADDED', '',
-      'CASH SPENT', '',
-      'CARD SPENT', '',
-      'TOTAL SPENT', '',
-      'OUT OF WALLET', '',
+      '💰 CURRENT CASH BALANCE', '', '', '', '', '',
+      'Live Liquid Wallet Funds • Available for Daily Spending', '', '', '', '', '',
     ],
-    // Row 8: KPI Values
+    // Row 9: Hero Card Value
     [
       '',
-      summary.currentCashBalance, '',
+      '● In-Hand Available Cash', '', '', '',
+      summary.currentCashBalance, '', '', '', '', '', '', '',
+    ],
+    // Row 10 (spacer)
+    ['', '', '', '', '', '', '', '', '', '', '', '', ''],
+    // Row 11: 5 KPI Cards on the NEXT LINE!
+    [
+      '',
+      '+ CASH ADDED', '',
+      '- CASH SPENT', '',
+      '💳 CARD SPENT', '',
+      '🔥 TOTAL SPENT', '', '',
+      '⚠️ OUT OF WALLET', '', '',
+    ],
+    // Row 12: 5 KPI Card Values
+    [
+      '',
       summary.cashAdded, '',
       summary.cashSpent, '',
       summary.cardSpend, '',
-      summary.totalSpend, '',
-      summary.outOfWallet, '',
+      summary.totalSpend, '', '',
+      summary.outOfWallet, '', '',
     ],
-    // Row 9 (spacer)
+    // Row 13 (spacer)
     ['', '', '', '', '', '', '', '', '', '', '', '', ''],
-    // Row 10: Section Titles
+    // Row 14: Section Titles
     [
       '',
-      'SPENDING BY CATEGORY', '', '',
-      'DAILY SPENDING TREND', '', '',
-      'DAILY SPEND GRAPH', '', '',
-      'CATEGORY DISTRIBUTION', '', '',
+      '📊 SPENDING BY CATEGORY & SHARE', '', '', '', '', '',
+      '📈 DAILY SPENDING TREND & ACTIVITY', '', '', '', '', '',
     ],
-    // Row 11: Table Headers
+    // Row 15: Table Headers
     [
       '',
-      'Category', 'Amount', '',
-      'Day', 'Amount', '',
-      '', '', '',
-      '', '', '',
+      'Category', 'Count', 'Amount', 'Share %', 'Visual Progress Bar', '',
+      'Day', 'Activity', 'Amount', 'Trend', 'Visual Daily Spend Bar', '',
     ],
-    // Row 12
+    // Row 16 (Food / Mon)
     [
       '',
-      'Food', categories.find((c) => c.category === 'Food')?.amount || 0, '',
-      'Mon', dailySpend['Mon'] || 0, '',
-      '', '', '',
-      '', '', '',
+      'Food', catFood.count, catFood.amount, '=IF($D$23>0, D16/$D$23, 0)',
+      '=IF(D16>0, SPARKLINE(D16, {"charttype","bar";"max",MAX(D$16:D$22)+1;"color1","#1F3A64"}), "—")', '',
+      'Mon', 'Weekday', dailySpend['Mon'] || 0,
+      '=IF(J16>AVERAGE(J$16:J$22),"Above Avg","Normal")',
+      '=IF(J16>0, SPARKLINE(J16, {"charttype","bar";"max",MAX(J$16:J$22)+1;"color1","#2563EB"}), "—")', '',
     ],
-    // Row 13
+    // Row 17 (Transport / Tue)
     [
       '',
-      'Transport', categories.find((c) => c.category === 'Transport')?.amount || 0, '',
-      'Tue', dailySpend['Tue'] || 0, '',
-      '', '', '',
-      '', '', '',
+      'Transport', catTransport.count, catTransport.amount, '=IF($D$23>0, D17/$D$23, 0)',
+      '=IF(D17>0, SPARKLINE(D17, {"charttype","bar";"max",MAX(D$16:D$22)+1;"color1","#1F3A64"}), "—")', '',
+      'Tue', 'Weekday', dailySpend['Tue'] || 0,
+      '=IF(J17>AVERAGE(J$16:J$22),"Above Avg","Normal")',
+      '=IF(J17>0, SPARKLINE(J17, {"charttype","bar";"max",MAX(J$16:J$22)+1;"color1","#2563EB"}), "—")', '',
     ],
-    // Row 14
+    // Row 18 (Shopping / Wed)
     [
       '',
-      'Shopping', categories.find((c) => c.category === 'Shopping')?.amount || 0, '',
-      'Wed', dailySpend['Wed'] || 0, '',
-      '', '', '',
-      '', '', '',
+      'Shopping', catShopping.count, catShopping.amount, '=IF($D$23>0, D18/$D$23, 0)',
+      '=IF(D18>0, SPARKLINE(D18, {"charttype","bar";"max",MAX(D$16:D$22)+1;"color1","#1F3A64"}), "—")', '',
+      'Wed', 'Weekday', dailySpend['Wed'] || 0,
+      '=IF(J18>AVERAGE(J$16:J$22),"Above Avg","Normal")',
+      '=IF(J18>0, SPARKLINE(J18, {"charttype","bar";"max",MAX(J$16:J$22)+1;"color1","#2563EB"}), "—")', '',
     ],
-    // Row 15
+    // Row 19 (Bills / Thu)
     [
       '',
-      'Bills', categories.find((c) => c.category === 'Bills')?.amount || 0, '',
-      'Thu', dailySpend['Thu'] || 0, '',
-      '', '', '',
-      '', '', '',
+      'Bills', catBills.count, catBills.amount, '=IF($D$23>0, D19/$D$23, 0)',
+      '=IF(D19>0, SPARKLINE(D19, {"charttype","bar";"max",MAX(D$16:D$22)+1;"color1","#1F3A64"}), "—")', '',
+      'Thu', 'Weekday', dailySpend['Thu'] || 0,
+      '=IF(J19>AVERAGE(J$16:J$22),"Above Avg","Normal")',
+      '=IF(J19>0, SPARKLINE(J19, {"charttype","bar";"max",MAX(J$16:J$22)+1;"color1","#2563EB"}), "—")', '',
     ],
-    // Row 16
+    // Row 20 (Entertainment / Fri)
     [
       '',
-      'Entertainment', categories.find((c) => c.category === 'Entertainment')?.amount || 0, '',
-      'Fri', dailySpend['Fri'] || 0, '',
-      '', '', '',
-      '', '', '',
+      'Entertainment', catEnt.count, catEnt.amount, '=IF($D$23>0, D20/$D$23, 0)',
+      '=IF(D20>0, SPARKLINE(D20, {"charttype","bar";"max",MAX(D$16:D$22)+1;"color1","#1F3A64"}), "—")', '',
+      'Fri', 'Weekday', dailySpend['Fri'] || 0,
+      '=IF(J20>AVERAGE(J$16:J$22),"Above Avg","Normal")',
+      '=IF(J20>0, SPARKLINE(J20, {"charttype","bar";"max",MAX(J$16:J$22)+1;"color1","#2563EB"}), "—")', '',
     ],
-    // Row 17
+    // Row 21 (Education / Sat)
     [
       '',
-      'Education', categories.find((c) => c.category === 'Education')?.amount || 0, '',
-      'Sat', dailySpend['Sat'] || 0, '',
-      '', '', '',
-      '', '', '',
+      'Education', catEdu.count, catEdu.amount, '=IF($D$23>0, D21/$D$23, 0)',
+      '=IF(D21>0, SPARKLINE(D21, {"charttype","bar";"max",MAX(D$16:D$22)+1;"color1","#1F3A64"}), "—")', '',
+      'Sat', 'Weekend', dailySpend['Sat'] || 0,
+      '=IF(J21>AVERAGE(J$16:J$22),"Above Avg","Normal")',
+      '=IF(J21>0, SPARKLINE(J21, {"charttype","bar";"max",MAX(J$16:J$22)+1;"color1","#2563EB"}), "—")', '',
     ],
-    // Row 18
+    // Row 22 (Other / Sun)
     [
       '',
-      'Other', categories.find((c) => c.category === 'Other')?.amount || 0, '',
-      'Sun', dailySpend['Sun'] || 0, '',
-      '', '', '',
-      '', '', '',
+      'Other', catOther.count, catOther.amount, '=IF($D$23>0, D22/$D$23, 0)',
+      '=IF(D22>0, SPARKLINE(D22, {"charttype","bar";"max",MAX(D$16:D$22)+1;"color1","#1F3A64"}), "—")', '',
+      'Sun', 'Weekend', dailySpend['Sun'] || 0,
+      '=IF(J22>AVERAGE(J$16:J$22),"Above Avg","Normal")',
+      '=IF(J22>0, SPARKLINE(J22, {"charttype","bar";"max",MAX(J$16:J$22)+1;"color1","#2563EB"}), "—")', '',
     ],
-    // Row 19: Total Rows with live formulas
+    // Row 23: Total Rows with live formulas and mini in-cell visual column sparklines
     [
       '',
-      'Total', '=SUM(C12:C18)', '',
-      'Total', '=SUM(F12:F18)', '',
-      '', '', '',
-      '', '', '',
+      'Total Spent', '', '=SUM(D16:D22)', '100.0%',
+      '=SPARKLINE(D16:D22, {"charttype","column";"color","#1F3A64"})', '',
+      'Total 7-Day Spend', '', '=SUM(J16:J22)', 'Weekly Trend',
+      '=SPARKLINE(J16:J22, {"charttype","column";"color","#2563EB"})', '',
+    ],
+    // Row 24 (spacer)
+    ['', '', '', '', '', '', '', '', '', '', '', '', ''],
+    // Row 25: Chart Section Headers
+    [
+      '',
+      '🍩 CATEGORY BREAKDOWN VISUAL CHART', '', '', '', '', '',
+      '📊 7-DAY SPENDING COMPARISON CHART', '', '', '', '', '',
     ],
   ];
 
   // Write full dashboard grid
   const res = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Dashboard!A1:M19?valueInputOption=USER_ENTERED`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Dashboard!A1:M25?valueInputOption=USER_ENTERED`,
     {
       method: 'PUT',
       headers: {
@@ -1382,7 +1653,7 @@ export const syncDashboardStats = async (
     console.warn('Dashboard values sync notice:', await res.text());
   }
 
-  // Ensure full layout, gridline removal, and charts are always applied on every sync!
+  // Ensure full layout, gridline removal, hero card styling, dropdowns, and charts are applied on every sync!
   await applyDashboardSheetDesign(accessToken, spreadsheetId);
 };
 
