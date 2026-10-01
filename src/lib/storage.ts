@@ -25,20 +25,24 @@ const getScopedKey = (baseKey: string, email?: string | null): string => {
 };
 
 export const loadStoredProfile = (email?: string | null): UserProfile => {
+  const cleanEmail = email && email !== 'guest' ? email.trim().toLowerCase() : null;
+  if (!cleanEmail) {
+    return { name: 'My Wallet', avatar: null, email: '' };
+  }
   try {
-    const nameKey = getScopedKey(PROFILE_NAME_KEY, email);
-    const avatarKey = getScopedKey(CUSTOM_AVATAR_KEY, email);
-    const emailKey = getScopedKey(PROFILE_EMAIL_KEY, email);
+    const nameKey = getScopedKey(PROFILE_NAME_KEY, cleanEmail);
+    const avatarKey = getScopedKey(CUSTOM_AVATAR_KEY, cleanEmail);
+    const emailKey = getScopedKey(PROFILE_EMAIL_KEY, cleanEmail);
 
     let name = localStorage.getItem(nameKey);
-    if (!name || name === 'Jeyaram Tech') {
-      name = email ? email.split('@')[0] : 'My Wallet';
+    if (!name || name === 'Jeyaram Tech' || name === 'My Wallet') {
+      name = cleanEmail.split('@')[0];
     }
     const avatar = localStorage.getItem(avatarKey);
-    const storedEmail = localStorage.getItem(emailKey) || email || '';
+    const storedEmail = localStorage.getItem(emailKey) || cleanEmail;
     return { name, avatar, email: storedEmail };
   } catch {
-    return { name: email ? email.split('@')[0] : 'My Wallet', avatar: null, email: email || '' };
+    return { name: cleanEmail.split('@')[0], avatar: null, email: cleanEmail };
   }
 };
 

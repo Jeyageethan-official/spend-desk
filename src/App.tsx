@@ -229,11 +229,8 @@ export default function App() {
         try { localStorage.removeItem(LAST_OFFLINE_WORKSPACE_KEY); } catch {}
       },
       () => {
-        const storedUser = localStorage.getItem('money_tracker_user_info') || localStorage.getItem('money_tracker_user');
-        if (!storedUser && !getCachedWorkspaceToken()) {
-          setUser(null);
-          setAccessToken(null);
-        }
+        setUser(null);
+        setAccessToken(null);
       }
     );
 
@@ -807,26 +804,29 @@ export default function App() {
   };
 
   const handleSignOut = async () => {
-    const signedOutScope = (user?.email || currentUserEmail || '').trim().toLowerCase();
+    const signedOutScope = user?.email ? user.email.trim().toLowerCase() : null;
     if (signedOutScope && signedOutScope !== 'guest') {
       stageWorkspaceForReplay(transactions, lendItems, signedOutScope);
-      // Persist user scope in LAST_OFFLINE_WORKSPACE_KEY so offline tracking retains all ledger data & connected sheet
-      try {
-        localStorage.setItem(LAST_OFFLINE_WORKSPACE_KEY, signedOutScope);
-      } catch {}
-      setOfflineWorkspaceEmail(signedOutScope);
       if (activeSheet) {
         saveStoredSheetMeta(activeSheet, signedOutScope);
       }
     }
+    setOfflineWorkspaceEmail(null);
     try {
+      localStorage.removeItem(LAST_OFFLINE_WORKSPACE_KEY);
       localStorage.removeItem('money_tracker_user');
       localStorage.removeItem('money_tracker_user_info');
+      localStorage.removeItem('spenddesk_google_token');
+      localStorage.removeItem('money_tracker_access_token');
+      localStorage.removeItem('money_tracker_profile_email_guest');
+      localStorage.removeItem('money_tracker_profile_name_guest');
     } catch (e) {}
     await signOutGoogleWorkspace();
     await signOutSupabase();
     setUser(null);
-    showNotification('Signed out. Local workspace is ready for offline tracking.', 'info');
+    setAccessToken(null);
+    setUserProfile({ name: 'My Wallet', avatar: null, email: '' });
+    showNotification('Signed out successfully.', 'info');
   };
 
   const isPushingToSheetRef = useRef(false);

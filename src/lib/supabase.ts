@@ -65,7 +65,7 @@ export const signInWithGoogleSupabase = async (): Promise<AuthResult> => {
         redirectTo: redirectUrl,
         queryParams: {
           access_type: 'offline',
-          prompt: 'select_account consent',
+          prompt: 'select_account',
           enable_granular_consent: 'false',
           include_granted_scopes: 'true',
         },
@@ -207,18 +207,6 @@ export const initSupabaseAuth = (
       const tokenToUse = session.provider_token || (storedToken && !storedToken.startsWith('eyJ') ? storedToken : session.access_token);
       if (onAuthSuccess) onAuthSuccess(userInfo, tokenToUse);
     } else {
-      // Check stored user
-      const rawUser = localStorage.getItem(USER_STORAGE_KEY) || localStorage.getItem('money_tracker_user');
-      const storedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
-      if (rawUser) {
-        try {
-          const parsed = JSON.parse(rawUser);
-          if (parsed?.email) {
-            if (onAuthSuccess) onAuthSuccess({ displayName: parsed.name || parsed.displayName, email: parsed.email, photoURL: parsed.picture || parsed.photoURL }, storedToken || 'local_token');
-            return;
-          }
-        } catch {}
-      }
       if (onAuthFailure) onAuthFailure();
     }
   });

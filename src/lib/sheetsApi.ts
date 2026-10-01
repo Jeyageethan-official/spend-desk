@@ -256,9 +256,122 @@ export const createMoneyTrackerSpreadsheet = async (
   };
 };
 
+export const applyTransactionsSheetDesign = async (
+  accessToken: string,
+  spreadsheetId: string
+) => {
+  try {
+    const metaRes = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      }
+    );
+    if (!metaRes.ok) return;
+    const metaData = await metaRes.json();
+    const txSheet = metaData.sheets?.find((s: any) => s.properties?.title === 'Transactions') || metaData.sheets?.[0];
+    const sheetId = txSheet?.properties?.sheetId ?? 0;
+
+    const darkNavy = { red: 15 / 255, green: 53 / 255, blue: 92 / 255 }; // #0f355c matching screenshot
+    const white = { red: 1, green: 1, blue: 1 };
+
+    const batchBody = {
+      requests: [
+        // 1. Format Row 1 Header A1:H1 (Date to Balance)
+        {
+          repeatCell: {
+            range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 8 },
+            cell: {
+              userEnteredFormat: {
+                backgroundColor: darkNavy,
+                textFormat: { foregroundColor: white, bold: true, fontSize: 10 },
+                horizontalAlignment: 'CENTER',
+              },
+            },
+            fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)',
+          },
+        },
+        // 2. Format Row 1 Header J1:K1 (Out of Wallet, Card Payment)
+        {
+          repeatCell: {
+            range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 9, endColumnIndex: 11 },
+            cell: {
+              userEnteredFormat: {
+                backgroundColor: darkNavy,
+                textFormat: { foregroundColor: white, bold: true, fontSize: 10 },
+                horizontalAlignment: 'CENTER',
+              },
+            },
+            fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)',
+          },
+        },
+        // 3. Format Row 1 LEND MONEY Header N1:P1
+        {
+          repeatCell: {
+            range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 13, endColumnIndex: 16 },
+            cell: {
+              userEnteredFormat: {
+                backgroundColor: darkNavy,
+                textFormat: { foregroundColor: white, bold: true, fontSize: 11 },
+                horizontalAlignment: 'CENTER',
+              },
+            },
+            fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)',
+          },
+        },
+        // 4. Merge N1:P1 for LEND MONEY
+        {
+          mergeCells: {
+            range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 13, endColumnIndex: 16 },
+            mergeType: 'MERGE_ALL',
+          },
+        },
+        // 5. Format Row 2 Subheaders N2:P2 (Date & Time, Amount, Reason / Person)
+        {
+          repeatCell: {
+            range: { sheetId, startRowIndex: 1, endRowIndex: 2, startColumnIndex: 13, endColumnIndex: 16 },
+            cell: {
+              userEnteredFormat: {
+                backgroundColor: darkNavy,
+                textFormat: { foregroundColor: white, bold: true, fontSize: 10 },
+                horizontalAlignment: 'CENTER',
+              },
+            },
+            fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)',
+          },
+        },
+        // 6. Freeze top 2 rows
+        {
+          updateSheetProperties: {
+            properties: {
+              sheetId,
+              gridProperties: {
+                frozenRowCount: 2,
+              },
+            },
+            fields: 'gridProperties.frozenRowCount',
+          },
+        },
+      ],
+    };
+
+    await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(batchBody),
+    });
+  } catch (e) {
+    console.warn('Sheet formatting notice:', e);
+  }
+};
+
 export const initializeSheetLayout = async (accessToken: string, spreadsheetId: string) => {
   // Set up Transactions headers matching user screenshot layout:
-  // Cols: Date, Time, Type, Category, Amount, Note, Payment Method, Balance, [spacer], Out of Wallet, Card Payment, [spacer], [spacer], Date & Time, Amount, Reason / Person, ID
+  // Row 1: Date, Time, Type, Category, Amount, Note, Payment Method, Balance, [spacer], Out of Wallet, Card Payment, [spacer], [spacer], LEND MONEY (spanning N-P)
+  // Row 2: Lend Money subheaders: Date & Time, Amount, Reason / Person
   const txHeaderBody = {
     values: [
       [
@@ -275,14 +388,17 @@ export const initializeSheetLayout = async (accessToken: string, spreadsheetId: 
         'Card Payment',
         '',
         '',
-        'Date & Time',
-        'Amount',
-        'Reason / Person',
+        'LEND MONEY',
+        '',
+        '',
         'Transaction ID'
       ],
       [
         '', '', '', '', '', '', '', '', '', '', '', '', '',
-        'LEND MONEY', '', '', ''
+        'Date & Time',
+        'Amount',
+        'Reason / Person',
+        ''
       ]
     ],
   };
@@ -301,6 +417,9 @@ export const initializeSheetLayout = async (accessToken: string, spreadsheetId: 
   if (!txHeaderResponse.ok) {
     throw parseGoogleApiError(txHeaderResponse.status, await txHeaderResponse.text(), 'Failed to create transaction headers');
   }
+
+  // Apply dark navy formatting, white bold text and frozen rows matching screenshot
+  await applyTransactionsSheetDesign(accessToken, spreadsheetId);
 
   // Set up Lend_Borrow headers (Tab 3: dedicated full Lend & Borrow ledger)
   const lendHeaderBody = {
@@ -640,6 +759,51 @@ export const fetchAllTransactionsFromSheet = async (
   return parsedTxs;
 };
 
+export const formatDateToSheetHeader = (dateStr: string): string => {
+  if (!dateStr) return '';
+  try {
+    const parts = dateStr.split('-');
+    if (parts.length === 3) {
+      const year = parts[0];
+      const monthIdx = parseInt(parts[1], 10) - 1;
+      const day = parts[2].padStart(2, '0');
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      if (monthIdx >= 0 && monthIdx < 12) {
+        return `${day} ${months[monthIdx]} ${year}`;
+      }
+    }
+    const d = new Date(dateStr + 'T00:00:00');
+    if (!isNaN(d.getTime())) {
+      const day = String(d.getDate()).padStart(2, '0');
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      return `${day} ${months[d.getMonth()]} ${d.getFullYear()}`;
+    }
+  } catch {}
+  return dateStr;
+};
+
+export const tryParseDateHeader = (raw: string): string | null => {
+  if (!raw) return null;
+  const match = raw.trim().match(/^(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})$/);
+  if (match) {
+    const day = match[1].padStart(2, '0');
+    const monthStr = match[2].toLowerCase();
+    const year = match[3];
+    const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+    const mIdx = months.indexOf(monthStr);
+    if (mIdx >= 0) {
+      const month = String(mIdx + 1).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+  }
+  return null;
+};
+
+export const formatLendDateTime = (item: LendItem): string => {
+  if (!item.date) return '';
+  return formatDateToSheetHeader(item.date);
+};
+
 export const overwriteTransactionsInSheet = async (
   accessToken: string,
   spreadsheetId: string,
@@ -668,27 +832,61 @@ export const overwriteTransactionsInSheet = async (
 
   const sorted = sortTransactionsChronological(transactions);
   const runningBalances = calculateRunningBalances(sorted);
-  const safeLends = lendItems || [];
+  const safeLends = [...(lendItems || [])];
 
-  const maxRowCount = Math.max(sorted.length, safeLends.length);
+  // Group transactions chronologically by date
+  const txsByDate = new Map<string, Transaction[]>();
+  sorted.forEach((tx) => {
+    const d = tx.date || '';
+    if (!txsByDate.has(d)) txsByDate.set(d, []);
+    txsByDate.get(d)!.push(tx);
+  });
+
   const rows: any[][] = [];
+  let lendIdx = 0;
 
-  for (let i = 0; i < maxRowCount; i++) {
-    const tx = sorted[i];
-    const lend = safeLends[i];
+  txsByDate.forEach((dayTxs, dateStr) => {
+    const dateHeader = formatDateToSheetHeader(dateStr);
 
-    let rowData: any[] = [];
-    if (tx) {
+    // Side lend column for the date banner row if available
+    const lendBanner = lendIdx < safeLends.length ? safeLends[lendIdx++] : null;
+    const lendBannerCols = lendBanner
+      ? [
+          formatLendDateTime(lendBanner),
+          `Rs ${lendBanner.amount.toLocaleString('en-US')}`,
+          `${lendBanner.personName}${lendBanner.thingsOrReason ? ` - ${lendBanner.thingsOrReason}` : ''}`,
+        ]
+      : ['', '', ''];
+
+    // Date header banner row: Col D has bold centered date matching user screenshot
+    rows.push([
+      '', '', '', dateHeader, '', '', '', '', '', '', '', '', '',
+      ...lendBannerCols,
+      ''
+    ]);
+
+    // Data rows for transactions on this date
+    dayTxs.forEach((tx) => {
       const rb = runningBalances.get(tx.id);
       const bal = rb ? rb.balance : 0;
       const oow = rb ? rb.outOfWallet : 0;
       const isCard = tx.paymentMethod === 'Card' || tx.paymentMethod === 'Bank Transfer' || tx.type === 'card_expense';
+      const isCashIn = tx.type === 'cash_added';
 
-      rowData = [
+      const nextLend = lendIdx < safeLends.length ? safeLends[lendIdx++] : null;
+      const nextLendCols = nextLend
+        ? [
+            formatLendDateTime(nextLend),
+            `Rs ${nextLend.amount.toLocaleString('en-US')}`,
+            `${nextLend.personName}${nextLend.thingsOrReason ? ` - ${nextLend.thingsOrReason}` : ''}`,
+          ]
+        : ['', '', ''];
+
+      rows.push([
         tx.date || '',
         tx.time || '',
-        tx.type === 'cash_added' ? 'IN' : 'OUT',
-        tx.category || 'Other',
+        isCashIn ? 'IN' : 'OUT',
+        tx.category || (isCashIn ? 'Cash In' : 'Other'),
         `Rs ${tx.amount.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`,
         tx.notes || '',
         tx.paymentMethod || 'Cash',
@@ -698,26 +896,22 @@ export const overwriteTransactionsInSheet = async (
         isCard ? `Rs ${tx.amount.toLocaleString('en-US')}` : '', // Col K Card Payment
         '', // Col L spacer
         '', // Col M spacer
-      ];
-    } else {
-      // Empty transaction cells
-      rowData = ['', '', '', '', '', '', '', '', '', '', '', '', ''];
-    }
+        ...nextLendCols,
+        tx.id // Col Q metadata
+      ]);
+    });
+  });
 
-    // Append LEND MONEY side widget columns (N, O, P)
-    if (lend) {
-      const lendDateTime = lend.date || '';
-      const lendAmt = `Rs ${lend.amount.toLocaleString('en-US')}`;
-      const lendReason = `${lend.personName}${lend.thingsOrReason ? ` - ${lend.thingsOrReason}` : ''}`;
-      rowData.push(lendDateTime, lendAmt, lendReason);
-    } else {
-      rowData.push('', '', '');
-    }
-
-    // Col Q: Transaction ID metadata
-    rowData.push(tx ? tx.id : '');
-
-    rows.push(rowData);
+  // If there are still lend items after placing all transactions:
+  while (lendIdx < safeLends.length) {
+    const remainingLend = safeLends[lendIdx++];
+    rows.push([
+      '', '', '', '', '', '', '', '', '', '', '', '', '',
+      formatLendDateTime(remainingLend),
+      `Rs ${remainingLend.amount.toLocaleString('en-US')}`,
+      `${remainingLend.personName}${remainingLend.thingsOrReason ? ` - ${remainingLend.thingsOrReason}` : ''}`,
+      ''
+    ]);
   }
 
   const endRow = rows.length + 2; // Rows start at row 3
@@ -741,6 +935,9 @@ export const overwriteTransactionsInSheet = async (
   if (!writeResponse.ok) {
     throw parseGoogleApiError(writeResponse.status, await writeResponse.text(), 'Failed to save transactions to sheet');
   }
+
+  // Ensure header styling and merged columns are applied
+  await applyTransactionsSheetDesign(accessToken, spreadsheetId);
 };
 
 export const overwriteLendItemsInSheet = async (
