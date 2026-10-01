@@ -265,25 +265,139 @@ export const applyTransactionsSheetDesign = async (
     const txSheet = metaData.sheets?.find((s: any) => s.properties?.title === 'Transactions') || metaData.sheets?.[0];
     const sheetId = txSheet?.properties?.sheetId ?? 0;
 
-    // Darker executive navy blue matching user specification (#0b1e36)
-    const darkNavy = { red: 11 / 255, green: 30 / 255, blue: 54 / 255 }; 
+    // Modern Soft Indigo / Navy (#1a2b4c) per user request - softer and cleaner than harsh dark blue
+    const softNavy = { red: 26 / 255, green: 43 / 255, blue: 76 / 255 }; // #1a2b4c
     const white = { red: 1, green: 1, blue: 1 };
     const greenText = { red: 13 / 255, green: 115 / 255, blue: 55 / 255 }; // #0d7337
     const greenBg = { red: 230 / 255, green: 244 / 255, blue: 234 / 255 }; // #e6f4ea
     const redText = { red: 197 / 255, green: 34 / 255, blue: 31 / 255 }; // #c5221f
     const redBg = { red: 252 / 255, green: 232 / 255, blue: 230 / 255 }; // #fce8e6
     const blueText = { red: 26 / 255, green: 115 / 255, blue: 232 / 255 }; // #1a73e8
-    const lightGreyBorder = { red: 218 / 255, green: 220 / 255, blue: 224 / 255 }; // #dadce0
+    const lightGreyBorder = { red: 229 / 255, green: 231 / 255, blue: 235 / 255 }; // #e5e7eb
     const lightBlueRowBg = { red: 232 / 255, green: 240 / 255, blue: 254 / 255 }; // #e8f0fe
+    const spacerBg = { red: 248 / 255, green: 249 / 255, blue: 250 / 255 }; // #f8f9fa
 
     const requests: any[] = [
-      // 1. Format Row 1 Header A1:J1 continuously with dark navy blue & white bold text (NO GAP!)
+      // 1. Column Widths (breathing room + thin gap columns for Balance/Out of Wallet and Card Payment)
+      {
+        updateDimensionProperties: {
+          range: { sheetId, dimension: 'COLUMNS', startIndex: 0, endIndex: 1 }, // Col A Date
+          properties: { pixelSize: 95 },
+          fields: 'pixelSize',
+        },
+      },
+      {
+        updateDimensionProperties: {
+          range: { sheetId, dimension: 'COLUMNS', startIndex: 1, endIndex: 2 }, // Col B Time
+          properties: { pixelSize: 70 },
+          fields: 'pixelSize',
+        },
+      },
+      {
+        updateDimensionProperties: {
+          range: { sheetId, dimension: 'COLUMNS', startIndex: 2, endIndex: 3 }, // Col C Type
+          properties: { pixelSize: 60 },
+          fields: 'pixelSize',
+        },
+      },
+      {
+        updateDimensionProperties: {
+          range: { sheetId, dimension: 'COLUMNS', startIndex: 3, endIndex: 4 }, // Col D Category
+          properties: { pixelSize: 110 },
+          fields: 'pixelSize',
+        },
+      },
+      {
+        updateDimensionProperties: {
+          range: { sheetId, dimension: 'COLUMNS', startIndex: 4, endIndex: 5 }, // Col E Amount
+          properties: { pixelSize: 95 },
+          fields: 'pixelSize',
+        },
+      },
+      {
+        updateDimensionProperties: {
+          range: { sheetId, dimension: 'COLUMNS', startIndex: 5, endIndex: 6 }, // Col F Note
+          properties: { pixelSize: 140 },
+          fields: 'pixelSize',
+        },
+      },
+      {
+        updateDimensionProperties: {
+          range: { sheetId, dimension: 'COLUMNS', startIndex: 6, endIndex: 7 }, // Col G Payment Method
+          properties: { pixelSize: 110 },
+          fields: 'pixelSize',
+        },
+      },
+      {
+        updateDimensionProperties: {
+          range: { sheetId, dimension: 'COLUMNS', startIndex: 7, endIndex: 8 }, // Col H Balance
+          properties: { pixelSize: 105 },
+          fields: 'pixelSize',
+        },
+      },
+      {
+        updateDimensionProperties: {
+          range: { sheetId, dimension: 'COLUMNS', startIndex: 8, endIndex: 9 }, // Col I Thin Spacer Gap (25px)
+          properties: { pixelSize: 25 },
+          fields: 'pixelSize',
+        },
+      },
+      {
+        updateDimensionProperties: {
+          range: { sheetId, dimension: 'COLUMNS', startIndex: 9, endIndex: 10 }, // Col J Out of Wallet
+          properties: { pixelSize: 105 },
+          fields: 'pixelSize',
+        },
+      },
+      {
+        updateDimensionProperties: {
+          range: { sheetId, dimension: 'COLUMNS', startIndex: 10, endIndex: 11 }, // Col K Thin Spacer Gap (25px)
+          properties: { pixelSize: 25 },
+          fields: 'pixelSize',
+        },
+      },
+      {
+        updateDimensionProperties: {
+          range: { sheetId, dimension: 'COLUMNS', startIndex: 11, endIndex: 12 }, // Col L Card Payment
+          properties: { pixelSize: 105 },
+          fields: 'pixelSize',
+        },
+      },
+      {
+        updateDimensionProperties: {
+          range: { sheetId, dimension: 'COLUMNS', startIndex: 12, endIndex: 13 }, // Col M Spacer before Lend (30px)
+          properties: { pixelSize: 30 },
+          fields: 'pixelSize',
+        },
+      },
+      {
+        updateDimensionProperties: {
+          range: { sheetId, dimension: 'COLUMNS', startIndex: 13, endIndex: 14 }, // Col N Lend Date & Time
+          properties: { pixelSize: 105 },
+          fields: 'pixelSize',
+        },
+      },
+      {
+        updateDimensionProperties: {
+          range: { sheetId, dimension: 'COLUMNS', startIndex: 14, endIndex: 15 }, // Col O Lend Amount
+          properties: { pixelSize: 90 },
+          fields: 'pixelSize',
+        },
+      },
+      {
+        updateDimensionProperties: {
+          range: { sheetId, dimension: 'COLUMNS', startIndex: 15, endIndex: 16 }, // Col P Lend Person / Reason
+          properties: { pixelSize: 140 },
+          fields: 'pixelSize',
+        },
+      },
+      // 2. Format Row 1 Header A1:H1 (Date to Balance) with soft navy
       {
         repeatCell: {
-          range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 10 },
+          range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 8 },
           cell: {
             userEnteredFormat: {
-              backgroundColor: darkNavy,
+              backgroundColor: softNavy,
               textFormat: { foregroundColor: white, bold: true, fontSize: 10 },
               horizontalAlignment: 'CENTER',
             },
@@ -291,7 +405,71 @@ export const applyTransactionsSheetDesign = async (
           fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)',
         },
       },
-      // 2. Format & Merge LEND MONEY header over N1:P1 (columns 13 to 16)
+      // 3. Spacer Col I on Row 1 (subtle clean gap)
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 8, endColumnIndex: 9 },
+          cell: {
+            userEnteredFormat: {
+              backgroundColor: spacerBg,
+            },
+          },
+          fields: 'userEnteredFormat(backgroundColor)',
+        },
+      },
+      // 4. Col J Row 1 Header (Out of Wallet) with soft navy
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 9, endColumnIndex: 10 },
+          cell: {
+            userEnteredFormat: {
+              backgroundColor: softNavy,
+              textFormat: { foregroundColor: white, bold: true, fontSize: 10 },
+              horizontalAlignment: 'CENTER',
+            },
+          },
+          fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)',
+        },
+      },
+      // 5. Spacer Col K on Row 1 (subtle clean gap)
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 10, endColumnIndex: 11 },
+          cell: {
+            userEnteredFormat: {
+              backgroundColor: spacerBg,
+            },
+          },
+          fields: 'userEnteredFormat(backgroundColor)',
+        },
+      },
+      // 6. Col L Row 1 Header (Card Payment) with soft navy
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 11, endColumnIndex: 12 },
+          cell: {
+            userEnteredFormat: {
+              backgroundColor: softNavy,
+              textFormat: { foregroundColor: white, bold: true, fontSize: 10 },
+              horizontalAlignment: 'CENTER',
+            },
+          },
+          fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)',
+        },
+      },
+      // 7. Spacer Col M on Row 1
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 12, endColumnIndex: 13 },
+          cell: {
+            userEnteredFormat: {
+              backgroundColor: spacerBg,
+            },
+          },
+          fields: 'userEnteredFormat(backgroundColor)',
+        },
+      },
+      // 8. Format & Merge LEND MONEY header over N1:P1 (columns 13 to 16) with soft navy
       {
         mergeCells: {
           range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 13, endColumnIndex: 16 },
@@ -303,7 +481,7 @@ export const applyTransactionsSheetDesign = async (
           range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 13, endColumnIndex: 16 },
           cell: {
             userEnteredFormat: {
-              backgroundColor: darkNavy,
+              backgroundColor: softNavy,
               textFormat: { foregroundColor: white, bold: true, fontSize: 10 },
               horizontalAlignment: 'CENTER',
             },
@@ -311,13 +489,13 @@ export const applyTransactionsSheetDesign = async (
           fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)',
         },
       },
-      // 3. Format Row 2 Subheaders for Lend Money N2:P2 (Date & Time, Amount, Reason / Person)
+      // 9. Format Row 2 Subheaders for Lend Money N2:P2 (Date & Time, Amount, Reason / Person)
       {
         repeatCell: {
           range: { sheetId, startRowIndex: 1, endRowIndex: 2, startColumnIndex: 13, endColumnIndex: 16 },
           cell: {
             userEnteredFormat: {
-              backgroundColor: darkNavy,
+              backgroundColor: softNavy,
               textFormat: { foregroundColor: white, bold: true, fontSize: 9 },
               horizontalAlignment: 'CENTER',
             },
@@ -325,7 +503,7 @@ export const applyTransactionsSheetDesign = async (
           fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)',
         },
       },
-      // 4. Freeze top 1 row
+      // 10. Freeze top 1 row
       {
         updateSheetProperties: {
           properties: {
@@ -337,7 +515,7 @@ export const applyTransactionsSheetDesign = async (
           fields: 'gridProperties.frozenRowCount',
         },
       },
-      // 5. Clean up any data validations (dropdown venaam per user request)
+      // 11. Clean up any data validations
       {
         setDataValidation: {
           range: { sheetId, startRowIndex: 1, endRowIndex: 3000, startColumnIndex: 2, endColumnIndex: 3 },
@@ -350,7 +528,7 @@ export const applyTransactionsSheetDesign = async (
           rule: undefined,
         },
       },
-      // 6. Base Alignment & Fonts for Date and Time (Blue text, centered)
+      // 12. Base Alignment & Fonts for Date and Time (Blue text, centered)
       {
         repeatCell: {
           range: { sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 0, endColumnIndex: 2 },
@@ -363,7 +541,7 @@ export const applyTransactionsSheetDesign = async (
           fields: 'userEnteredFormat(textFormat,horizontalAlignment)',
         },
       },
-      // 7. Right alignment for Amount, Balance, Out of Wallet, Card Payment (clean numbers)
+      // 13. Right alignment for Amount, Balance
       {
         repeatCell: {
           range: { sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 4, endColumnIndex: 5 },
@@ -377,7 +555,7 @@ export const applyTransactionsSheetDesign = async (
       },
       {
         repeatCell: {
-          range: { sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 7, endColumnIndex: 10 },
+          range: { sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 7, endColumnIndex: 8 },
           cell: {
             userEnteredFormat: {
               textFormat: { foregroundColor: blueText },
@@ -387,7 +565,32 @@ export const applyTransactionsSheetDesign = async (
           fields: 'userEnteredFormat(textFormat,horizontalAlignment)',
         },
       },
-      // 8. Lend Money data column styling: Date & Time in Col N (blue text), Amount in Col O (blue, right-aligned)
+      // 14. Out of Wallet (Col J, index 9) and Card Payment (Col L, index 11) right-aligned
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 9, endColumnIndex: 10 },
+          cell: {
+            userEnteredFormat: {
+              textFormat: { foregroundColor: redText, bold: true },
+              horizontalAlignment: 'RIGHT',
+            },
+          },
+          fields: 'userEnteredFormat(textFormat,horizontalAlignment)',
+        },
+      },
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 11, endColumnIndex: 12 },
+          cell: {
+            userEnteredFormat: {
+              textFormat: { foregroundColor: blueText },
+              horizontalAlignment: 'RIGHT',
+            },
+          },
+          fields: 'userEnteredFormat(textFormat,horizontalAlignment)',
+        },
+      },
+      // 15. Lend Money data column styling: Date & Time in Col N (blue text), Amount in Col O (blue, right-aligned)
       {
         repeatCell: {
           range: { sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 13, endColumnIndex: 14 },
@@ -412,7 +615,7 @@ export const applyTransactionsSheetDesign = async (
           fields: 'userEnteredFormat(textFormat,horizontalAlignment)',
         },
       },
-      // 9. Full light grey borders across rows and columns
+      // 16. Subtle light borders across rows and columns
       {
         updateBorders: {
           range: { sheetId, startRowIndex: 0, endRowIndex: 3000, startColumnIndex: 0, endColumnIndex: 16 },
@@ -426,16 +629,16 @@ export const applyTransactionsSheetDesign = async (
       },
     ];
 
-    // Format specific date banner rows with light blue background fill & dark navy text
+    // Format specific date banner rows: STOPS AT CARD PAYMENT COLUMN (Col L, endColumnIndex: 12)!
     if (dateRowIndices && dateRowIndices.length > 0) {
       dateRowIndices.forEach((rIdx) => {
         requests.push({
           repeatCell: {
-            range: { sheetId, startRowIndex: rIdx, endRowIndex: rIdx + 1, startColumnIndex: 0, endColumnIndex: 16 },
+            range: { sheetId, startRowIndex: rIdx, endRowIndex: rIdx + 1, startColumnIndex: 0, endColumnIndex: 12 },
             cell: {
               userEnteredFormat: {
                 backgroundColor: lightBlueRowBg,
-                textFormat: { foregroundColor: darkNavy, bold: true, fontSize: 10 },
+                textFormat: { foregroundColor: softNavy, bold: true, fontSize: 10 },
                 horizontalAlignment: 'CENTER',
               },
             },
@@ -514,13 +717,13 @@ export const applyTransactionsSheetDesign = async (
             index: 4,
           },
         },
-        // Rule: Out of Wallet (Col I, index 8) -> Soft red background & red bold text!
+        // Rule: Out of Wallet (Col J, index 9) -> Soft red background & red bold text!
         {
           addConditionalFormatRule: {
             rule: {
-              ranges: [{ sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 8, endColumnIndex: 9 }],
+              ranges: [{ sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 9, endColumnIndex: 10 }],
               booleanRule: {
-                condition: { type: 'CUSTOM_FORMULA', values: [{ userEnteredValue: '=$I3<>""' }] },
+                condition: { type: 'CUSTOM_FORMULA', values: [{ userEnteredValue: '=$J3<>""' }] },
                 format: { backgroundColor: redBg, textFormat: { foregroundColor: redText, bold: true } },
               },
             },
@@ -549,7 +752,7 @@ export const applyDashboardSheetDesign = async (
 ) => {
   try {
     const metaRes = await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets(properties)`,
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets(properties,charts)`,
       {
         headers: { Authorization: `Bearer ${accessToken}` },
       }
@@ -560,93 +763,488 @@ export const applyDashboardSheetDesign = async (
     if (!dashSheet) return;
     const sheetId = dashSheet.properties.sheetId;
 
-    const darkNavy = { red: 11 / 255, green: 30 / 255, blue: 54 / 255 }; // #0b1e36
+    // Corporate SaaS color palette (#1A2B4C accent, #F8F9FA canvas, #ECFDF5 balance highlight)
+    const softNavy = { red: 26 / 255, green: 43 / 255, blue: 76 / 255 }; // #1a2b4c Soft Indigo/Navy
+    const canvasBg = { red: 248 / 255, green: 249 / 255, blue: 250 / 255 }; // #f8f9fa
     const white = { red: 1, green: 1, blue: 1 };
-    const cardBg = { red: 248 / 255, green: 250 / 255, blue: 252 / 255 }; // #f8fafc
-    const lightGrey = { red: 226 / 255, green: 232 / 255, blue: 240 / 255 }; // #e2e8f0
-    const emeraldText = { red: 16 / 255, green: 185 / 255, blue: 129 / 255 }; // #10b981
+    const subtleBorder = { red: 229 / 255, green: 231 / 255, blue: 235 / 255 }; // #e5e7eb
+    const balanceBg = { red: 236 / 255, green: 253 / 255, blue: 245 / 255 }; // #ecfdf5
+    const balanceText = { red: 4 / 255, green: 120 / 255, blue: 87 / 255 }; // #047857
+    const balanceBorder = { red: 167 / 255, green: 243 / 255, blue: 208 / 255 }; // #a7f3d0
+    const mutedLabel = { red: 100 / 255, green: 116 / 255, blue: 139 / 255 }; // #64748b
+    const darkText = { red: 15 / 255, green: 23 / 255, blue: 42 / 255 }; // #0f172a
+    const roseText = { red: 225 / 255, green: 29 / 255, blue: 72 / 255 }; // #e11d48
+    const blueText = { red: 37 / 255, green: 99 / 255, blue: 235 / 255 }; // #2563eb
+    const redText = { red: 220 / 255, green: 38 / 255, blue: 38 / 255 }; // #dc2626
+    const headerPillBg = { red: 241 / 255, green: 245 / 255, blue: 249 / 255 }; // #f1f5f9
+    const zebraBg = { red: 249 / 255, green: 250 / 255, blue: 251 / 255 }; // #f9fafb
 
     const requests: any[] = [
-      // 1. App Title Banner Row A1:N1
+      // 1. Fill entire canvas A1:M25 with very light gray background (#F8F9FA)
       {
         repeatCell: {
-          range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 14 },
+          range: { sheetId, startRowIndex: 0, endRowIndex: 25, startColumnIndex: 0, endColumnIndex: 13 },
           cell: {
             userEnteredFormat: {
-              backgroundColor: darkNavy,
-              textFormat: { foregroundColor: white, bold: true, fontSize: 11 },
+              backgroundColor: canvasBg,
             },
           },
-          fields: 'userEnteredFormat(backgroundColor,textFormat)',
+          fields: 'userEnteredFormat(backgroundColor)',
         },
       },
-      // 2. Metrics Card Headers Row 4 (0-indexed 3)
+      // 2. Set Row Heights (35px-45px for ample breathing room)
       {
-        repeatCell: {
-          range: { sheetId, startRowIndex: 3, endRowIndex: 4, startColumnIndex: 0, endColumnIndex: 5 },
-          cell: {
-            userEnteredFormat: {
-              backgroundColor: cardBg,
-              textFormat: { foregroundColor: darkNavy, bold: true, fontSize: 9 },
-              horizontalAlignment: 'CENTER',
-            },
-          },
-          fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)',
+        updateDimensionProperties: {
+          range: { sheetId, dimension: 'ROWS', startIndex: 0, endIndex: 1 }, // Row 1 top margin
+          properties: { pixelSize: 15 },
+          fields: 'pixelSize',
         },
       },
-      // 3. Metrics Card Values Row 5 (0-indexed 4)
+      {
+        updateDimensionProperties: {
+          range: { sheetId, dimension: 'ROWS', startIndex: 1, endIndex: 2 }, // Row 2 Title row
+          properties: { pixelSize: 38 },
+          fields: 'pixelSize',
+        },
+      },
+      {
+        updateDimensionProperties: {
+          range: { sheetId, dimension: 'ROWS', startIndex: 2, endIndex: 3 }, // Row 3 spacer
+          properties: { pixelSize: 15 },
+          fields: 'pixelSize',
+        },
+      },
+      {
+        updateDimensionProperties: {
+          range: { sheetId, dimension: 'ROWS', startIndex: 3, endIndex: 4 }, // Row 4 KPI Labels 1
+          properties: { pixelSize: 26 },
+          fields: 'pixelSize',
+        },
+      },
+      {
+        updateDimensionProperties: {
+          range: { sheetId, dimension: 'ROWS', startIndex: 4, endIndex: 5 }, // Row 5 KPI Values 1 (42px)
+          properties: { pixelSize: 42 },
+          fields: 'pixelSize',
+        },
+      },
+      {
+        updateDimensionProperties: {
+          range: { sheetId, dimension: 'ROWS', startIndex: 5, endIndex: 6 }, // Row 6 spacer
+          properties: { pixelSize: 15 },
+          fields: 'pixelSize',
+        },
+      },
+      {
+        updateDimensionProperties: {
+          range: { sheetId, dimension: 'ROWS', startIndex: 6, endIndex: 7 }, // Row 7 KPI Labels 2
+          properties: { pixelSize: 26 },
+          fields: 'pixelSize',
+        },
+      },
+      {
+        updateDimensionProperties: {
+          range: { sheetId, dimension: 'ROWS', startIndex: 7, endIndex: 8 }, // Row 8 KPI Values 2 (42px)
+          properties: { pixelSize: 42 },
+          fields: 'pixelSize',
+        },
+      },
+      {
+        updateDimensionProperties: {
+          range: { sheetId, dimension: 'ROWS', startIndex: 8, endIndex: 9 }, // Row 9 spacer
+          properties: { pixelSize: 20 },
+          fields: 'pixelSize',
+        },
+      },
+      {
+        updateDimensionProperties: {
+          range: { sheetId, dimension: 'ROWS', startIndex: 9, endIndex: 10 }, // Row 10 section headers
+          properties: { pixelSize: 32 },
+          fields: 'pixelSize',
+        },
+      },
+      {
+        updateDimensionProperties: {
+          range: { sheetId, dimension: 'ROWS', startIndex: 10, endIndex: 11 }, // Row 11 table headers
+          properties: { pixelSize: 28 },
+          fields: 'pixelSize',
+        },
+      },
+      {
+        updateDimensionProperties: {
+          range: { sheetId, dimension: 'ROWS', startIndex: 11, endIndex: 18 }, // Rows 12-18 data rows
+          properties: { pixelSize: 30 },
+          fields: 'pixelSize',
+        },
+      },
+      {
+        updateDimensionProperties: {
+          range: { sheetId, dimension: 'ROWS', startIndex: 18, endIndex: 19 }, // Row 19 Total row
+          properties: { pixelSize: 32 },
+          fields: 'pixelSize',
+        },
+      },
+      // 3. Set Column Widths
+      {
+        updateDimensionProperties: {
+          range: { sheetId, dimension: 'COLUMNS', startIndex: 0, endIndex: 1 }, // Col A margin
+          properties: { pixelSize: 25 },
+          fields: 'pixelSize',
+        },
+      },
+      {
+        updateDimensionProperties: {
+          range: { sheetId, dimension: 'COLUMNS', startIndex: 1, endIndex: 3 }, // Cols B, C (Card 1 / Category)
+          properties: { pixelSize: 110 },
+          fields: 'pixelSize',
+        },
+      },
+      {
+        updateDimensionProperties: {
+          range: { sheetId, dimension: 'COLUMNS', startIndex: 3, endIndex: 4 }, // Col D card spacer
+          properties: { pixelSize: 18 },
+          fields: 'pixelSize',
+        },
+      },
+      {
+        updateDimensionProperties: {
+          range: { sheetId, dimension: 'COLUMNS', startIndex: 4, endIndex: 6 }, // Cols E, F (Card 2 / Daily Trend)
+          properties: { pixelSize: 110 },
+          fields: 'pixelSize',
+        },
+      },
+      {
+        updateDimensionProperties: {
+          range: { sheetId, dimension: 'COLUMNS', startIndex: 6, endIndex: 7 }, // Col G card spacer
+          properties: { pixelSize: 18 },
+          fields: 'pixelSize',
+        },
+      },
+      {
+        updateDimensionProperties: {
+          range: { sheetId, dimension: 'COLUMNS', startIndex: 7, endIndex: 9 }, // Cols H, I (Card 3)
+          properties: { pixelSize: 110 },
+          fields: 'pixelSize',
+        },
+      },
+      {
+        updateDimensionProperties: {
+          range: { sheetId, dimension: 'COLUMNS', startIndex: 9, endIndex: 10 }, // Col J chart spacer
+          properties: { pixelSize: 20 },
+          fields: 'pixelSize',
+        },
+      },
+      {
+        updateDimensionProperties: {
+          range: { sheetId, dimension: 'COLUMNS', startIndex: 10, endIndex: 13 }, // Cols K, L, M chart area
+          properties: { pixelSize: 140 },
+          fields: 'pixelSize',
+        },
+      },
+      // 4. Merge KPI Card cells (Row 4 & 5; Row 7 & 8)
+      { mergeCells: { range: { sheetId, startRowIndex: 3, endRowIndex: 4, startColumnIndex: 1, endColumnIndex: 3 }, mergeType: 'MERGE_ALL' } },
+      { mergeCells: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: 1, endColumnIndex: 3 }, mergeType: 'MERGE_ALL' } },
+      { mergeCells: { range: { sheetId, startRowIndex: 3, endRowIndex: 4, startColumnIndex: 4, endColumnIndex: 6 }, mergeType: 'MERGE_ALL' } },
+      { mergeCells: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: 4, endColumnIndex: 6 }, mergeType: 'MERGE_ALL' } },
+      { mergeCells: { range: { sheetId, startRowIndex: 3, endRowIndex: 4, startColumnIndex: 7, endColumnIndex: 9 }, mergeType: 'MERGE_ALL' } },
+      { mergeCells: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: 7, endColumnIndex: 9 }, mergeType: 'MERGE_ALL' } },
+      { mergeCells: { range: { sheetId, startRowIndex: 6, endRowIndex: 7, startColumnIndex: 1, endColumnIndex: 3 }, mergeType: 'MERGE_ALL' } },
+      { mergeCells: { range: { sheetId, startRowIndex: 7, endRowIndex: 8, startColumnIndex: 1, endColumnIndex: 3 }, mergeType: 'MERGE_ALL' } },
+      { mergeCells: { range: { sheetId, startRowIndex: 6, endRowIndex: 7, startColumnIndex: 4, endColumnIndex: 6 }, mergeType: 'MERGE_ALL' } },
+      { mergeCells: { range: { sheetId, startRowIndex: 7, endRowIndex: 8, startColumnIndex: 4, endColumnIndex: 6 }, mergeType: 'MERGE_ALL' } },
+      { mergeCells: { range: { sheetId, startRowIndex: 6, endRowIndex: 7, startColumnIndex: 7, endColumnIndex: 9 }, mergeType: 'MERGE_ALL' } },
+      { mergeCells: { range: { sheetId, startRowIndex: 7, endRowIndex: 8, startColumnIndex: 7, endColumnIndex: 9 }, mergeType: 'MERGE_ALL' } },
+      // 5. Header Title Row 2 (B2:C2)
       {
         repeatCell: {
-          range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: 0, endColumnIndex: 1 },
+          range: { sheetId, startRowIndex: 1, endRowIndex: 2, startColumnIndex: 1, endColumnIndex: 2 },
           cell: {
             userEnteredFormat: {
-              textFormat: { foregroundColor: emeraldText, bold: true, fontSize: 13 },
-              horizontalAlignment: 'CENTER',
+              textFormat: { foregroundColor: softNavy, bold: true, fontSize: 13 },
+              horizontalAlignment: 'LEFT',
             },
           },
           fields: 'userEnteredFormat(textFormat,horizontalAlignment)',
         },
       },
-      // 4. Second Row Metrics Card Headers Row 8 (0-indexed 7)
       {
         repeatCell: {
-          range: { sheetId, startRowIndex: 7, endRowIndex: 8, startColumnIndex: 0, endColumnIndex: 5 },
+          range: { sheetId, startRowIndex: 1, endRowIndex: 2, startColumnIndex: 2, endColumnIndex: 4 },
           cell: {
             userEnteredFormat: {
-              backgroundColor: cardBg,
-              textFormat: { foregroundColor: darkNavy, bold: true, fontSize: 9 },
-              horizontalAlignment: 'CENTER',
+              textFormat: { foregroundColor: mutedLabel, bold: false, fontSize: 10 },
+              horizontalAlignment: 'LEFT',
+            },
+          },
+          fields: 'userEnteredFormat(textFormat,horizontalAlignment)',
+        },
+      },
+      // 6. Card 1: CURRENT BALANCE (Soft Emerald Highlight #ECFDF5, text #047857)
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 3, endRowIndex: 4, startColumnIndex: 1, endColumnIndex: 3 },
+          cell: {
+            userEnteredFormat: {
+              backgroundColor: balanceBg,
+              textFormat: { foregroundColor: balanceText, bold: true, fontSize: 8 },
+              horizontalAlignment: 'LEFT',
             },
           },
           fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)',
         },
       },
-      // 5. Section Banners Row 11 (0-indexed 10): Spending by Category & Spending Trend
       {
         repeatCell: {
-          range: { sheetId, startRowIndex: 10, endRowIndex: 11, startColumnIndex: 0, endColumnIndex: 14 },
+          range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: 1, endColumnIndex: 3 },
           cell: {
             userEnteredFormat: {
-              backgroundColor: darkNavy,
-              textFormat: { foregroundColor: white, bold: true, fontSize: 10 },
+              backgroundColor: balanceBg,
+              textFormat: { foregroundColor: balanceText, bold: true, fontSize: 16 },
+              horizontalAlignment: 'RIGHT',
+            },
+          },
+          fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)',
+        },
+      },
+      {
+        updateBorders: {
+          range: { sheetId, startRowIndex: 3, endRowIndex: 5, startColumnIndex: 1, endColumnIndex: 3 },
+          top: { style: 'SOLID', color: balanceBorder },
+          bottom: { style: 'SOLID', color: balanceBorder },
+          left: { style: 'SOLID', color: balanceBorder },
+          right: { style: 'SOLID', color: balanceBorder },
+        },
+      },
+      // 7. Cards 2 to 6: White background with subtle thin gray borders (#E5E7EB)
+      ...[
+        { range: { startRowIndex: 3, endRowIndex: 5, startColumnIndex: 4, endColumnIndex: 6 }, valColor: darkText }, // Cash Added
+        { range: { startRowIndex: 3, endRowIndex: 5, startColumnIndex: 7, endColumnIndex: 9 }, valColor: roseText }, // Cash Spent
+        { range: { startRowIndex: 6, endRowIndex: 8, startColumnIndex: 1, endColumnIndex: 3 }, valColor: blueText }, // Card Spent
+        { range: { startRowIndex: 6, endRowIndex: 8, startColumnIndex: 4, endColumnIndex: 6 }, valColor: darkText }, // Total Spent
+        { range: { startRowIndex: 6, endRowIndex: 8, startColumnIndex: 7, endColumnIndex: 9 }, valColor: redText }, // Out of Wallet
+      ].flatMap((card) => [
+        {
+          repeatCell: {
+            range: { sheetId, startRowIndex: card.range.startRowIndex, endRowIndex: card.range.startRowIndex + 1, startColumnIndex: card.range.startColumnIndex, endColumnIndex: card.range.endColumnIndex },
+            cell: {
+              userEnteredFormat: {
+                backgroundColor: white,
+                textFormat: { foregroundColor: mutedLabel, bold: true, fontSize: 8 },
+                horizontalAlignment: 'LEFT',
+              },
+            },
+            fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)',
+          },
+        },
+        {
+          repeatCell: {
+            range: { sheetId, startRowIndex: card.range.startRowIndex + 1, endRowIndex: card.range.endRowIndex, startColumnIndex: card.range.startColumnIndex, endColumnIndex: card.range.endColumnIndex },
+            cell: {
+              userEnteredFormat: {
+                backgroundColor: white,
+                textFormat: { foregroundColor: card.valColor, bold: true, fontSize: 14 },
+                horizontalAlignment: 'RIGHT',
+              },
+            },
+            fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)',
+          },
+        },
+        {
+          updateBorders: {
+            range: { sheetId, ...card.range },
+            top: { style: 'SOLID', color: subtleBorder },
+            bottom: { style: 'SOLID', color: subtleBorder },
+            left: { style: 'SOLID', color: subtleBorder },
+            right: { style: 'SOLID', color: subtleBorder },
+          },
+        },
+      ]),
+      // 8. Section Headers (Row 10)
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 9, endRowIndex: 10, startColumnIndex: 1, endColumnIndex: 3 },
+          cell: {
+            userEnteredFormat: {
+              textFormat: { foregroundColor: softNavy, bold: true, fontSize: 10 },
+              horizontalAlignment: 'LEFT',
+            },
+          },
+          fields: 'userEnteredFormat(textFormat,horizontalAlignment)',
+        },
+      },
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 9, endRowIndex: 10, startColumnIndex: 4, endColumnIndex: 6 },
+          cell: {
+            userEnteredFormat: {
+              textFormat: { foregroundColor: softNavy, bold: true, fontSize: 10 },
+              horizontalAlignment: 'LEFT',
+            },
+          },
+          fields: 'userEnteredFormat(textFormat,horizontalAlignment)',
+        },
+      },
+      // 9. Table Headers (Row 11) - Light gray header pills (#F1F5F9)
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 10, endRowIndex: 11, startColumnIndex: 1, endColumnIndex: 3 },
+          cell: {
+            userEnteredFormat: {
+              backgroundColor: headerPillBg,
+              textFormat: { foregroundColor: mutedLabel, bold: true, fontSize: 9 },
             },
           },
           fields: 'userEnteredFormat(backgroundColor,textFormat)',
         },
       },
-      // 6. Light grey grid borders
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 10, endRowIndex: 11, startColumnIndex: 4, endColumnIndex: 6 },
+          cell: {
+            userEnteredFormat: {
+              backgroundColor: headerPillBg,
+              textFormat: { foregroundColor: mutedLabel, bold: true, fontSize: 9 },
+            },
+          },
+          fields: 'userEnteredFormat(backgroundColor,textFormat)',
+        },
+      },
+      // 10. Alternating white / zebra rows for Category Table & Daily Trend Table (Rows 12-18)
+      ...[11, 12, 13, 14, 15, 16, 17].map((rIdx) => ({
+        repeatCell: {
+          range: { sheetId, startRowIndex: rIdx, endRowIndex: rIdx + 1, startColumnIndex: 1, endColumnIndex: 6 },
+          cell: {
+            userEnteredFormat: {
+              backgroundColor: rIdx % 2 === 1 ? white : zebraBg,
+              textFormat: { foregroundColor: darkText, fontSize: 9 },
+            },
+          },
+          fields: 'userEnteredFormat(backgroundColor,textFormat)',
+        },
+      })),
+      // 11. Right alignment for monetary amounts (Col C and Col F, Rows 11 to 19)
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 10, endRowIndex: 19, startColumnIndex: 2, endColumnIndex: 3 },
+          cell: { userEnteredFormat: { horizontalAlignment: 'RIGHT' } },
+          fields: 'userEnteredFormat(horizontalAlignment)',
+        },
+      },
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 10, endRowIndex: 19, startColumnIndex: 5, endColumnIndex: 6 },
+          cell: { userEnteredFormat: { horizontalAlignment: 'RIGHT' } },
+          fields: 'userEnteredFormat(horizontalAlignment)',
+        },
+      },
+      // 12. Total Rows (Row 19)
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 18, endRowIndex: 19, startColumnIndex: 1, endColumnIndex: 3 },
+          cell: {
+            userEnteredFormat: {
+              backgroundColor: headerPillBg,
+              textFormat: { foregroundColor: softNavy, bold: true, fontSize: 9 },
+            },
+          },
+          fields: 'userEnteredFormat(backgroundColor,textFormat)',
+        },
+      },
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 18, endRowIndex: 19, startColumnIndex: 4, endColumnIndex: 6 },
+          cell: {
+            userEnteredFormat: {
+              backgroundColor: headerPillBg,
+              textFormat: { foregroundColor: softNavy, bold: true, fontSize: 9 },
+            },
+          },
+          fields: 'userEnteredFormat(backgroundColor,textFormat)',
+        },
+      },
+      // 13. Subtle thin borders on Category and Daily Trend tables
       {
         updateBorders: {
-          range: { sheetId, startRowIndex: 0, endRowIndex: 25, startColumnIndex: 0, endColumnIndex: 14 },
-          top: { style: 'SOLID', color: lightGrey },
-          bottom: { style: 'SOLID', color: lightGrey },
-          left: { style: 'SOLID', color: lightGrey },
-          right: { style: 'SOLID', color: lightGrey },
-          innerHorizontal: { style: 'SOLID', color: lightGrey },
-          innerVertical: { style: 'SOLID', color: lightGrey },
+          range: { sheetId, startRowIndex: 10, endRowIndex: 19, startColumnIndex: 1, endColumnIndex: 3 },
+          top: { style: 'SOLID', color: subtleBorder },
+          bottom: { style: 'SOLID', color: subtleBorder },
+          left: { style: 'SOLID', color: subtleBorder },
+          right: { style: 'SOLID', color: subtleBorder },
+          innerHorizontal: { style: 'SOLID', color: subtleBorder },
+        },
+      },
+      {
+        updateBorders: {
+          range: { sheetId, startRowIndex: 10, endRowIndex: 19, startColumnIndex: 4, endColumnIndex: 6 },
+          top: { style: 'SOLID', color: subtleBorder },
+          bottom: { style: 'SOLID', color: subtleBorder },
+          left: { style: 'SOLID', color: subtleBorder },
+          right: { style: 'SOLID', color: subtleBorder },
+          innerHorizontal: { style: 'SOLID', color: subtleBorder },
         },
       },
     ];
+
+    // 14. If chart does not already exist, add a soft modern Donut Chart on Col H:L, Rows 10-19
+    const existingCharts = dashSheet.charts || [];
+    if (existingCharts.length === 0) {
+      requests.push({
+        addChart: {
+          chart: {
+            spec: {
+              title: 'Category Distribution',
+              titleTextFormat: {
+                foregroundColor: softNavy,
+                fontSize: 10,
+                bold: true,
+              },
+              backgroundColor: white,
+              pieChart: {
+                legendPosition: 'RIGHT_LEGEND',
+                pieHole: 0.45,
+                domain: {
+                  sourceRange: {
+                    sources: [
+                      {
+                        sheetId,
+                        startRowIndex: 11,
+                        endRowIndex: 18,
+                        startColumnIndex: 1,
+                        endColumnIndex: 2,
+                      },
+                    ],
+                  },
+                },
+                series: {
+                  sourceRange: {
+                    sources: [
+                      {
+                        sheetId,
+                        startRowIndex: 11,
+                        endRowIndex: 18,
+                        startColumnIndex: 2,
+                        endColumnIndex: 3,
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+            position: {
+              overlayPosition: {
+                anchorCell: {
+                  sheetId,
+                  rowIndex: 9,
+                  columnIndex: 7,
+                },
+                widthPixels: 380,
+                heightPixels: 270,
+              },
+            },
+          },
+        },
+      });
+    }
 
     await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
       method: 'POST',
@@ -662,10 +1260,9 @@ export const applyDashboardSheetDesign = async (
 };
 
 export const initializeSheetLayout = async (accessToken: string, spreadsheetId: string) => {
-  // Set up Transactions headers matching user screenshot layout:
-  // Row 1: Date, Time, Type, Category, Amount, Note, Payment Method, Balance, Out of Wallet, Card Payment (A to J continuous, no gap!)
-  // Columns K, L, M: empty spacer columns
-  // Columns N, O, P: LEND MONEY (merged on row 1; Date & Time, Amount, Reason / Person on row 2)
+  // Set up Transactions headers matching user specification:
+  // Row 1: Date, Time, Type, Category, Amount, Note, Payment Method, Balance, [Spacer 25px], Out of Wallet, [Spacer 25px], Card Payment, [Spacer 30px], LEND MONEY
+  // Row 2: Subheaders for Lend Money N2:P2 (Date & Time, Amount, Reason / Person)
   const txHeaderBody = {
     values: [
       [
@@ -677,21 +1274,21 @@ export const initializeSheetLayout = async (accessToken: string, spreadsheetId: 
         'Note',
         'Payment Method',
         'Balance',
-        'Out of Wallet',
-        'Card Payment',
+        '', // Col I: thin spacer gap (25px)
+        'Out of Wallet', // Col J
+        '', // Col K: thin spacer gap (25px)
+        'Card Payment', // Col L
+        '', // Col M: spacer before Lend Money (30px)
+        'LEND MONEY', // Col N
         '',
         '',
-        '',
-        'LEND MONEY',
-        '',
-        ''
       ],
       [
         '', '', '', '', '', '', '', '', '', '', '', '', '',
         'Date & Time',
         'Amount',
-        'Reason / Person'
-      ]
+        'Reason / Person',
+      ],
     ],
   };
 
@@ -710,10 +1307,10 @@ export const initializeSheetLayout = async (accessToken: string, spreadsheetId: 
     throw parseGoogleApiError(txHeaderResponse.status, await txHeaderResponse.text(), 'Failed to create transaction headers');
   }
 
-  // Apply dark navy formatting, white bold text and frozen rows matching screenshot
+  // Apply soft navy formatting, white bold text and frozen rows
   await applyTransactionsSheetDesign(accessToken, spreadsheetId);
 
-  // If Lend_Borrow sheet exists, remove it per user request (lend barrow page remove pannu)
+  // If Lend_Borrow sheet exists, remove it per user request
   try {
     const metaRes = await fetch(
       `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets(properties)`,
@@ -739,33 +1336,32 @@ export const initializeSheetLayout = async (accessToken: string, spreadsheetId: 
     console.warn('Lend_Borrow sheet cleanup notice:', err);
   }
 
-  // Set up Dashboard matching 2D cards professional layout (clean numbers without Rs prefix)
+  // Set up Dashboard matching modern corporate SaaS 2x3 KPI card layout
   const todayStr = new Date().toISOString().split('T')[0];
   const dashboardValues = [
-    ['SPENDDESK - Cash & Card Money Tracker', '', '', '', '', '', '', '', '', '', 'Date:', todayStr, '', ''],
-    ['Executive 2D Financial Overview', '', '', '', '', '', '', '', '', '', '', '', '', ''],
-    ['', '', '', '', '', '', '', '', '', '', '', '', '', ''],
-    ['CURRENT BALANCE', 'TOTAL SPEND', 'CARD SPEND', 'PENDING LEND / BORROW', '', 'Filter:', 'Overview', '', '', '', 'Food', 0, 'Mon', 0],
-    [0, 0, 0, 0, '', '', '', '', '', '', 'Transport', 0, 'Tue', 0],
-    ['', '', '', '', '', '', '', '', '', '', 'Shopping', 0, 'Wed', 0],
-    ['', '', '', '', '', '', '', '', '', '', 'Bills', 0, 'Thu', 0],
-    ['CASH ADDED', 'CASH SPENT', 'TODAY\'S SPEND', 'THIS MONTH\'S SPEND', 'OUT OF WALLET', '', '', '', '', '', 'Entertainment', 0, 'Fri', 0],
-    [0, 0, 0, 0, 0, '', '', '', '', '', 'Education', 0, 'Sat', 0],
-    ['', '', '', '', '', '', '', '', '', '', 'Other', 0, 'Sun', 0],
-    ['SPENDING BY CATEGORY', '', '', '', '', 'SPENDING TREND (DAILY)', '', '', '', '', '', '', '', ''],
-    ['', '', '', '', '', '', '', '', '', '', '', '', '', ''],
-    ['Category', 'Amount', '', '', '', '', '', '', '', '', '', '', '', ''],
-    ['Food', 0, '', '', '', '', '', '', '', '', '', '', '', ''],
-    ['Transport', 0, '', '', '', '', '', '', '', '', '', '', '', ''],
-    ['Shopping', 0, '', '', '', '', '', '', '', '', '', '', '', ''],
-    ['Bills', 0, '', '', '', '', '', '', '', '', '', '', '', ''],
-    ['Entertainment', 0, '', '', '', '', '', '', '', '', '', '', '', ''],
-    ['Education', 0, '', '', '', '', '', '', '', '', '', '', '', ''],
-    ['Other', 0, '', '', '', '', '', '', '', '', '', '', '', ''],
+    ['', '', '', '', '', '', '', '', '', ''],
+    ['', 'SPENDDESK', 'Executive Financial Dashboard', '', '', '', 'Date:', todayStr, '', ''],
+    ['', '', '', '', '', '', '', '', '', ''],
+    ['', 'CURRENT BALANCE', '', '', 'CASH ADDED', '', '', 'CASH SPENT', '', ''],
+    ['', 0, '', '', 0, '', '', 0, '', ''],
+    ['', '', '', '', '', '', '', '', '', ''],
+    ['', 'CARD SPENT', '', '', 'TOTAL SPENT', '', '', 'OUT OF WALLET', '', ''],
+    ['', 0, '', '', 0, '', '', 0, '', ''],
+    ['', '', '', '', '', '', '', '', '', ''],
+    ['', 'SPENDING BY CATEGORY', '', '', 'DAILY SPENDING TREND', '', '', '', '', ''],
+    ['', 'Category', 'Amount', '', 'Day', 'Amount', '', '', '', ''],
+    ['', 'Food', 0, '', 'Mon', 0, '', '', '', ''],
+    ['', 'Transport', 0, '', 'Tue', 0, '', '', '', ''],
+    ['', 'Shopping', 0, '', 'Wed', 0, '', '', '', ''],
+    ['', 'Bills', 0, '', 'Thu', 0, '', '', '', ''],
+    ['', 'Entertainment', 0, '', 'Fri', 0, '', '', '', ''],
+    ['', 'Education', 0, '', 'Sat', 0, '', '', '', ''],
+    ['', 'Other', 0, '', 'Sun', 0, '', '', '', ''],
+    ['', 'Total', '=SUM(C12:C18)', '', 'Total', '=SUM(F12:F18)', '', '', '', ''],
   ];
 
   await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Dashboard!A1:N20?valueInputOption=USER_ENTERED`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Dashboard!A1:J19?valueInputOption=USER_ENTERED`,
     {
       method: 'PUT',
       headers: {
@@ -786,58 +1382,54 @@ export const syncDashboardStats = async (
   categories: CategorySummary[],
   dailySpend: { [day: string]: number }
 ) => {
-  // Clean numbers without Rs string in Google Sheets (per user request: price podium pothu RS venaam remove pant sheet la)
+  // Sync numbers cleanly to Dashboard KPI cards & tables
   const updateCalls = [
-    // Current Balance (Row 5, Col A)
+    // Current Balance (Row 5, Col B)
     {
-      range: 'Dashboard!A5',
+      range: 'Dashboard!B5',
       values: [[summary.currentCashBalance]],
     },
-    // Metrics row 1 (Row 5: Total Spend, Card Spend)
+    // Cash Added (Row 5, Col E)
     {
-      range: 'Dashboard!B5:C5',
-      values: [[summary.totalSpend, summary.cardSpend]],
+      range: 'Dashboard!E5',
+      values: [[summary.cashAdded]],
     },
-    // Metrics row 2 (Row 9, Col A-E: Cash Added, Cash Spent, Today's Spend, This Month, Out of Wallet)
+    // Cash Spent (Row 5, Col H)
     {
-      range: 'Dashboard!A9:E9',
-      values: [[
-        summary.cashAdded,
-        summary.cashSpent,
-        summary.cashSpent, // today's spend / cash spent
-        summary.totalSpend,
-        summary.outOfWallet,
-      ]],
+      range: 'Dashboard!H5',
+      values: [[summary.cashSpent]],
     },
-    // Category Breakdown rows (clean numbers)
+    // Card Spent (Row 8, Col B)
     {
-      range: 'Dashboard!B14:B20',
+      range: 'Dashboard!B8',
+      values: [[summary.cardSpend]],
+    },
+    // Total Spent (Row 8, Col E)
+    {
+      range: 'Dashboard!E8',
+      values: [[summary.totalSpend]],
+    },
+    // Out of Wallet (Row 8, Col H)
+    {
+      range: 'Dashboard!H8',
+      values: [[summary.outOfWallet]],
+    },
+    // Category Breakdown rows (clean numbers) Col C12:C18
+    {
+      range: 'Dashboard!C12:C18',
       values: [
-        [categories.find(c => c.category === 'Food')?.amount || 0],
-        [categories.find(c => c.category === 'Transport')?.amount || 0],
-        [categories.find(c => c.category === 'Shopping')?.amount || 0],
-        [categories.find(c => c.category === 'Bills')?.amount || 0],
-        [categories.find(c => c.category === 'Entertainment')?.amount || 0],
-        [categories.find(c => c.category === 'Education')?.amount || 0],
-        [categories.find(c => c.category === 'Other')?.amount || 0],
+        [categories.find((c) => c.category === 'Food')?.amount || 0],
+        [categories.find((c) => c.category === 'Transport')?.amount || 0],
+        [categories.find((c) => c.category === 'Shopping')?.amount || 0],
+        [categories.find((c) => c.category === 'Bills')?.amount || 0],
+        [categories.find((c) => c.category === 'Entertainment')?.amount || 0],
+        [categories.find((c) => c.category === 'Education')?.amount || 0],
+        [categories.find((c) => c.category === 'Other')?.amount || 0],
       ],
     },
-    // Side Table Category amounts
+    // Mon-Sun Daily trend (clean numbers) Col F12:F18
     {
-      range: 'Dashboard!L4:L10',
-      values: [
-        [categories.find(c => c.category === 'Food')?.amount || 0],
-        [categories.find(c => c.category === 'Transport')?.amount || 0],
-        [categories.find(c => c.category === 'Shopping')?.amount || 0],
-        [categories.find(c => c.category === 'Bills')?.amount || 0],
-        [categories.find(c => c.category === 'Entertainment')?.amount || 0],
-        [categories.find(c => c.category === 'Education')?.amount || 0],
-        [categories.find(c => c.category === 'Other')?.amount || 0],
-      ],
-    },
-    // Mon-Sun Daily trend
-    {
-      range: 'Dashboard!N4:N10',
+      range: 'Dashboard!F12:F18',
       values: [
         [dailySpend['Mon'] || 0],
         [dailySpend['Tue'] || 0],
@@ -1203,12 +1795,12 @@ export const overwriteTransactionsInSheet = async (
         tx.amount, // clean numeric, no Rs
         tx.notes || '',
         tx.paymentMethod || 'Cash',
-        bal, // clean numeric, no Rs
-        oow > 0 ? oow : '', // Col I: Out of Wallet (no spacer gap, clean numeric!)
-        isCard ? tx.amount : '', // Col J: Card Payment (clean numeric!)
-        '', // Col K spacer
-        '', // Col L spacer
-        '', // Col M spacer
+        bal, // clean numeric, no Rs (Col H)
+        '', // Col I: thin spacer gap (25px)
+        oow > 0 ? oow : '', // Col J: Out of Wallet
+        '', // Col K: thin spacer gap (25px)
+        isCard ? tx.amount : '', // Col L: Card Payment
+        '', // Col M: spacer before Lend (30px)
         ...nextLendCols,
       ]);
     });

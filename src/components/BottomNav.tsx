@@ -70,22 +70,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           </button>
         </div>
 
-        {/* Tab 3: Analytics */}
-        <button
-          type="button"
-          onClick={() => {
-            triggerFeedback('tap');
-            onTabChange('analytics');
-          }}
-          className={`flex-1 flex flex-col items-center justify-center h-full transition-all cursor-pointer ${
-            activeTab === 'analytics' ? 'text-[#116b4e] font-bold' : 'text-slate-400 hover:text-slate-700'
-          }`}
-        >
-          <BarChart2 className={`w-5 h-5 ${activeTab === 'analytics' ? 'stroke-[2.5]' : ''}`} />
-          <span className="text-[10px] mt-0.5">Analytics</span>
-        </button>
-
-        {/* Tab 4: Lend & Borrow */}
+        {/* Tab 3: Lend & Borrow */}
         <button
           type="button"
           onClick={() => {
@@ -105,6 +90,21 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             )}
           </div>
           <span className="text-[10px] mt-0.5">Lend/Borrow</span>
+        </button>
+
+        {/* Tab 4: Analytics */}
+        <button
+          type="button"
+          onClick={() => {
+            triggerFeedback('tap');
+            onTabChange('analytics');
+          }}
+          className={`flex-1 flex flex-col items-center justify-center h-full transition-all cursor-pointer ${
+            activeTab === 'analytics' ? 'text-[#116b4e] font-bold' : 'text-slate-400 hover:text-slate-700'
+          }`}
+        >
+          <BarChart2 className={`w-5 h-5 ${activeTab === 'analytics' ? 'stroke-[2.5]' : ''}`} />
+          <span className="text-[10px] mt-0.5">Analytics</span>
         </button>
       </div>
     </div>
