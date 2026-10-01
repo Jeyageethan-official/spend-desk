@@ -66,6 +66,78 @@ export const filterTransactions = (
   });
 };
 
+export interface RunningBalanceItem {
+  balance: number;       // Running cash balance (minimum 0)
+  outOfWallet: number;   // Excess spent when wallet had 0 cash
+}
+
+/**
+ * Sorts transactions chronologically (earliest to latest)
+ */
+export const sortTransactionsChronological = (transactions: Transaction[]): Transaction[] => {
+  return [...transactions].sort((a, b) => {
+    const dateA = a.date || '';
+    const dateB = b.date || '';
+    if (dateA !== dateB) return dateA.localeCompare(dateB);
+    const timeA = a.time || '00:00';
+    const timeB = b.time || '00:00';
+    if (timeA !== timeB) return timeA.localeCompare(timeB);
+    return (a.createdAt || 0) - (b.createdAt || 0);
+  });
+};
+
+/**
+ * Calculates chronological running cash balance and out-of-wallet excess.
+ * Cash balance never drops below 0 (reflecting a real-world physical wallet).
+ * Any expense exceeding available cash is recorded in Out of Wallet.
+ * Fresh Cash In (Income) directly increments wallet cash balance without eating past out-of-wallet expenses.
+ */
+export const calculateRunningBalances = (
+  transactions: Transaction[]
+): Map<string, RunningBalanceItem> => {
+  const sorted = sortTransactionsChronological(transactions);
+  const result = new Map<string, RunningBalanceItem>();
+
+  let runningCash = 0;
+  const isCashPayment = (method?: string) => !method || method.toLowerCase() === 'cash';
+
+  for (const tx of sorted) {
+    if (!tx || !tx.id) continue;
+    const amt = Math.abs(tx.amount || 0);
+
+    if (tx.type === 'cash_added') {
+      runningCash += amt;
+      result.set(tx.id, {
+        balance: runningCash,
+        outOfWallet: 0,
+      });
+    } else if (tx.type === 'cash_expense' && isCashPayment(tx.paymentMethod)) {
+      if (runningCash >= amt) {
+        runningCash -= amt;
+        result.set(tx.id, {
+          balance: runningCash,
+          outOfWallet: 0,
+        });
+      } else {
+        const excessSpent = amt - runningCash;
+        runningCash = 0; // Balance never goes below 0!
+        result.set(tx.id, {
+          balance: 0,
+          outOfWallet: excessSpent,
+        });
+      }
+    } else {
+      // Card / Bank Transfer expense: does not deduct from physical cash drawer
+      result.set(tx.id, {
+        balance: runningCash,
+        outOfWallet: 0,
+      });
+    }
+  }
+
+  return result;
+};
+
 export const calculateSummary = (
   allTransactions: Transaction[] = [],
   filteredTransactions: Transaction[] = []
@@ -76,15 +148,19 @@ export const calculateSummary = (
   const isCashPayment = (method?: string) => !method || method.toLowerCase() === 'cash';
   const isCardOrBankPayment = (method?: string) => method && (method.toLowerCase() === 'card' || method.toLowerCase() === 'bank' || method.toLowerCase().includes('transfer'));
 
-  const allCashAdded = allTxs
-    .filter((tx) => tx && tx.type === 'cash_added')
-    .reduce((sum, tx) => sum + (tx.amount || 0), 0);
+  // Calculate chronological running balances across all transactions
+  const runningBalances = calculateRunningBalances(allTxs);
+  const sortedAll = sortTransactionsChronological(allTxs);
 
-  const allCashSpent = allTxs
-    .filter((tx) => tx && tx.type === 'cash_expense' && isCashPayment(tx.paymentMethod))
-    .reduce((sum, tx) => sum + (tx.amount || 0), 0);
-
-  const currentCashBalance = allCashAdded - allCashSpent;
+  let finalCashBalance = 0;
+  let totalOutOfWalletAll = 0;
+  for (const tx of sortedAll) {
+    const rb = runningBalances.get(tx.id);
+    if (rb) {
+      finalCashBalance = rb.balance;
+      totalOutOfWalletAll += rb.outOfWallet;
+    }
+  }
 
   const cashAdded = filtTxs
     .filter((tx) => tx && tx.type === 'cash_added')
@@ -98,11 +174,24 @@ export const calculateSummary = (
     .filter((tx) => tx && (tx.type === 'card_expense' || (tx.type === 'cash_expense' && isCardOrBankPayment(tx.paymentMethod))))
     .reduce((sum, tx) => sum + (tx.amount || 0), 0);
 
+  // Out of wallet for filtered range (or all-time if no specific filter)
+  const isAllFilter = filtTxs.length === allTxs.length;
+  let outOfWallet = 0;
+  if (isAllFilter) {
+    outOfWallet = totalOutOfWalletAll;
+  } else {
+    for (const tx of filtTxs) {
+      const rb = runningBalances.get(tx.id);
+      if (rb) {
+        outOfWallet += rb.outOfWallet;
+      }
+    }
+  }
+
   const totalSpend = cashSpent + cardSpend;
-  const outOfWallet = cashSpent;
 
   return {
-    currentCashBalance,
+    currentCashBalance: finalCashBalance,
     cashAdded,
     cashSpent,
     cardSpend,
