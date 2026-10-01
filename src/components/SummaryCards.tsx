@@ -8,8 +8,7 @@ import {
   TrendingDown,
   MessageSquare,
   Phone,
-  Edit2,
-  Sliders
+  Edit2
 } from 'lucide-react';
 import { SpendingSummary } from '../types/finance';
 import { formatCurrency } from '../lib/calculations';
@@ -20,7 +19,6 @@ interface SummaryCardsProps {
   onAddCash: () => void;
   onAddExpense: () => void;
   onOpenSms?: () => void;
-  onAdjustBalance?: () => void;
   alertPhone?: string;
   onUpdateAlertPhone?: (phone: string) => void;
 }
@@ -31,7 +29,6 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
   onAddCash,
   onAddExpense,
   onOpenSms,
-  onAdjustBalance,
   alertPhone = '',
   onUpdateAlertPhone,
 }) => {
@@ -63,23 +60,11 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
       {/* 1. Main Hero Wallet Card - Mobile First */}
       <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-950 text-white rounded-3xl p-5 sm:p-6 shadow-md border border-slate-700/60 relative overflow-hidden">
         <div className="relative z-10">
-          <div className="flex items-center justify-between gap-2 mb-2">
+          <div className="flex items-center gap-2 mb-2">
             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
               <Wallet className="w-3 h-3" />
               Cash Wallet
             </span>
-
-            {onAdjustBalance && (
-              <button
-                type="button"
-                onClick={onAdjustBalance}
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-bold bg-white/10 hover:bg-white/20 active:bg-white/30 text-slate-200 border border-white/15 transition-all cursor-pointer shadow-2xs"
-                title="Adjust actual cash in hand"
-              >
-                <Sliders className="w-3 h-3 text-emerald-300" />
-                <span>Adjust Cash</span>
-              </button>
-            )}
           </div>
 
           <p className="text-[11px] uppercase tracking-wider text-slate-300 font-semibold">
@@ -90,7 +75,7 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
             <span>{formatCurrency(safeSummary.currentCashBalance, currency)}</span>
           </div>
 
-          <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+          <div className="mt-1.5">
             {isBalanceNegative ? (
               <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
                 Negative Cash
@@ -102,15 +87,6 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
             ) : (
               <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
                 Healthy
-              </span>
-            )}
-
-            {safeSummary.outOfWallet > 0 && (
-              <span 
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/25 text-rose-200 border border-rose-500/40"
-                title="Total expenses recorded when cash wallet had Rs 0"
-              >
-                Out of Wallet: {formatCurrency(safeSummary.outOfWallet, currency)}
               </span>
             )}
           </div>

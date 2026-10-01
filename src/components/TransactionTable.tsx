@@ -24,12 +24,11 @@ import {
   Square
 } from 'lucide-react';
 import { Transaction, Category, FilterState } from '../types/finance';
-import { formatCurrency, calculateRunningBalances } from '../lib/calculations';
+import { formatCurrency } from '../lib/calculations';
 import { triggerFeedback } from '../lib/haptics';
 
 interface TransactionTableProps {
   transactions: Transaction[];
-  allTransactions?: Transaction[];
   onEdit: (tx: Transaction) => void;
   onDelete: (tx: Transaction) => void;
   onBulkDelete?: (txIds: string[]) => void;
@@ -73,7 +72,6 @@ const getCategoryIcon = (cat: Category, colorClass: string) => {
 
 export const TransactionTable: React.FC<TransactionTableProps> = ({
   transactions,
-  allTransactions,
   onEdit,
   onDelete,
   onBulkDelete,
@@ -93,11 +91,6 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
   const longPressTimerRef = useRef<number | null>(null);
   const pressStartRef = useRef<{ x: number; y: number } | null>(null);
   const didLongPressRef = useRef(false);
-
-  const runningBalances = useMemo(() => {
-    const listToCompute = allTransactions && allTransactions.length > 0 ? allTransactions : transactions;
-    return calculateRunningBalances(listToCompute);
-  }, [allTransactions, transactions]);
 
   const selectedTxIds = controlledSelectedTxIds ?? internalSelectedTxIds;
   const updateSelectedTxIds = (next: string[] | ((current: string[]) => string[])) => {
@@ -448,10 +441,6 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
             const isCard = tx.type === 'card_expense' || tx.paymentMethod === 'Card' || tx.paymentMethod === 'Bank Transfer';
             const isSelected = selectedTxIds.includes(tx.id);
 
-            const rb = runningBalances.get(tx.id);
-            const rowBalance = rb ? rb.balance : 0;
-            const rowOutOfWallet = rb ? rb.outOfWallet : 0;
-
             const boxBgClass = isCashIn
               ? 'bg-emerald-50 text-emerald-600 border border-emerald-200/80'
               : isCard
@@ -544,34 +533,18 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
                     </div>
                   </div>
 
-                  {/* Right Side: Amount, Balance & Out of Wallet */}
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <div className="flex flex-col items-end gap-1">
+                  {/* Right Side: Amount */}
+                  <div className="flex items-center gap-1 shrink-0">
+                    <div className="flex flex-col items-end gap-0.5">
                       <span className={`text-sm font-black ${textColorClass}`}>
                         {isCashIn ? '+' : '-'}
                         {formatCurrency(tx.amount, currency)}
                       </span>
-                      <div className="flex items-center gap-1 flex-wrap justify-end">
-                        {rowOutOfWallet > 0 && (
-                          <span 
-                            className="text-[10px] px-1.5 py-0.5 rounded-md font-bold bg-rose-50 text-rose-700 border border-rose-200"
-                            title="Out of Wallet (Spent when wallet cash was Rs 0)"
-                          >
-                            Out: -{formatCurrency(rowOutOfWallet, currency)}
-                          </span>
-                        )}
-                        <span 
-                          className="text-[10px] px-1.5 py-0.5 rounded-md font-semibold bg-slate-100 text-slate-700 border border-slate-200/80"
-                          title="Running Wallet Cash Balance"
-                        >
-                          Bal: {formatCurrency(rowBalance, currency)}
-                        </span>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-bold ${
-                          isCard ? 'bg-blue-50 text-blue-700 border border-blue-200/60' : 'bg-slate-100 text-slate-600'
-                        }`}>
-                          {tx.paymentMethod}
-                        </span>
-                      </div>
+                      <span className={`text-[10px] px-1.5 py-0.2 rounded-md font-bold ${
+                        isCard ? 'bg-blue-50 text-blue-700 border border-blue-200/60' : 'bg-slate-100 text-slate-600'
+                      }`}>
+                        {tx.paymentMethod}
+                      </span>
                     </div>
                     <button
                       type="button"
