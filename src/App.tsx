@@ -73,8 +73,14 @@ import {
   fetchGoogleUserInfo,
   syncViaWebhook
 } from './lib/sheetsApi';
-import { generateTransactionSmsText, triggerDeviceSms } from './lib/smsAlert';
-import { generateTransactionTelegramAlert, sendTelegramAlert, flushPendingTelegramAlerts } from './lib/telegramAlert';
+import { generateTransactionSmsText, generateLendSmsText, generateLowBalanceSmsText, triggerDeviceSms } from './lib/smsAlert';
+import { 
+  generateTransactionTelegramAlert, 
+  generateLendTelegramAlert, 
+  generateLowBalanceTelegramAlert, 
+  sendTelegramAlert, 
+  flushPendingTelegramAlerts 
+} from './lib/telegramAlert';
 import { CloudWorkspace, fetchCloudWorkspace, saveCloudWorkspace, subscribeToCloudWorkspace, unsubscribeFromCloudWorkspace } from './lib/cloudWorkspace';
 import { clearPendingSync, hasPendingSync, loadPendingSync, markLendDelete, markLendUpsert, markSettingsDirty, markTransactionDelete, markTransactionUpsert, mergePendingWorkspace, stageWorkspaceForReplay } from './lib/pendingSync';
 import { clearSignedOutWorkspace, loadSignedOutWorkspace, saveSignedOutWorkspace } from './lib/signedOutWorkspace';
@@ -670,11 +676,21 @@ export default function App() {
     }
     const sampleTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
     const today = new Date().toISOString().split('T')[0];
-    const balFormatted = formatCurrency(overallSummary.currentCashBalance, currency);
+    const testPayload = generateTransactionTelegramAlert({
+      id: 'test',
+      amount: 100,
+      type: 'cash_added',
+      category: 'Other',
+      notes: 'Salary / Top-up',
+      date: today,
+      time: sampleTime,
+      paymentMethod: 'Cash',
+      createdAt: Date.now(),
+    }, currency, overallSummary.currentCashBalance);
+
     const res = await sendTelegramAlert({
+      ...testPayload,
       chatId: chatId.trim(),
-      title: '[SpendDesk Alert]',
-      message: `Cash Added to Wallet: ${currency} 500.00\non ${today} at ${sampleTime}.\nCurrent Balance: ${balFormatted}.`,
     });
     if (res.queued) {
       showNotification('Offline: Test alert queued and will send when online.', 'info');
@@ -1074,6 +1090,19 @@ export default function App() {
           .catch((error) => {
             console.error('Telegram alert failed:', error);
           });
+
+        // Trigger Low Balance Alert if balance is below threshold
+        if (
+          budgetConfig.lowCashThreshold > 0 &&
+          currentSum.currentCashBalance <= budgetConfig.lowCashThreshold
+        ) {
+          const lowBalAlert = generateLowBalanceTelegramAlert(
+            currentSum.currentCashBalance,
+            budgetConfig.lowCashThreshold,
+            currency
+          );
+          void sendTelegramAlert({ ...lowBalAlert, chatId: telegramAlertConfig.chatId }).catch(console.warn);
+        }
       }
 
       const webhookUrl = loadStoredWebhookUrl();
@@ -1164,6 +1193,19 @@ export default function App() {
     if (activeSheet) {
       queueSheetPush({ transactions, lendItems: updated });
     }
+
+    if (telegramAlertConfig.enabled && telegramAlertConfig.chatId) {
+      const currentSum = calculateSummary(transactions, transactions);
+      const lendAlert = generateLendTelegramAlert(newItem, currency, currentSum.currentCashBalance);
+      void sendTelegramAlert({ ...lendAlert, chatId: telegramAlertConfig.chatId })
+        .then((res) => {
+          if (!res.queued) {
+            showNotification('Telegram alert delivered.', 'success');
+          }
+        })
+        .catch(console.warn);
+    }
+
     const webhookUrl = loadStoredWebhookUrl();
     if (webhookUrl) {
       const sum = calculateSummary(transactions, transactions);
