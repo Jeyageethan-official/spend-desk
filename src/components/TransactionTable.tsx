@@ -29,6 +29,7 @@ import { triggerFeedback } from '../lib/haptics';
 
 interface TransactionTableProps {
   transactions: Transaction[];
+  allTransactions?: Transaction[];
   onEdit: (tx: Transaction) => void;
   onDelete: (tx: Transaction) => void;
   onBulkDelete?: (txIds: string[]) => void;
@@ -72,6 +73,7 @@ const getCategoryIcon = (cat: Category, colorClass: string) => {
 
 export const TransactionTable: React.FC<TransactionTableProps> = ({
   transactions,
+  allTransactions,
   onEdit,
   onDelete,
   onBulkDelete,
@@ -533,14 +535,14 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
                     </div>
                   </div>
 
-                  {/* Right Side: Amount */}
+                  {/* Right Side: Amount and Payment Method */}
                   <div className="flex items-center gap-1 shrink-0">
                     <div className="flex flex-col items-end gap-0.5">
                       <span className={`text-sm font-black ${textColorClass}`}>
                         {isCashIn ? '+' : '-'}
                         {formatCurrency(tx.amount, currency)}
                       </span>
-                      <span className={`text-[10px] px-1.5 py-0.2 rounded-md font-bold ${
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-bold ${
                         isCard ? 'bg-blue-50 text-blue-700 border border-blue-200/60' : 'bg-slate-100 text-slate-600'
                       }`}>
                         {tx.paymentMethod}

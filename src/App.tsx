@@ -1600,6 +1600,7 @@ export default function App() {
 
                 <TransactionTable
                   transactions={filteredTransactions.slice(0, 8)}
+                  allTransactions={transactions}
                   currency={currency}
                   onAddNew={() => {
                     setEditingTransaction(null);
@@ -1633,6 +1634,7 @@ export default function App() {
               />
               <TransactionTable
                 transactions={filteredTransactions}
+                allTransactions={transactions}
                 currency={currency}
                 onAddNew={() => {
                   setEditingTransaction(null);

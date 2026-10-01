@@ -1,5 +1,6 @@
 import { Transaction, SpendingSummary, CategorySummary, LendItem, TransactionType, LendType, LendStatus } from '../types/finance';
 import { signInWithGoogleWorkspace, getCachedWorkspaceToken } from './workspaceAuth';
+import { sortTransactionsChronological, calculateRunningBalances } from './calculations';
 
 // Use the officially provisioned and authorized OAuth Client ID for this applet
 export const GOOGLE_OAUTH_CLIENT_ID = '509348493041-ih637992a2lrmh6qdlvch1pkatpn70k0.apps.googleusercontent.com';
@@ -212,15 +213,15 @@ export const createMoneyTrackerSpreadsheet = async (
 };
 
 export const initializeSheetLayout = async (accessToken: string, spreadsheetId: string) => {
-  // Set up Transactions headers
+  // Set up Transactions headers (matches user's screenshot layout + Transaction ID)
   const txHeaderBody = {
     values: [
-      ['Transaction ID', 'Date', 'Time', 'Type', 'Category', 'Amount (Rs)', 'Payment Method', 'Notes', 'Created At'],
+      ['Date', 'Time', 'Type', 'Category', 'Amount', 'Note', 'Payment Method', 'Balance', 'Out of Wallet', 'Transaction ID'],
     ],
   };
 
   const txHeaderResponse = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Transactions!A1:I1?valueInputOption=USER_ENTERED`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Transactions!A1:J1?valueInputOption=USER_ENTERED`,
     {
       method: 'PUT',
       headers: {
@@ -424,7 +425,7 @@ export const fetchAllTransactionsFromSheet = async (
   spreadsheetId: string
 ): Promise<Transaction[]> => {
   const res = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Transactions!A1:I1000`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Transactions!A1:Z1000`,
     {
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -449,15 +450,15 @@ export const fetchAllTransactionsFromSheet = async (
     return idx >= 0 ? idx : fallback;
   };
 
-  const idCol = findCol(/id/i, 0);
-  const dateCol = findCol(/date/i, 1);
-  const timeCol = findCol(/time/i, 2);
-  const typeCol = findCol(/type/i, 3);
-  const catCol = findCol(/categor/i, 4);
-  const amtCol = findCol(/amount|rs|price|cost/i, 5);
+  const dateCol = findCol(/date/i, 0);
+  const timeCol = findCol(/time/i, 1);
+  const typeCol = findCol(/type/i, 2);
+  const catCol = findCol(/categor/i, 3);
+  const amtCol = findCol(/amount|rs|price|cost/i, 4);
+  const notesCol = findCol(/note|desc|reason|remark/i, 5);
   const paymentCol = findCol(/payment|method|mode/i, 6);
-  const notesCol = findCol(/note|desc|reason|remark/i, 7);
-  const createdCol = findCol(/created/i, 8);
+  const idCol = findCol(/id/i, 9);
+  const createdCol = findCol(/created/i, 10);
 
   const parsedTxs: Transaction[] = [];
 
@@ -500,9 +501,9 @@ export const fetchAllTransactionsFromSheet = async (
       }
     }
 
-    const rawType = String(row[typeCol] || '').toLowerCase();
+    const rawType = String(row[typeCol] || '').toLowerCase().trim();
     let type: TransactionType = 'cash_expense';
-    if (rawType.includes('add') || rawType.includes('income') || rawType.includes('receiv') || rawType.includes('credit')) {
+    if (rawType === 'in' || rawType.startsWith('in') || rawType.includes('add') || rawType.includes('income') || rawType.includes('receiv') || rawType.includes('credit')) {
       type = 'cash_added';
     } else if (rawType.includes('card')) {
       type = 'card_expense';
@@ -556,7 +557,7 @@ export const overwriteTransactionsInSheet = async (
 ) => {
   if (transactions.length === 0) {
     await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Transactions!A2:I1000:clear`,
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Transactions!A2:J1000:clear`,
       {
         method: 'POST',
         headers: {
@@ -568,20 +569,30 @@ export const overwriteTransactionsInSheet = async (
     return;
   }
 
-  const rows = transactions.map((tx) => [
-    tx.id,
-    tx.date || '',
-    tx.time || '',
-    tx.type === 'cash_added' ? 'Cash Added' : tx.type === 'card_expense' ? 'Card Expense' : 'Cash Expense',
-    tx.category || 'Other',
-    tx.amount || 0,
-    tx.paymentMethod || 'Cash',
-    tx.notes || '',
-    tx.createdAt ? new Date(tx.createdAt).toISOString() : new Date().toISOString(),
-  ]);
+  const sorted = sortTransactionsChronological(transactions);
+  const runningBalances = calculateRunningBalances(sorted);
+
+  const rows = sorted.map((tx) => {
+    const rb = runningBalances.get(tx.id);
+    const bal = rb ? rb.balance : 0;
+    const oow = rb ? rb.outOfWallet : 0;
+
+    return [
+      tx.date || '',
+      tx.time || '',
+      tx.type === 'cash_added' ? 'IN' : 'OUT',
+      tx.category || 'Other',
+      tx.amount || 0,
+      tx.notes || '',
+      tx.paymentMethod || 'Cash',
+      `Rs ${bal.toLocaleString('en-US')}`,
+      oow > 0 ? `Rs -${oow.toLocaleString('en-US')}` : '',
+      tx.id,
+    ];
+  });
 
   const endRow = rows.length + 1;
-  const targetRange = `Transactions!A2:I${endRow}`;
+  const targetRange = `Transactions!A2:J${endRow}`;
 
   const writeResponse = await fetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${targetRange}?valueInputOption=USER_ENTERED`,
@@ -604,7 +615,7 @@ export const overwriteTransactionsInSheet = async (
 
   if (endRow < 1000) {
     void fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Transactions!A${endRow + 1}:I1000:clear`,
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Transactions!A${endRow + 1}:J1000:clear`,
       {
         method: 'POST',
         headers: {

@@ -44,9 +44,6 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
     outOfWallet: 0,
   };
 
-  const isBalanceNegative = safeSummary.currentCashBalance < 0;
-  const isBalanceLow = safeSummary.currentCashBalance < 1500;
-
   const handleSavePhone = (e: React.FormEvent) => {
     e.preventDefault();
     if (onUpdateAlertPhone) {
@@ -75,21 +72,17 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
             <span>{formatCurrency(safeSummary.currentCashBalance, currency)}</span>
           </div>
 
-          <div className="mt-1.5">
-            {isBalanceNegative ? (
-              <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
-                Negative Cash
+          {/* Out of Wallet Prominent Display (replaces old health status pill) */}
+          {safeSummary.outOfWallet > 0 && (
+            <div className="mt-2.5 inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-rose-500/25 text-rose-100 border border-rose-400/30 shadow-2xs">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-rose-300">
+                Out of Wallet:
               </span>
-            ) : isBalanceLow ? (
-              <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                Low Cash
+              <span className="text-sm sm:text-base font-black text-white">
+                {formatCurrency(safeSummary.outOfWallet, currency)}
               </span>
-            ) : (
-              <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                Healthy
-              </span>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* Quick Action Buttons: Cash In, Spend, and sleek SMS Icon Button */}
           <div className="mt-4 pt-3 border-t border-slate-700/60 flex items-center gap-2">
