@@ -119,7 +119,7 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
               className="flex-1 py-3 px-4 rounded-2xl bg-[#06be70] hover:bg-[#05a863] active:bg-[#049154] text-slate-950 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer"
             >
               <ArrowDownLeft className="w-4 h-4 stroke-[3]" />
-              <span>+ Cash Added</span>
+              <span>+ Cash In</span>
             </button>
 
             <button
@@ -197,19 +197,19 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
 
       {/* 2. Key Financial KPIs Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {/* CASH ADDED */}
+        {/* CASH IN */}
         <div className="bg-white rounded-2xl p-4 border border-slate-200/90 shadow-xs flex flex-col justify-between hover:border-emerald-300/80 transition-all">
           <div className="flex items-center justify-between text-emerald-600 mb-2">
             <span className="p-2 rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-200/60">
               <ArrowDownLeft className="w-4 h-4 stroke-[2.5]" />
             </span>
             <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50/80 px-2 py-0.5 rounded-full">
-              Cash Added
+              Cash In
             </span>
           </div>
           <div>
             <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">
-              CASH ADDED
+              CASH IN
             </span>
             <p className="text-lg sm:text-xl font-black text-slate-900 mt-0.5 truncate tabular-nums">
               {formatCurrency(safeSummary.cashAdded, currency)}

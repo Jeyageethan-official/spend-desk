@@ -314,7 +314,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
               }`}
             >
               <ArrowUpRight className="w-4 h-4 text-emerald-600" />
-              <span>Cash Added</span>
+              <span>Cash In</span>
             </button>
           </div>
 

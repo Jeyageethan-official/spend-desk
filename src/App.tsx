@@ -92,6 +92,7 @@ import { AdjustBalanceModal } from './components/AdjustBalanceModal';
 import { BottomNav } from './components/BottomNav';
 import { AnalyticsView } from './components/AnalyticsView';
 import { SettingsView } from './components/SettingsView';
+import { LendBorrowView } from './components/LendBorrowView';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   CheckCircle2, 
@@ -1477,6 +1478,7 @@ export default function App() {
             {[
               { id: 'dashboard', label: 'Dashboard' },
               { id: 'transactions', label: 'Transactions' },
+              { id: 'lend', label: 'Lend & Borrow' },
               { id: 'analytics', label: 'Analytics' },
               { id: 'sheets', label: 'Google Sheets' },
             ].map((tab) => (
@@ -1747,13 +1749,26 @@ export default function App() {
               />
             </main>
           )}
+
+          {activeTab === 'lend' && (
+            <main className="max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
+              <LendBorrowView
+                items={lendItems}
+                onAddItem={handleAddLendItem}
+                onToggleStatus={handleToggleLendStatus}
+                onDeleteItem={handleDeleteLendItem}
+                currency={currency}
+              />
+            </main>
+          )}
         </motion.div>
       </AnimatePresence>
 
       {/* Native Mobile Bottom Navigation Bar */}
       <BottomNav
-        activeTab={activeTab === 'lend' ? 'dashboard' : activeTab}
+        activeTab={activeTab}
         onTabChange={setActiveTab}
+        pendingLendCount={pendingLendCount}
         onQuickAdd={() => {
           setEditingTransaction(null);
           setModalDefaultType('cash_expense');
