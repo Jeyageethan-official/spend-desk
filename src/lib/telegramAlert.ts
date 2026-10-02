@@ -20,7 +20,7 @@ export const generateTransactionTelegramAlert = (
   const categoryStr = tx.category || 'Expense';
   const noteStr = tx.notes?.trim() || '';
 
-  const lines: string[] = ['[SpendDesk Alert]'];
+  const lines: string[] = [];
 
   if (tx.type === 'cash_expense') {
     // 1. Cash Spent / Expenses
@@ -67,7 +67,7 @@ export const generateLendTelegramAlert = (
   const timeStr = new Date(item.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
   const person = item.personName?.trim() || 'Friend';
 
-  const lines: string[] = ['[SpendDesk Alert]'];
+  const lines: string[] = [];
 
   const statusText = item.status === 'settled' ? 'settled' : (item.type === 'lent' ? 'Pending Return' : 'Pending Payback');
 
@@ -101,7 +101,6 @@ export const generateLowBalanceTelegramAlert = (
   currency: string = 'Rs'
 ): TelegramAlertPayload => {
   const lines = [
-    '[SpendDesk Alert]',
     'Warning: Low Balance Alert!',
     `Current Balance: ${formatCurrency(currentBalance, currency)}`,
     `Limit: Below ${formatCurrency(limit, currency)}`,
@@ -185,23 +184,32 @@ export const sendTelegramAlert = async (
     throw new Error('Telegram Chat ID is empty.');
   }
 
+  let cleanMessage = payload.message.trim();
+  cleanMessage = cleanMessage.replace(/^(\*?\[?SpendDesk Alert\]?\*?\s*\n*)+/i, '').trim();
+
+  const cleanPayload = {
+    ...payload,
+    title: '[SpendDesk Alert]',
+    message: cleanMessage,
+  };
+
   const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
   if (isOffline) {
-    queueOfflineTelegramAlert(payload);
+    queueOfflineTelegramAlert(cleanPayload);
     return { delivered: false, queued: true };
   }
 
   try {
     const { error } = await getSupabase().functions.invoke('telegram-alert', {
-      body: payload,
+      body: cleanPayload,
     });
     if (error) {
-      queueOfflineTelegramAlert(payload);
+      queueOfflineTelegramAlert(cleanPayload);
       return { delivered: false, queued: true };
     }
     return { delivered: true, queued: false };
   } catch {
-    queueOfflineTelegramAlert(payload);
+    queueOfflineTelegramAlert(cleanPayload);
     return { delivered: false, queued: true };
   }
 };

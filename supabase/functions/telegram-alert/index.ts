@@ -49,7 +49,7 @@ Deno.serve(async (request) => {
   // Ensure there is only ONE '[SpendDesk Alert]' header at the very top.
   // Strip any leading titles (with or without markdown, brackets, or duplicates)
   let cleanMessage = message.trim();
-  cleanMessage = cleanMessage.replace(/^(\*?\[?SpendDesk Alert\]?\*?\s*\n+)+/i, '');
+  cleanMessage = cleanMessage.replace(/^(\*?\[?SpendDesk Alert\]?\*?\s*\n*)+/i, '').trim();
   const textToSend = `[SpendDesk Alert]\n${cleanMessage}`;
 
   const telegramResponse = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {

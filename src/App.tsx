@@ -681,7 +681,7 @@ export default function App() {
       amount: 100,
       type: 'cash_added',
       category: 'Other',
-      notes: 'Salary / Top-up',
+      notes: '',
       date: today,
       time: sampleTime,
       paymentMethod: 'Cash',
@@ -955,7 +955,7 @@ export default function App() {
       const allSummary = calculateSummary(currentLocalTxs, currentLocalTxs);
       const catSummary = calculateCategoryBreakdown(currentLocalTxs);
       const { dayTotals } = calculateWeeklyDailyTrend(currentLocalTxs);
-      await syncDashboardStats(sheetToken, activeSheet.id, allSummary, catSummary, dayTotals);
+      await syncDashboardStats(sheetToken, activeSheet.id, allSummary, catSummary, dayTotals, currentLocalTxs, currentLocalLends);
 
       const updatedMeta: GoogleSheetMeta = {
         ...activeSheet,
