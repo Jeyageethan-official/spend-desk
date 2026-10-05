@@ -2,7 +2,15 @@ import { Transaction, SpendingSummary, CategorySummary, LendItem, TransactionTyp
 import { signInWithGoogleWorkspace, getCachedWorkspaceToken, setCachedWorkspaceToken } from './workspaceAuth';
 import { sortTransactionsChronological, calculateRunningBalances } from './calculations';
 import { loadDeletedTxIds } from './storage';
-import { buildDashboardLayout, DashboardLayout } from './dashboardSheet';
+import {
+  buildDashboardLayout,
+  DashboardFilterState,
+  DashboardLayout,
+  DashboardPeriod,
+  getDashboardFilterCells,
+  normalizeDashboardPeriod,
+  parseSheetDateCell,
+} from './dashboardSheet';
 
 // Use the officially provisioned and authorized OAuth Client ID for this applet
 export const GOOGLE_OAUTH_CLIENT_ID = '509348493041-ih637992a2lrmh6qdlvch1pkatpn70k0.apps.googleusercontent.com';
@@ -266,17 +274,22 @@ export const applyTransactionsSheetDesign = async (
     const txSheet = metaData.sheets?.find((s: any) => s.properties?.title === 'Transactions') || metaData.sheets?.[0];
     const sheetId = txSheet?.properties?.sheetId ?? 0;
 
-    // 10% Darker Corporate Navy (#1F3A64) per user request
-    const softNavy = { red: 31 / 255, green: 58 / 255, blue: 100 / 255 }; // #1F3A64 (10% darker)
+    // Palette aligned with SpendDesk Dashboard (navy + brand green)
+    const softNavy = { red: 19 / 255, green: 31 / 255, blue: 43 / 255 }; // #131F2B
     const white = { red: 1, green: 1, blue: 1 };
-    const greenText = { red: 13 / 255, green: 115 / 255, blue: 55 / 255 }; // #0d7337
-    const greenBg = { red: 230 / 255, green: 244 / 255, blue: 234 / 255 }; // #e6f4ea
-    const redText = { red: 197 / 255, green: 34 / 255, blue: 31 / 255 }; // #c5221f
+    const greenText = { red: 15 / 255, green: 138 / 255, blue: 95 / 255 }; // #0F8A5F
+    const greenBg = { red: 240 / 255, green: 250 / 255, blue: 245 / 255 }; // #F0FAF5
+    const redText = { red: 194 / 255, green: 51 / 255, blue: 77 / 255 }; // #C2334D
     const redBg = { red: 252 / 255, green: 232 / 255, blue: 230 / 255 }; // #fce8e6
     const blueText = { red: 37 / 255, green: 99 / 255, blue: 235 / 255 }; // #2563eb
-    const lightGreyBorder = { red: 229 / 255, green: 231 / 255, blue: 235 / 255 }; // #e5e7eb
-    const lightBlueRowBg = { red: 235 / 255, green: 243 / 255, blue: 254 / 255 }; // #ebf3fe
-    const spacerBg = { red: 248 / 255, green: 249 / 255, blue: 250 / 255 }; // #f8f9fa
+    const lightGreyBorder = { red: 226 / 255, green: 232 / 255, blue: 240 / 255 }; // #E2E8F0
+    const dateBannerBg = { red: 240 / 255, green: 250 / 255, blue: 245 / 255 }; // #F0FAF5
+    const dateBannerText = { red: 17 / 255, green: 107 / 255, blue: 78 / 255 }; // #116B4E
+    const spacerBg = { red: 244 / 255, green: 246 / 255, blue: 248 / 255 }; // #F4F6F8
+    const lendHeaderBg = { red: 180 / 255, green: 83 / 255, blue: 9 / 255 }; // #B45309
+    const lendSubBg = { red: 255 / 255, green: 247 / 255, blue: 237 / 255 }; // #FFF7ED
+    const lendSubText = { red: 154 / 255, green: 52 / 255, blue: 18 / 255 }; // #9A3412
+    const zebraBg = { red: 250 / 255, green: 251 / 255, blue: 252 / 255 }; // #FAFBFC
 
     const requests: any[] = [
       // 1. Column Widths (A to P)
@@ -349,7 +362,7 @@ export const applyTransactionsSheetDesign = async (
           fields: 'userEnteredFormat(backgroundColor)',
         },
       },
-      // 6. Format & Merge LEND MONEY header over M1:P1 (columns 12 to 16) with soft navy
+      // 6. Format & Merge LEND MONEY header over M1:P1 — warm amber (distinct from main ledger)
       {
         mergeCells: {
           range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 12, endColumnIndex: 16 },
@@ -361,7 +374,7 @@ export const applyTransactionsSheetDesign = async (
           range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 12, endColumnIndex: 16 },
           cell: {
             userEnteredFormat: {
-              backgroundColor: softNavy,
+              backgroundColor: lendHeaderBg,
               textFormat: { foregroundColor: white, bold: true, fontSize: 10 },
               horizontalAlignment: 'CENTER',
             },
@@ -375,12 +388,57 @@ export const applyTransactionsSheetDesign = async (
           range: { sheetId, startRowIndex: 1, endRowIndex: 2, startColumnIndex: 12, endColumnIndex: 16 },
           cell: {
             userEnteredFormat: {
-              backgroundColor: softNavy,
-              textFormat: { foregroundColor: white, bold: true, fontSize: 9 },
+              backgroundColor: lendSubBg,
+              textFormat: { foregroundColor: lendSubText, bold: true, fontSize: 9 },
               horizontalAlignment: 'CENTER',
             },
           },
           fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)',
+        },
+      },
+      // Also tint Row 2 spacers + blank main header cells for a clean frozen band
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 1, endRowIndex: 2, startColumnIndex: 0, endColumnIndex: 8 },
+          cell: {
+            userEnteredFormat: {
+              backgroundColor: softNavy,
+            },
+          },
+          fields: 'userEnteredFormat(backgroundColor)',
+        },
+      },
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 1, endRowIndex: 2, startColumnIndex: 8, endColumnIndex: 9 },
+          cell: {
+            userEnteredFormat: {
+              backgroundColor: spacerBg,
+            },
+          },
+          fields: 'userEnteredFormat(backgroundColor)',
+        },
+      },
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 1, endRowIndex: 2, startColumnIndex: 9, endColumnIndex: 11 },
+          cell: {
+            userEnteredFormat: {
+              backgroundColor: softNavy,
+            },
+          },
+          fields: 'userEnteredFormat(backgroundColor)',
+        },
+      },
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 1, endRowIndex: 2, startColumnIndex: 11, endColumnIndex: 12 },
+          cell: {
+            userEnteredFormat: {
+              backgroundColor: spacerBg,
+            },
+          },
+          fields: 'userEnteredFormat(backgroundColor)',
         },
       },
       // 8. Freeze top 2 rows
@@ -528,8 +586,8 @@ export const applyTransactionsSheetDesign = async (
             range: { sheetId, startRowIndex: rIdx, endRowIndex: rIdx + 1, startColumnIndex: 0, endColumnIndex: 11 },
             cell: {
               userEnteredFormat: {
-                backgroundColor: lightBlueRowBg,
-                textFormat: { foregroundColor: softNavy, bold: true, fontSize: 10 },
+                backgroundColor: dateBannerBg,
+                textFormat: { foregroundColor: dateBannerText, bold: true, fontSize: 10 },
                 horizontalAlignment: 'CENTER',
               },
             },
@@ -543,6 +601,19 @@ export const applyTransactionsSheetDesign = async (
     const existingRules = txSheet?.conditionalFormats || [];
     if (existingRules.length === 0) {
       requests.push(
+        // Subtle zebra striping for readability (skips header rows via formula on row 3+)
+        {
+          addConditionalFormatRule: {
+            rule: {
+              ranges: [{ sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 0, endColumnIndex: 16 }],
+              booleanRule: {
+                condition: { type: 'CUSTOM_FORMULA', values: [{ userEnteredValue: '=AND(ISEVEN(ROW()),$A3<>"")' }] },
+                format: { backgroundColor: zebraBg },
+              },
+            },
+            index: 0,
+          },
+        },
         // Rule: Type IN -> Green text & soft green pill background
         {
           addConditionalFormatRule: {
@@ -553,7 +624,7 @@ export const applyTransactionsSheetDesign = async (
                 format: { backgroundColor: greenBg, textFormat: { foregroundColor: greenText, bold: true } },
               },
             },
-            index: 0,
+            index: 1,
           },
         },
         // Rule: Type OUT -> Red text & soft red pill background
@@ -566,7 +637,7 @@ export const applyTransactionsSheetDesign = async (
                 format: { backgroundColor: redBg, textFormat: { foregroundColor: redText, bold: true } },
               },
             },
-            index: 1,
+            index: 2,
           },
         },
         // Rule: Amount for IN -> Green bold text
@@ -579,7 +650,7 @@ export const applyTransactionsSheetDesign = async (
                 format: { textFormat: { foregroundColor: greenText, bold: true } },
               },
             },
-            index: 2,
+            index: 3,
           },
         },
         // Rule: Amount for OUT -> Red bold text
@@ -592,7 +663,7 @@ export const applyTransactionsSheetDesign = async (
                 format: { textFormat: { foregroundColor: redText, bold: true } },
               },
             },
-            index: 3,
+            index: 4,
           },
         },
         // Rule: Payment Method Cash -> Green text & soft green background
@@ -605,7 +676,7 @@ export const applyTransactionsSheetDesign = async (
                 format: { backgroundColor: greenBg, textFormat: { foregroundColor: greenText } },
               },
             },
-            index: 4,
+            index: 5,
           },
         },
         // Rule: Out of Wallet (Col J) -> Soft red background & red bold text
@@ -618,7 +689,7 @@ export const applyTransactionsSheetDesign = async (
                 format: { backgroundColor: redBg, textFormat: { foregroundColor: redText, bold: true } },
               },
             },
-            index: 5,
+            index: 6,
           },
         }
       );
@@ -637,8 +708,58 @@ export const applyTransactionsSheetDesign = async (
   }
 };
 
+const CHUNK_SIZE = 90;
+
+const postSheetBatchUpdate = async (
+  accessToken: string,
+  spreadsheetId: string,
+  requests: any[]
+) => {
+  for (let i = 0; i < requests.length; i += CHUNK_SIZE) {
+    const chunk = requests.slice(i, i + CHUNK_SIZE);
+    const formatRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ requests: chunk }),
+    });
+    if (!formatRes.ok) {
+      const detail = await formatRes.text();
+      throw parseGoogleApiError(formatRes.status, detail, 'Failed to rebuild Google Sheet Dashboard');
+    }
+  }
+};
+
+/** Read Period / From / To from the Dashboard filter bar so sync preserves user choices. */
+export const readDashboardFilter = async (
+  accessToken: string,
+  spreadsheetId: string
+): Promise<DashboardFilterState> => {
+  const fallback: DashboardFilterState = { period: 'All time', startDate: '', endDate: '' };
+  try {
+    const cells = getDashboardFilterCells();
+    const res = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(`Dashboard!${cells.range}`)}?valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    if (!res.ok) return fallback;
+    const data = await res.json();
+    const row: any[] = data.values?.[0] || [];
+    // C=period, D=merge empty, E=FROM label, F=from date, G=TO label, H–I=to date
+    const period = normalizeDashboardPeriod(row[0]) as DashboardPeriod;
+    const startDate = parseSheetDateCell(row[3], '');
+    const endDate = parseSheetDateCell(row[5] ?? row[6], '');
+    return { period, startDate, endDate };
+  } catch (e) {
+    console.warn('Dashboard filter read notice:', e);
+    return fallback;
+  }
+};
+
 /**
- * Rebuilds the whole Dashboard tab (values + formatting) in ONE atomic batchUpdate.
+ * Rebuilds the whole Dashboard tab (values + formatting) via chunked batchUpdates.
  * The layout comes from `buildDashboardLayout` (src/lib/dashboardSheet.ts), which is
  * the single source of truth for both what is written and how it is styled.
  */
@@ -647,65 +768,43 @@ export const applyDashboardSheetDesign = async (
   spreadsheetId: string,
   layout: DashboardLayout
 ) => {
-  try {
-    const metaRes = await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets(properties,charts)`,
-      {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      }
-    );
-    if (!metaRes.ok) {
-      console.warn('Dashboard metadata notice:', await metaRes.text());
-      return;
+  const metaRes = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets(properties,charts)`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
     }
-    const metaData = await metaRes.json();
-    const dashSheet = metaData.sheets?.find((s: any) => s.properties?.title === 'Dashboard');
-    if (!dashSheet) return;
-    const sheetId = dashSheet.properties.sheetId;
-    const grid = dashSheet.properties.gridProperties || {};
+  );
+  if (!metaRes.ok) {
+    throw parseGoogleApiError(metaRes.status, await metaRes.text(), 'Failed to load Dashboard sheet metadata');
+  }
+  const metaData = await metaRes.json();
+  const dashSheet = metaData.sheets?.find((s: any) => s.properties?.title === 'Dashboard');
+  if (!dashSheet) {
+    throw new Error('Dashboard tab not found in Google Sheet');
+  }
+  const sheetId = dashSheet.properties.sheetId;
+  const grid = dashSheet.properties.gridProperties || {};
 
-    const requests = layout.buildRequests(sheetId, {
-      rowCount: grid.rowCount || 1000,
-      columnCount: grid.columnCount || 26,
-    });
+  const requests = layout.buildRequests(sheetId, {
+    rowCount: grid.rowCount || 1000,
+    columnCount: grid.columnCount || 26,
+  });
 
-    const formatRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ requests }),
-    });
+  await postSheetBatchUpdate(accessToken, spreadsheetId, requests);
 
-    if (!formatRes.ok) {
-      console.warn('Dashboard rebuild notice:', await formatRes.text());
-      return;
+  // Clean up any embedded charts left on the Dashboard so the layout stays clean
+  if (dashSheet.charts && dashSheet.charts.length > 0) {
+    const deleteRequests = dashSheet.charts
+      .filter((c: any) => c?.chartId !== undefined)
+      .map((c: any) => ({
+        deleteEmbeddedObject: {
+          objectId: c.chartId,
+        },
+      }));
+
+    if (deleteRequests.length > 0) {
+      await postSheetBatchUpdate(accessToken, spreadsheetId, deleteRequests).catch(console.warn);
     }
-
-    // Clean up any embedded charts left on the Dashboard so the layout stays clean
-    if (dashSheet.charts && dashSheet.charts.length > 0) {
-      const deleteRequests = dashSheet.charts
-        .filter((c: any) => c?.chartId !== undefined)
-        .map((c: any) => ({
-          deleteEmbeddedObject: {
-            objectId: c.chartId,
-          },
-        }));
-
-      if (deleteRequests.length > 0) {
-        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ requests: deleteRequests }),
-        }).catch(console.warn);
-      }
-    }
-  } catch (e) {
-    console.warn('Dashboard sheet formatting notice:', e);
   }
 };
 
@@ -802,7 +901,7 @@ export const syncDashboardStats = async (
           method: 'POST',
           headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            requests: [{ addSheet: { properties: { title: 'Dashboard', gridProperties: { rowCount: 52, columnCount: 16 } } } }],
+            requests: [{ addSheet: { properties: { title: 'Dashboard', gridProperties: { rowCount: 60, columnCount: 20 } } } }],
           }),
         });
       }
@@ -811,6 +910,9 @@ export const syncDashboardStats = async (
     console.warn('Dashboard existence check notice:', e);
   }
 
+  // Preserve Period / From / To the user set on the Dashboard filter bar.
+  const filter = await readDashboardFilter(accessToken, spreadsheetId);
+
   // Build one layout (values + design together) and rebuild the tab atomically.
   const layout = buildDashboardLayout({
     summary,
@@ -818,6 +920,7 @@ export const syncDashboardStats = async (
     dailySpend,
     transactions: recentTransactions,
     lendItems,
+    filter,
   });
   await applyDashboardSheetDesign(accessToken, spreadsheetId, layout);
 };
