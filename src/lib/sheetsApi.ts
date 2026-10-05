@@ -274,18 +274,19 @@ export const applyTransactionsSheetDesign = async (
     const txSheet = metaData.sheets?.find((s: any) => s.properties?.title === 'Transactions') || metaData.sheets?.[0];
     const sheetId = txSheet?.properties?.sheetId ?? 0;
 
-    // Professional ledger palette
-    const softNavy = { red: 31 / 255, green: 58 / 255, blue: 100 / 255 }; // #1F3A64 headers + body text
+    // Professional ledger palette (light highlights + brighter navy body text)
+    const headerNavy = { red: 31 / 255, green: 58 / 255, blue: 100 / 255 }; // #1F3A64 headers only
+    const softNavy = { red: 59 / 255, green: 107 / 255, blue: 168 / 255 }; // #3B6BA8 brighter navy body text
     const white = { red: 1, green: 1, blue: 1 };
     const pageWhite = { red: 1, green: 1, blue: 1 };
-    const greenText = { red: 8 / 255, green: 107 / 255, blue: 55 / 255 }; // #086B37
-    const greenBg = { red: 167 / 255, green: 220 / 255, blue: 183 / 255 }; // #A7DCB7 darker cash tint
-    const redText = { red: 176 / 255, green: 32 / 255, blue: 40 / 255 }; // #B02028
-    const redBg = { red: 248 / 255, green: 196 / 255, blue: 196 / 255 }; // #F8C4C4 darker OUT tint
-    const cardText = { red: 30 / 255, green: 64 / 255, blue: 175 / 255 }; // #1E40AF
-    const cardBg = { red: 147 / 255, green: 197 / 255, blue: 253 / 255 }; // #93C5FD darker card tint
+    const greenText = { red: 21 / 255, green: 128 / 255, blue: 61 / 255 }; // #15803D
+    const greenBg = { red: 220 / 255, green: 252 / 255, blue: 231 / 255 }; // #DCFCE7 light green
+    const redText = { red: 185 / 255, green: 28 / 255, blue: 28 / 255 }; // #B91C1C
+    const redBg = { red: 254 / 255, green: 226 / 255, blue: 226 / 255 }; // #FEE2E2 light red
+    const cardText = { red: 29 / 255, green: 78 / 255, blue: 216 / 255 }; // #1D4ED8
+    const cardBg = { red: 219 / 255, green: 234 / 255, blue: 254 / 255 }; // #DBEAFE light blue
     const lightGreyBorder = { red: 226 / 255, green: 232 / 255, blue: 240 / 255 }; // #E2E8F0
-    const dateBannerBg = { red: 235 / 255, green: 243 / 255, blue: 254 / 255 }; // #EBF3FE
+    const dateBannerBg = { red: 239 / 255, green: 246 / 255, blue: 255 / 255 }; // #EFF6FF soft date band
     const spacerBg = { red: 248 / 255, green: 250 / 255, blue: 252 / 255 }; // #F8FAFC
 
     const requests: any[] = [
@@ -313,7 +314,7 @@ export const applyTransactionsSheetDesign = async (
           range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 8 },
           cell: {
             userEnteredFormat: {
-              backgroundColor: softNavy,
+              backgroundColor: headerNavy,
               textFormat: { foregroundColor: white, bold: true, fontSize: 10 },
               horizontalAlignment: 'CENTER',
               verticalAlignment: 'MIDDLE',
@@ -336,7 +337,7 @@ export const applyTransactionsSheetDesign = async (
           range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 9, endColumnIndex: 11 },
           cell: {
             userEnteredFormat: {
-              backgroundColor: softNavy,
+              backgroundColor: headerNavy,
               textFormat: { foregroundColor: white, bold: true, fontSize: 10 },
               horizontalAlignment: 'CENTER',
               verticalAlignment: 'MIDDLE',
@@ -365,7 +366,7 @@ export const applyTransactionsSheetDesign = async (
           range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 12, endColumnIndex: 16 },
           cell: {
             userEnteredFormat: {
-              backgroundColor: softNavy,
+              backgroundColor: headerNavy,
               textFormat: { foregroundColor: white, bold: true, fontSize: 10 },
               horizontalAlignment: 'CENTER',
               verticalAlignment: 'MIDDLE',
@@ -394,7 +395,7 @@ export const applyTransactionsSheetDesign = async (
           range: { sheetId, startRowIndex: 1, endRowIndex: 2, startColumnIndex: 12, endColumnIndex: 16 },
           cell: {
             userEnteredFormat: {
-              backgroundColor: softNavy,
+              backgroundColor: headerNavy,
               textFormat: { foregroundColor: white, bold: true, fontSize: 9 },
               horizontalAlignment: 'CENTER',
               verticalAlignment: 'MIDDLE',
@@ -412,7 +413,21 @@ export const applyTransactionsSheetDesign = async (
         },
       },
 
-      // Date + Time → navy, centered
+      // Reset ALL data-area backgrounds to white first so old date-blue never bleeds onto other rows
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 0, endColumnIndex: 16 },
+          cell: {
+            userEnteredFormat: {
+              backgroundColor: pageWhite,
+              textFormat: { foregroundColor: softNavy, bold: false },
+            },
+          },
+          fields: 'userEnteredFormat(backgroundColor,textFormat)',
+        },
+      },
+
+      // Date + Time → brighter navy, centered
       {
         repeatCell: {
           range: { sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 0, endColumnIndex: 2 },
@@ -544,12 +559,13 @@ export const applyTransactionsSheetDesign = async (
       },
     ];
 
-    // Date banner rows
+    // Date banner rows — ONLY main ledger A–H (not Out of Wallet / Card Payment / Lend)
     if (dateRowIndices && dateRowIndices.length > 0) {
       dateRowIndices.forEach((rIdx) => {
+        if (rIdx < 2) return;
         requests.push({
           repeatCell: {
-            range: { sheetId, startRowIndex: rIdx, endRowIndex: rIdx + 1, startColumnIndex: 0, endColumnIndex: 11 },
+            range: { sheetId, startRowIndex: rIdx, endRowIndex: rIdx + 1, startColumnIndex: 0, endColumnIndex: 8 },
             cell: {
               userEnteredFormat: {
                 backgroundColor: dateBannerBg,
