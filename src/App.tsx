@@ -60,7 +60,8 @@ import {
   filterTransactions,
   formatCurrency,
   sanitizeTransactions,
-  getLocalDateString
+  getLocalDateString,
+  getPresetRange
 } from './lib/calculations';
 import { 
   syncDashboardStats, 
@@ -81,7 +82,7 @@ import {
   sendTelegramAlert, 
   flushPendingTelegramAlerts 
 } from './lib/telegramAlert';
-import { CloudWorkspace, fetchCloudWorkspace, saveCloudWorkspace, subscribeToCloudWorkspace, unsubscribeFromCloudWorkspace } from './lib/cloudWorkspace';
+import { CloudWorkspace, fetchCloudWorkspace, fetchCloudWorkspaceVersion, saveCloudWorkspace, subscribeToCloudWorkspace, unsubscribeFromCloudWorkspace } from './lib/cloudWorkspace';
 import { clearPendingSync, hasPendingSync, loadPendingSync, markLendDelete, markLendUpsert, markSettingsDirty, markTransactionDelete, markTransactionUpsert, mergePendingWorkspace, stageWorkspaceForReplay } from './lib/pendingSync';
 import { clearSignedOutWorkspace, loadSignedOutWorkspace, saveSignedOutWorkspace } from './lib/signedOutWorkspace';
 import { Header } from './components/Header';
@@ -653,8 +654,27 @@ export default function App() {
     document.addEventListener('visibilitychange', handleVisibilityOrFocus);
     window.addEventListener('focus', handleVisibilityOrFocus);
 
+    // Safety net for live updates: realtime messages can be dropped (large payloads, flaky
+    // websocket, sleeping mobile tabs). Every 10s while the tab is visible, check only the
+    // tiny version stamp and pull the full workspace when another device has saved newer data.
+    const pollTimer = window.setInterval(async () => {
+      if (document.visibilityState !== 'visible') return;
+      try {
+        const remoteVersion = await fetchCloudWorkspaceVersion();
+        if (remoteVersion !== null && remoteVersion > cloudVersionRef.current) {
+          const remoteWorkspace = await fetchCloudWorkspace();
+          if (remoteWorkspace && remoteWorkspace.updatedAt > cloudVersionRef.current) {
+            applyCloudWorkspace(remoteWorkspace);
+          }
+        }
+      } catch (err) {
+        console.warn('Live sync poll error:', err);
+      }
+    }, 10000);
+
     return () => {
       active = false;
+      window.clearInterval(pollTimer);
       document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
       window.removeEventListener('focus', handleVisibilityOrFocus);
       unsubscribeFromCloudWorkspace(channel);
@@ -675,7 +695,7 @@ export default function App() {
       throw new Error('Enter a Telegram chat ID first.');
     }
     const sampleTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateString();
     const testPayload = generateTransactionTelegramAlert({
       id: 'test',
       amount: 100,
@@ -1122,7 +1142,7 @@ export default function App() {
     const now = new Date();
     const pad = (n: number) => String(n).padStart(2, '0');
     const timeStr = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
-    const dateStr = now.toISOString().split('T')[0];
+    const dateStr = getLocalDateString(now);
 
     handleSaveTransaction({
       date: dateStr,
@@ -1308,15 +1328,25 @@ export default function App() {
   };
 
   // Financial Calculations
+  const [currentDateStr, setCurrentDateStr] = useState<string>(() => getLocalDateString());
+
+  // Quick presets (today / week / month) are resolved from the live local date on every render,
+  // so the dashboard stays correct after midnight without the user re-clicking the filter.
+  const effectiveFilter = useMemo<FilterState>(() => {
+    const range = ['today', 'yesterday', 'week', 'month'].includes(filter.type)
+      ? getPresetRange(filter.type, new Date())
+      : null;
+    return range ? { ...filter, ...range } : filter;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter, currentDateStr]);
+
   const filteredTransactions = useMemo(() => {
-    return filterTransactions(transactions, filter);
-  }, [transactions, filter]);
+    return filterTransactions(transactions, effectiveFilter);
+  }, [transactions, effectiveFilter]);
 
   const summary = useMemo(() => {
     return calculateSummary(transactions, filteredTransactions);
   }, [transactions, filteredTransactions]);
-
-  const [currentDateStr, setCurrentDateStr] = useState<string>(() => getLocalDateString());
 
   // Automatically refresh date every 30s or on window focus so every day starts fresh with 0 daily spend
   useEffect(() => {
@@ -1339,13 +1369,6 @@ export default function App() {
   const todaySpend = useMemo(() => {
     return transactions
       .filter((t) => t.date === todayStr && (t.type === 'cash_expense' || t.type === 'card_expense'))
-      .reduce((sum, t) => sum + t.amount, 0);
-  }, [transactions, todayStr]);
-
-  const thisMonthSpend = useMemo(() => {
-    const currentMonthPrefix = todayStr.substring(0, 7);
-    return transactions
-      .filter((t) => (t.date || '').startsWith(currentMonthPrefix) && (t.type === 'cash_expense' || t.type === 'card_expense'))
       .reduce((sum, t) => sum + t.amount, 0);
   }, [transactions, todayStr]);
 
@@ -1420,6 +1443,8 @@ export default function App() {
           onCancelSelection={() => setSelectedTransactionIds([])}
           onEditSelection={handleEditSelectedTransaction}
           onDeleteSelection={handleDeleteSelectedTransactions}
+          dateFilter={activeTab === 'dashboard' || activeTab === 'transactions' || activeTab === 'analytics' ? effectiveFilter : undefined}
+          onDateFilterChange={setFilter}
         />
       )}
 
@@ -1532,7 +1557,7 @@ export default function App() {
       </AnimatePresence>
 
       {/* Desktop Navigation Bar (Centered, clean workspace tabs) */}
-      <div className="hidden md:block max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 pt-4 sm:pt-6">
+      <div className="hidden md:block w-full px-3 sm:px-6 lg:px-8 pt-4 sm:pt-6">
         <div className="flex items-center justify-center bg-white p-1.5 rounded-2xl border border-slate-200/90 shadow-xs">
           <div className="flex items-center gap-1.5 flex-wrap justify-center">
             {[
@@ -1682,7 +1707,7 @@ export default function App() {
           )}
 
           {activeTab === 'dashboard' && (
-            <main className="max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4 sm:space-y-6">
+            <main className="w-full px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4 sm:space-y-6">
               {/* 1. Summary Cards (Current Cash Balance + 4 breakdown cards + SMS icon) */}
               <SummaryCards
                 summary={summary}
@@ -1762,7 +1787,7 @@ export default function App() {
           )}
 
           {activeTab === 'transactions' && (
-            <main className="max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4 sm:space-y-6">
+            <main className="w-full px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4 sm:space-y-6">
               <FilterBar
                 filter={filter}
                 onFilterChange={setFilter}
@@ -1796,7 +1821,7 @@ export default function App() {
           )}
 
           {activeTab === 'analytics' && (
-            <main className="max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4 sm:space-y-6">
+            <main className="w-full px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4 sm:space-y-6">
               <AnalyticsView
                 summary={summary}
                 categories={categoryBreakdown}
@@ -1811,7 +1836,7 @@ export default function App() {
           )}
 
           {activeTab === 'lend' && (
-            <main className="max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
+            <main className="w-full px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
               <LendBorrowView
                 items={lendItems}
                 onAddItem={handleAddLendItem}

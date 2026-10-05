@@ -24,7 +24,7 @@ import {
   Square
 } from 'lucide-react';
 import { Transaction, Category, FilterState } from '../types/finance';
-import { formatCurrency } from '../lib/calculations';
+import { formatCurrency, getLocalDateString } from '../lib/calculations';
 import { triggerFeedback } from '../lib/haptics';
 
 interface TransactionTableProps {
@@ -44,12 +44,12 @@ interface TransactionTableProps {
 const formatSectionDate = (dateStr: string): string => {
   if (!dateStr) return '';
   try {
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = getLocalDateString();
     if (dateStr === todayStr) return 'Today';
 
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
-    const yestStr = yesterday.toISOString().split('T')[0];
+    const yestStr = getLocalDateString(yesterday);
     if (dateStr === yestStr) return 'Yesterday';
 
     const d = new Date(dateStr + 'T00:00:00');
@@ -164,14 +164,14 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
 
   const getPresetDates = (type: 'week' | 'month'): { startDate: string; endDate: string } => {
     const now = new Date();
-    const todayStr = now.toISOString().split('T')[0];
+    const todayStr = getLocalDateString(now);
 
     if (type === 'week') {
       const curr = new Date(now);
       const day = curr.getDay();
       const diffToMon = curr.getDate() - day + (day === 0 ? -6 : 1);
       const monday = new Date(curr.setDate(diffToMon));
-      const monStr = monday.toISOString().split('T')[0];
+      const monStr = getLocalDateString(monday);
       return { startDate: monStr, endDate: todayStr };
     } else {
       const year = now.getFullYear();
@@ -443,23 +443,19 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
             const isCard = tx.type === 'card_expense' || tx.paymentMethod === 'Card' || tx.paymentMethod === 'Bank Transfer';
             const isSelected = selectedTxIds.includes(tx.id);
 
+            // Colour language: money in = green, money out = red (cash or card).
+            // The payment method is shown by icon + a neutral badge, not by a third amount colour.
             const boxBgClass = isCashIn
               ? 'bg-emerald-50 text-emerald-600 border border-emerald-200/80'
-              : isCard
-              ? 'bg-blue-50 text-blue-600 border border-blue-200/80'
               : 'bg-rose-50 text-rose-600 border border-rose-200/80';
 
-            const textColorClass = isCashIn
-              ? 'text-emerald-600'
-              : isCard
-              ? 'text-blue-600'
-              : 'text-rose-600';
+            const textColorClass = isCashIn ? 'text-emerald-600' : 'text-rose-600';
 
             return (
               <div
                 key={tx.id}
                 className={`transition-colors select-none ${
-                  isSelected ? 'bg-slate-100/90' : 'hover:bg-slate-50/60'
+                  isSelected ? 'bg-indigo-50/70' : 'hover:bg-slate-50'
                 }`}
                 onPointerDown={(event) => handleRowPointerDown(event, tx.id)}
                 onPointerMove={handleRowPointerMove}
@@ -538,12 +534,12 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
                   {/* Right Side: Amount & Payment Method */}
                   <div className="flex items-center gap-1 shrink-0">
                     <div className="flex flex-col items-end gap-0.5">
-                      <span className={`text-sm font-black ${textColorClass}`}>
+                      <span className={`text-sm font-black tabular-nums ${textColorClass}`}>
                         {isCashIn ? '+' : '-'}
                         {formatCurrency(tx.amount, currency)}
                       </span>
                       <span className={`text-[10px] px-1.5 py-0.2 rounded-md font-bold ${
-                        isCard ? 'bg-blue-50 text-blue-700 border border-blue-200/60' : 'bg-slate-100 text-slate-600'
+                        isCard ? 'bg-indigo-50 text-indigo-700 border border-indigo-200/70' : 'bg-slate-100 text-slate-600 border border-slate-200/70'
                       }`}>
                         {tx.paymentMethod}
                       </span>

@@ -17,7 +17,8 @@ import {
   X,
   Trash2
 } from 'lucide-react';
-import { GoogleSheetMeta } from '../types/finance';
+import { GoogleSheetMeta, FilterState } from '../types/finance';
+import { HeaderDateFilter } from './HeaderDateFilter';
 import { UserProfile } from '../lib/storage';
 import { formatCurrency } from '../lib/calculations';
 import { triggerFeedback } from '../lib/haptics';
@@ -46,6 +47,8 @@ interface HeaderProps {
   onCancelSelection?: () => void;
   onEditSelection?: () => void;
   onDeleteSelection?: () => void;
+  dateFilter?: FilterState;
+  onDateFilterChange?: (next: FilterState) => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -71,6 +74,8 @@ export const Header: React.FC<HeaderProps> = ({
   onCancelSelection,
   onEditSelection,
   onDeleteSelection,
+  dateFilter,
+  onDateFilterChange,
 }) => {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -122,7 +127,7 @@ export const Header: React.FC<HeaderProps> = ({
   if (selectionCount > 0) {
     return (
       <header className="bg-white/95 backdrop-blur-md border-b border-slate-200 sticky top-0 z-30 shadow-xs">
-        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+        <div className="w-full px-3 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-14 sm:h-16 gap-3">
             <div className="flex items-center gap-3 min-w-0">
               <button
@@ -157,7 +162,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <header className="bg-white/95 backdrop-blur-md border-b border-slate-200 sticky top-0 z-30 shadow-xs">
-      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+      <div className="w-full px-3 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-14 sm:h-16">
           {/* Logo & App Title */}
           <div 
@@ -383,6 +388,11 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </div>
         </div>
+
+        {/* Date filter row: presets + From / To pickers */}
+        {dateFilter && onDateFilterChange && (
+          <HeaderDateFilter filter={dateFilter} onFilterChange={onDateFilterChange} />
+        )}
       </div>
     </header>
   );

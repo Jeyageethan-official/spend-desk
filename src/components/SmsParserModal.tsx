@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { Transaction } from '../types/finance';
 import { parseBankSms, SAMPLE_SMS_TEMPLATES } from '../lib/smsParser';
-import { formatCurrency } from '../lib/calculations';
+import { formatCurrency, getLocalDateString } from '../lib/calculations';
 
 interface SmsParserModalProps {
   isOpen: boolean;
@@ -65,7 +65,7 @@ export const SmsParserModal: React.FC<SmsParserModalProps> = ({
       type: parsed.type,
       category: parsed.category,
       paymentMethod: parsed.paymentMethod,
-      date: parsed.date || new Date().toISOString().split('T')[0],
+      date: parsed.date || getLocalDateString(),
       time: new Date().toTimeString().substring(0, 5),
       notes: parsed.merchant,
     });

@@ -1,6 +1,5 @@
 import React, { useState, useMemo } from 'react';
 import { 
-  Calendar, 
   Search, 
   X, 
   ChevronDown, 
@@ -9,10 +8,9 @@ import {
   RotateCcw,
   Download
 } from 'lucide-react';
-import { FilterState, DateFilterType, Category, Transaction } from '../types/finance';
+import { FilterState, Category, Transaction } from '../types/finance';
 import { STANDARD_CATEGORIES } from '../lib/calculations';
 import { loadStoredCustomCategories } from '../lib/storage';
-import { CalendarDateModal } from './CalendarDateModal';
 import { DownloadRecordsModal } from './DownloadRecordsModal';
 
 interface FilterBarProps {
@@ -39,61 +37,12 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   showDownload = false,
 }) => {
   const [isExpanded, setIsExpanded] = useState<boolean>(!collapsible);
-  const [isCalendarModalOpen, setIsCalendarModalOpen] = useState<boolean>(false);
   const [isDownloadModalOpen, setIsDownloadModalOpen] = useState<boolean>(false);
   const customCategories = loadStoredCustomCategories();
 
-  const getPresetDates = (type: DateFilterType): { startDate: string; endDate: string } => {
-    const now = new Date();
-    const todayStr = now.toISOString().split('T')[0];
-
-    if (type === 'today') {
-      return { startDate: todayStr, endDate: todayStr };
-    }
-    if (type === 'yesterday') {
-      const yesterday = new Date(now);
-      yesterday.setDate(yesterday.getDate() - 1);
-      const yStr = yesterday.toISOString().split('T')[0];
-      return { startDate: yStr, endDate: yStr };
-    }
-    if (type === 'week') {
-      const curr = new Date(now);
-      const day = curr.getDay(); // 0 is Sun
-      const diffToMon = curr.getDate() - day + (day === 0 ? -6 : 1);
-      const monday = new Date(curr.setDate(diffToMon));
-      const monStr = monday.toISOString().split('T')[0];
-      return { startDate: monStr, endDate: todayStr };
-    }
-    if (type === 'month') {
-      const year = now.getFullYear();
-      const month = String(now.getMonth() + 1).padStart(2, '0');
-      return { startDate: `${year}-${month}-01`, endDate: todayStr };
-    }
-    if (type === 'all') {
-      return { startDate: '', endDate: '' };
-    }
-    return { startDate: filter.startDate, endDate: filter.endDate };
-  };
-
-  const handlePresetClick = (type: DateFilterType) => {
-    if (type === 'custom') {
-      setIsCalendarModalOpen(true);
-      return;
-    }
-    const dates = getPresetDates(type);
-    onFilterChange({
-      ...filter,
-      type,
-      startDate: dates.startDate,
-      endDate: dates.endDate,
-    });
-  };
-
   const clearFilters = () => {
     onFilterChange({
-      type: 'all',
-      startDate: '',
-      endDate: '',
+      ...filter,
       category: 'All',
       paymentMethod: 'All',
       searchQuery: '',
@@ -102,8 +51,6 @@ export const FilterBar: React.FC<FilterBarProps> = ({
 
   const activeFilterCount = useMemo(() => {
     let count = 0;
-    if (filter.type !== 'all') count++;
-    if (filter.startDate || filter.endDate) count++;
     if (filter.category && filter.category !== 'All') count++;
     if (filter.paymentMethod && filter.paymentMethod !== 'All') count++;
     if (filter.searchQuery?.trim()) count++;
@@ -112,7 +59,6 @@ export const FilterBar: React.FC<FilterBarProps> = ({
 
   const hasAdvancedFilters = activeFilterCount > 0;
   const shouldShowExpanded = !collapsible || isExpanded;
-  const hasCustomDateRange = Boolean(filter.startDate || filter.endDate);
 
   return (
     <>
@@ -142,50 +88,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             )}
           </div>
 
-          {/* Date Scope Segmented Controls */}
           <div className="flex items-center gap-1.5 justify-between sm:justify-start">
-            <div className="flex items-center p-1 bg-slate-100 rounded-xl overflow-x-auto scrollbar-none gap-0.5">
-              {[
-                { id: 'all', label: 'All' },
-                { id: 'today', label: 'Today' },
-                { id: 'week', label: 'Week' },
-                { id: 'month', label: 'Month' },
-              ].map((item) => {
-                const active = filter.type === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => handlePresetClick(item.id as DateFilterType)}
-                    className={`px-3 py-1.5 text-xs rounded-lg transition-all cursor-pointer whitespace-nowrap ${
-                      active
-                        ? 'bg-emerald-600 text-white font-bold shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900 font-medium hover:bg-slate-200/50'
-                    }`}
-                  >
-                    {item.label}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* 1. Calendar Date Trigger Button (Opens Custom Calendar Popup) */}
-            <button
-              type="button"
-              onClick={() => setIsCalendarModalOpen(true)}
-              className={`p-2 sm:px-3 sm:py-2 text-xs font-semibold rounded-xl transition-all cursor-pointer shrink-0 flex items-center gap-1.5 border ${
-                hasCustomDateRange
-                  ? 'bg-[#eaf5f0] text-[#116b4e] border-[#116b4e]/40 font-bold shadow-2xs'
-                  : 'text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-50 border-slate-200/90'
-              }`}
-              title="Pick Custom Calendar Date Range"
-            >
-              <Calendar className="w-3.5 h-3.5 text-[#116b4e]" />
-              <span className="hidden sm:inline font-bold">
-                {hasCustomDateRange ? (filter.startDate === filter.endDate ? filter.startDate : 'Custom') : 'Date'}
-              </span>
-            </button>
-
             {/* 2. Filters Dropdown Expand Button (Next to Calendar Icon) */}
             {collapsible && (
               <button
@@ -302,23 +205,6 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           </div>
         )}
       </div>
-
-      {/* Custom Calendar Date Modal Popup */}
-      <CalendarDateModal
-        isOpen={isCalendarModalOpen}
-        onClose={() => setIsCalendarModalOpen(false)}
-        startDate={filter.startDate || ''}
-        endDate={filter.endDate || ''}
-        activeType={filter.type}
-        onApply={(type, start, end) => {
-          onFilterChange({
-            ...filter,
-            type,
-            startDate: start,
-            endDate: end,
-          });
-        }}
-      />
 
       {/* Download / Export Records Modal Popup */}
       {showDownload && (

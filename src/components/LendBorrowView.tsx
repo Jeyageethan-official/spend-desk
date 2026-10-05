@@ -16,7 +16,7 @@ import {
   ArrowLeftRight
 } from 'lucide-react';
 import { LendItem, LendType, LendStatus } from '../types/finance';
-import { formatCurrency } from '../lib/calculations';
+import { formatCurrency, getLocalDateString } from '../lib/calculations';
 import { generateLendReminderText, triggerDeviceSms } from '../lib/smsAlert';
 import { ConfirmModal } from './ConfirmModal';
 
@@ -74,7 +74,7 @@ export const LendBorrowView: React.FC<LendBorrowViewProps> = ({
   const [thingsOrReason, setThingsOrReason] = useState('');
   const [amountStr, setAmountStr] = useState('');
   const [phone, setPhone] = useState('');
-  const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(() => getLocalDateString());
   const [dueDate, setDueDate] = useState('');
   const [formError, setFormError] = useState('');
 
@@ -114,7 +114,7 @@ export const LendBorrowView: React.FC<LendBorrowViewProps> = ({
     setThingsOrReason('');
     setAmountStr('');
     setPhone('');
-    setDate(new Date().toISOString().split('T')[0]);
+    setDate(getLocalDateString());
     setDueDate('');
     setFormError('');
     setIsModalOpen(true);

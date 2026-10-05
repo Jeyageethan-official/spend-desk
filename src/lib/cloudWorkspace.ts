@@ -49,6 +49,20 @@ export const fetchCloudWorkspace = async (): Promise<CloudWorkspace | null> => {
   return data?.workspace as CloudWorkspace | null;
 };
 
+/** Lightweight check: returns only workspace.updatedAt (no transactions / images downloaded). */
+export const fetchCloudWorkspaceVersion = async (): Promise<number | null> => {
+  const userId = await getCurrentUserId();
+  if (!userId) return null;
+  const { data, error } = await getSupabase()
+    .from('user_workspaces')
+    .select('updatedAt:workspace->>updatedAt')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (error) throw error;
+  const value = Number((data as { updatedAt?: string } | null)?.updatedAt);
+  return Number.isFinite(value) ? value : null;
+};
+
 export const saveCloudWorkspace = async (workspace: CloudWorkspace): Promise<void> => {
   const userId = await getCurrentUserId();
   if (!userId) throw new Error('Sign in is required for cloud sync.');
