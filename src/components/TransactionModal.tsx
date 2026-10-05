@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { getLocalDateString } from '../lib/calculations';
 import { motion } from 'motion/react';
 import { 
   X, 
@@ -135,7 +134,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       setType(defaultType);
       setAmountStr('');
       const now = new Date();
-      setDate(getLocalDateString(now));
+      setDate(now.toISOString().split('T')[0]);
       setNotes('');
       setReceiptImage(undefined);
 
@@ -224,7 +223,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       return;
     }
 
-    const txDate = date || getLocalDateString();
+    const txDate = date || new Date().toISOString().split('T')[0];
     const nowTime = new Date().toTimeString().substring(0, 5);
 
     triggerFeedback('success');

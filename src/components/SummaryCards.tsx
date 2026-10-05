@@ -62,9 +62,9 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
   };
 
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 w-full items-stretch">
-      {/* 1. Executive Wallet Hero Card (takes 2 of 6 columns on large screens) */}
-      <div className="col-span-2 relative overflow-hidden rounded-3xl bg-[#131f2b] text-white p-5 sm:p-7 border border-[#1e2d3b] shadow-xl">
+    <div className="space-y-3.5">
+      {/* 1. Executive Wallet Hero Card */}
+      <div className="relative overflow-hidden rounded-3xl bg-[#131f2b] text-white p-5 sm:p-7 border border-[#1e2d3b] shadow-xl">
         <div className="relative z-10">
           {/* Top Bar: Title on left & Status Badge on top right */}
           <div className="flex items-center justify-between gap-2 mb-3">
@@ -195,8 +195,8 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
         </div>
       </div>
 
-      {/* 2. Key Financial KPIs: each card is a direct grid cell so everything sits on one line */}
-      <>
+      {/* 2. Key Financial KPIs Grid */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {/* CASH IN */}
         <div className="bg-white rounded-2xl p-4 border border-slate-200/90 shadow-xs flex flex-col justify-between hover:border-emerald-300/80 transition-all">
           <div className="flex items-center justify-between text-emerald-600 mb-2">
@@ -276,7 +276,7 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
             </p>
           </div>
         </div>
-      </>
+      </div>
     </div>
   );
 };

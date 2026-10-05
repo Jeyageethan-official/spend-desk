@@ -25,37 +25,6 @@ export const getLocalDateString = (d: Date = new Date()): string => {
   return `${year}-${month}-${day}`;
 };
 
-/**
- * Resolve a quick date preset (today / week / month) into a concrete local-date range.
- * Always computed from the local clock (never UTC) so "Today" is correct in every timezone
- * and rolls over automatically at midnight.
- */
-export const getPresetRange = (
-  type: string,
-  now: Date = new Date()
-): { startDate: string; endDate: string } | null => {
-  const todayStr = getLocalDateString(now);
-  if (type === 'today') return { startDate: todayStr, endDate: todayStr };
-  if (type === 'yesterday') {
-    const y = new Date(now);
-    y.setDate(y.getDate() - 1);
-    const yStr = getLocalDateString(y);
-    return { startDate: yStr, endDate: yStr };
-  }
-  if (type === 'week') {
-    const mon = new Date(now);
-    const day = mon.getDay(); // 0 = Sunday
-    mon.setDate(mon.getDate() - (day === 0 ? 6 : day - 1));
-    return { startDate: getLocalDateString(mon), endDate: todayStr };
-  }
-  if (type === 'month') {
-    const first = new Date(now.getFullYear(), now.getMonth(), 1);
-    return { startDate: getLocalDateString(first), endDate: todayStr };
-  }
-  if (type === 'all') return { startDate: '', endDate: '' };
-  return null;
-};
-
 export const formatDateToDisplayHeader = (dateStr: string): string => {
   if (!dateStr) return '';
   try {
