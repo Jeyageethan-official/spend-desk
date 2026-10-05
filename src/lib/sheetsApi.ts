@@ -226,6 +226,15 @@ export const createMoneyTrackerSpreadsheet = async (
           },
         },
       },
+      {
+        properties: {
+          title: 'Lend_Borrow',
+          gridProperties: {
+            rowCount: 500,
+            columnCount: 10,
+          },
+        },
+      },
     ],
   };
 
@@ -274,22 +283,17 @@ export const applyTransactionsSheetDesign = async (
     const txSheet = metaData.sheets?.find((s: any) => s.properties?.title === 'Transactions') || metaData.sheets?.[0];
     const sheetId = txSheet?.properties?.sheetId ?? 0;
 
-    // Palette aligned with SpendDesk Dashboard (navy + brand green)
-    const softNavy = { red: 19 / 255, green: 31 / 255, blue: 43 / 255 }; // #131F2B
+    // Palette (previous Transactions styling — restored by request)
+    const softNavy = { red: 31 / 255, green: 58 / 255, blue: 100 / 255 }; // #1F3A64
     const white = { red: 1, green: 1, blue: 1 };
-    const greenText = { red: 15 / 255, green: 138 / 255, blue: 95 / 255 }; // #0F8A5F
-    const greenBg = { red: 240 / 255, green: 250 / 255, blue: 245 / 255 }; // #F0FAF5
-    const redText = { red: 194 / 255, green: 51 / 255, blue: 77 / 255 }; // #C2334D
+    const greenText = { red: 13 / 255, green: 115 / 255, blue: 55 / 255 }; // #0d7337
+    const greenBg = { red: 230 / 255, green: 244 / 255, blue: 234 / 255 }; // #e6f4ea
+    const redText = { red: 197 / 255, green: 34 / 255, blue: 31 / 255 }; // #c5221f
     const redBg = { red: 252 / 255, green: 232 / 255, blue: 230 / 255 }; // #fce8e6
     const blueText = { red: 37 / 255, green: 99 / 255, blue: 235 / 255 }; // #2563eb
-    const lightGreyBorder = { red: 226 / 255, green: 232 / 255, blue: 240 / 255 }; // #E2E8F0
-    const dateBannerBg = { red: 240 / 255, green: 250 / 255, blue: 245 / 255 }; // #F0FAF5
-    const dateBannerText = { red: 17 / 255, green: 107 / 255, blue: 78 / 255 }; // #116B4E
-    const spacerBg = { red: 244 / 255, green: 246 / 255, blue: 248 / 255 }; // #F4F6F8
-    const lendHeaderBg = { red: 180 / 255, green: 83 / 255, blue: 9 / 255 }; // #B45309
-    const lendSubBg = { red: 255 / 255, green: 247 / 255, blue: 237 / 255 }; // #FFF7ED
-    const lendSubText = { red: 154 / 255, green: 52 / 255, blue: 18 / 255 }; // #9A3412
-    const zebraBg = { red: 250 / 255, green: 251 / 255, blue: 252 / 255 }; // #FAFBFC
+    const lightGreyBorder = { red: 229 / 255, green: 231 / 255, blue: 235 / 255 }; // #e5e7eb
+    const lightBlueRowBg = { red: 235 / 255, green: 243 / 255, blue: 254 / 255 }; // #ebf3fe
+    const spacerBg = { red: 248 / 255, green: 249 / 255, blue: 250 / 255 }; // #f8f9fa
 
     const requests: any[] = [
       // 1. Column Widths (A to P)
@@ -362,7 +366,7 @@ export const applyTransactionsSheetDesign = async (
           fields: 'userEnteredFormat(backgroundColor)',
         },
       },
-      // 6. Format & Merge LEND MONEY header over M1:P1 — warm amber (distinct from main ledger)
+      // 6. Format & Merge LEND MONEY header over M1:P1 (columns 12 to 16) with soft navy
       {
         mergeCells: {
           range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 12, endColumnIndex: 16 },
@@ -374,7 +378,7 @@ export const applyTransactionsSheetDesign = async (
           range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 12, endColumnIndex: 16 },
           cell: {
             userEnteredFormat: {
-              backgroundColor: lendHeaderBg,
+              backgroundColor: softNavy,
               textFormat: { foregroundColor: white, bold: true, fontSize: 10 },
               horizontalAlignment: 'CENTER',
             },
@@ -388,57 +392,12 @@ export const applyTransactionsSheetDesign = async (
           range: { sheetId, startRowIndex: 1, endRowIndex: 2, startColumnIndex: 12, endColumnIndex: 16 },
           cell: {
             userEnteredFormat: {
-              backgroundColor: lendSubBg,
-              textFormat: { foregroundColor: lendSubText, bold: true, fontSize: 9 },
+              backgroundColor: softNavy,
+              textFormat: { foregroundColor: white, bold: true, fontSize: 9 },
               horizontalAlignment: 'CENTER',
             },
           },
           fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)',
-        },
-      },
-      // Also tint Row 2 spacers + blank main header cells for a clean frozen band
-      {
-        repeatCell: {
-          range: { sheetId, startRowIndex: 1, endRowIndex: 2, startColumnIndex: 0, endColumnIndex: 8 },
-          cell: {
-            userEnteredFormat: {
-              backgroundColor: softNavy,
-            },
-          },
-          fields: 'userEnteredFormat(backgroundColor)',
-        },
-      },
-      {
-        repeatCell: {
-          range: { sheetId, startRowIndex: 1, endRowIndex: 2, startColumnIndex: 8, endColumnIndex: 9 },
-          cell: {
-            userEnteredFormat: {
-              backgroundColor: spacerBg,
-            },
-          },
-          fields: 'userEnteredFormat(backgroundColor)',
-        },
-      },
-      {
-        repeatCell: {
-          range: { sheetId, startRowIndex: 1, endRowIndex: 2, startColumnIndex: 9, endColumnIndex: 11 },
-          cell: {
-            userEnteredFormat: {
-              backgroundColor: softNavy,
-            },
-          },
-          fields: 'userEnteredFormat(backgroundColor)',
-        },
-      },
-      {
-        repeatCell: {
-          range: { sheetId, startRowIndex: 1, endRowIndex: 2, startColumnIndex: 11, endColumnIndex: 12 },
-          cell: {
-            userEnteredFormat: {
-              backgroundColor: spacerBg,
-            },
-          },
-          fields: 'userEnteredFormat(backgroundColor)',
         },
       },
       // 8. Freeze top 2 rows
@@ -586,8 +545,8 @@ export const applyTransactionsSheetDesign = async (
             range: { sheetId, startRowIndex: rIdx, endRowIndex: rIdx + 1, startColumnIndex: 0, endColumnIndex: 11 },
             cell: {
               userEnteredFormat: {
-                backgroundColor: dateBannerBg,
-                textFormat: { foregroundColor: dateBannerText, bold: true, fontSize: 10 },
+                backgroundColor: lightBlueRowBg,
+                textFormat: { foregroundColor: softNavy, bold: true, fontSize: 10 },
                 horizontalAlignment: 'CENTER',
               },
             },
@@ -601,19 +560,6 @@ export const applyTransactionsSheetDesign = async (
     const existingRules = txSheet?.conditionalFormats || [];
     if (existingRules.length === 0) {
       requests.push(
-        // Subtle zebra striping for readability (skips header rows via formula on row 3+)
-        {
-          addConditionalFormatRule: {
-            rule: {
-              ranges: [{ sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 0, endColumnIndex: 16 }],
-              booleanRule: {
-                condition: { type: 'CUSTOM_FORMULA', values: [{ userEnteredValue: '=AND(ISEVEN(ROW()),$A3<>"")' }] },
-                format: { backgroundColor: zebraBg },
-              },
-            },
-            index: 0,
-          },
-        },
         // Rule: Type IN -> Green text & soft green pill background
         {
           addConditionalFormatRule: {
@@ -624,7 +570,7 @@ export const applyTransactionsSheetDesign = async (
                 format: { backgroundColor: greenBg, textFormat: { foregroundColor: greenText, bold: true } },
               },
             },
-            index: 1,
+            index: 0,
           },
         },
         // Rule: Type OUT -> Red text & soft red pill background
@@ -637,7 +583,7 @@ export const applyTransactionsSheetDesign = async (
                 format: { backgroundColor: redBg, textFormat: { foregroundColor: redText, bold: true } },
               },
             },
-            index: 2,
+            index: 1,
           },
         },
         // Rule: Amount for IN -> Green bold text
@@ -650,7 +596,7 @@ export const applyTransactionsSheetDesign = async (
                 format: { textFormat: { foregroundColor: greenText, bold: true } },
               },
             },
-            index: 3,
+            index: 2,
           },
         },
         // Rule: Amount for OUT -> Red bold text
@@ -663,7 +609,7 @@ export const applyTransactionsSheetDesign = async (
                 format: { textFormat: { foregroundColor: redText, bold: true } },
               },
             },
-            index: 4,
+            index: 3,
           },
         },
         // Rule: Payment Method Cash -> Green text & soft green background
@@ -676,7 +622,7 @@ export const applyTransactionsSheetDesign = async (
                 format: { backgroundColor: greenBg, textFormat: { foregroundColor: greenText } },
               },
             },
-            index: 5,
+            index: 4,
           },
         },
         // Rule: Out of Wallet (Col J) -> Soft red background & red bold text
@@ -689,7 +635,7 @@ export const applyTransactionsSheetDesign = async (
                 format: { backgroundColor: redBg, textFormat: { foregroundColor: redText, bold: true } },
               },
             },
-            index: 6,
+            index: 5,
           },
         }
       );
@@ -867,6 +813,13 @@ export const initializeSheetLayout = async (accessToken: string, spreadsheetId: 
 
   // Apply transactions design
   await applyTransactionsSheetDesign(accessToken, spreadsheetId);
+
+  // Ensure Lend_Borrow tab + headers exist on brand-new spreadsheets
+  try {
+    await overwriteLendItemsInSheet(accessToken, spreadsheetId, []);
+  } catch (e) {
+    console.warn('Lend_Borrow init notice:', e);
+  }
 
   // Initialize and style Dashboard with live layout
   await syncDashboardStats(
@@ -1317,12 +1270,87 @@ export const overwriteTransactionsInSheet = async (
   await applyTransactionsSheetDesign(accessToken, spreadsheetId, dateRowIndices);
 };
 
+/** Ensure a named tab exists (creates it when missing). */
+export const ensureNamedSheet = async (
+  accessToken: string,
+  spreadsheetId: string,
+  title: string,
+  gridProperties: { rowCount?: number; columnCount?: number } = {}
+): Promise<void> => {
+  const metaRes = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets(properties)`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  if (!metaRes.ok) {
+    throw parseGoogleApiError(metaRes.status, await metaRes.text(), `Failed to check for ${title} sheet`);
+  }
+  const meta = await metaRes.json();
+  const exists = meta.sheets?.some((s: any) => s.properties?.title === title);
+  if (exists) return;
+
+  const addRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      requests: [{
+        addSheet: {
+          properties: {
+            title,
+            gridProperties: {
+              rowCount: gridProperties.rowCount ?? 500,
+              columnCount: gridProperties.columnCount ?? 10,
+            },
+          },
+        },
+      }],
+    }),
+  });
+  if (!addRes.ok) {
+    throw parseGoogleApiError(addRes.status, await addRes.text(), `Failed to create ${title} sheet`);
+  }
+};
+
+const LEND_BORROW_HEADERS = [
+  'ID',
+  'Person',
+  'Type',
+  'Reason',
+  'Amount',
+  'Date',
+  'Due Date',
+  'Status',
+  'Phone',
+];
+
 export const overwriteLendItemsInSheet = async (
   accessToken: string,
   spreadsheetId: string,
   lendItems: LendItem[]
 ) => {
-  // Clear existing rows first
+  // Older spreadsheets only had Dashboard + Transactions — create Lend_Borrow when missing.
+  await ensureNamedSheet(accessToken, spreadsheetId, 'Lend_Borrow', { rowCount: 500, columnCount: 10 });
+
+  // Always (re)write header row so the tab is valid even when empty.
+  const headerRes = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Lend_Borrow!A1:I1?valueInputOption=USER_ENTERED`,
+    {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        range: 'Lend_Borrow!A1:I1',
+        majorDimension: 'ROWS',
+        values: [LEND_BORROW_HEADERS],
+      }),
+    }
+  );
+  if (!headerRes.ok) {
+    throw parseGoogleApiError(headerRes.status, await headerRes.text(), 'Failed to write Lend_Borrow headers');
+  }
+
+  // Clear existing data rows
   try {
     await fetch(
       `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Lend_Borrow!A2:Z1000:clear`,

@@ -269,12 +269,15 @@ export const normalizeDashboardPeriod = (raw: unknown): DashboardPeriod => {
 export const parseSheetDateCell = (raw: unknown, fallback = ''): string => {
   if (raw == null || raw === '') return fallback;
   if (typeof raw === 'number' && Number.isFinite(raw)) {
+    // 0 / negative is not a real date (empty DATE-formatted cells often round-trip as 0).
+    if (raw <= 0) return fallback;
     // Google Sheets serial date (days since 1899-12-30), local calendar day.
     const epoch = new Date(1899, 11, 30);
     epoch.setDate(epoch.getDate() + Math.floor(raw));
     return getLocalDateString(epoch);
   }
   const s = String(raw).trim();
+  if (!s || s === '0' || s === '—' || s === '-') return fallback;
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
   const mdy = /^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/.exec(s);
   if (mdy) {
@@ -488,20 +491,32 @@ export const buildDashboardLayout = (input: DashboardInput): DashboardLayout => 
   });
   {
     const serial = isoToSheetSerial(resolved.startDate);
-    cell(ROW.filter, 5, 5, serial == null ? '' : serial, {
-      bg: P.headBg, color: P.ink, size: 11, bold: true, h: 'CENTER', v: 'MIDDLE',
-      num: 'yyyy-mm-dd', numKind: 'DATE',
-    });
+    if (serial == null) {
+      cell(ROW.filter, 5, 5, '', {
+        bg: P.headBg, color: P.faint, size: 11, h: 'CENTER', v: 'MIDDLE',
+      });
+    } else {
+      cell(ROW.filter, 5, 5, serial, {
+        bg: P.headBg, color: P.ink, size: 11, bold: true, h: 'CENTER', v: 'MIDDLE',
+        num: 'yyyy-mm-dd', numKind: 'DATE',
+      });
+    }
   }
   cell(ROW.filter, 6, 6, 'TO', {
     bg: P.filterBg, color: P.muted, size: 8, bold: true, h: 'RIGHT', padR: 6, v: 'MIDDLE',
   });
   {
     const serial = isoToSheetSerial(resolved.endDate);
-    cell(ROW.filter, 7, 8, serial == null ? '' : serial, {
-      bg: P.headBg, color: P.ink, size: 11, bold: true, h: 'CENTER', v: 'MIDDLE',
-      num: 'yyyy-mm-dd', numKind: 'DATE',
-    });
+    if (serial == null) {
+      cell(ROW.filter, 7, 8, '', {
+        bg: P.headBg, color: P.faint, size: 11, h: 'CENTER', v: 'MIDDLE',
+      });
+    } else {
+      cell(ROW.filter, 7, 8, serial, {
+        bg: P.headBg, color: P.ink, size: 11, bold: true, h: 'CENTER', v: 'MIDDLE',
+        num: 'yyyy-mm-dd', numKind: 'DATE',
+      });
+    }
   }
   cell(ROW.filter, 10, 17, `${resolved.label}  ·  Edit Period / From / To, then Sync from SpendDesk`, {
     bg: P.filterBg, color: P.faint, size: 9, h: 'RIGHT', padR: 14, v: 'MIDDLE', italic: true,

@@ -949,7 +949,16 @@ export default function App() {
       await overwriteTransactionsInSheet(sheetToken, activeSheet.id, currentLocalTxs, currentLocalLends);
       
       // 2. Write Lend & Borrow records to dedicated Lend_Borrow tab
-      await overwriteLendItemsInSheet(sheetToken, activeSheet.id, currentLocalLends);
+      //    (auto-creates the tab on older sheets). Do not block Dashboard if this fails.
+      try {
+        await overwriteLendItemsInSheet(sheetToken, activeSheet.id, currentLocalLends);
+      } catch (lendErr: any) {
+        console.error('Lend_Borrow sync failed:', lendErr);
+        showNotification(
+          `Lend records warning: ${lendErr?.message || 'Could not update Lend_Borrow tab'}`,
+          'error'
+        );
+      }
 
       // 3. Update Dashboard KPI Totals & Trends (must not fail silently while txs succeed)
       const allSummary = calculateSummary(currentLocalTxs, currentLocalTxs);
