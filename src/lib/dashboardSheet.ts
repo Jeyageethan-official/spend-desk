@@ -93,6 +93,8 @@ export interface DashboardLayout {
   values: CellValue[][];
   /** Full ordered batchUpdate request list that rebuilds the tab. */
   buildRequests: (sheetId: number, current: { rowCount: number; columnCount: number }) => any[];
+  /** Phased requests so resize/wipe never share a batch with formats (Sheets is picky). */
+  buildRequestPhases: (sheetId: number, current: { rowCount: number; columnCount: number }) => any[][];
 }
 
 export const DASHBOARD_PERIODS: DashboardPeriod[] = [
@@ -739,14 +741,13 @@ export const buildDashboardLayout = (input: DashboardInput): DashboardLayout => 
       },
       horizontalAlignment: f.h ?? 'LEFT',
       verticalAlignment: f.v ?? 'MIDDLE',
-      wrapStrategy: 'CLIP',
-      padding: { top: 0, bottom: 0, left: f.padL ?? 0, right: f.padR ?? 0 },
+      wrapStrategy: 'OVERFLOW_CELL',
     };
     if (f.num) uf.numberFormat = { type: f.numKind ?? 'NUMBER', pattern: f.num };
     return { userEnteredFormat: uf };
   };
   const FORMAT_FIELDS =
-    'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment,wrapStrategy,padding,numberFormat)';
+    'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment,wrapStrategy,numberFormat)';
 
   const toCellData = (v: CellValue) => {
     if (v === null) return {};
@@ -755,31 +756,58 @@ export const buildDashboardLayout = (input: DashboardInput): DashboardLayout => 
     return { userEnteredValue: { formulaValue: v.formula } };
   };
 
-  const buildRequests = (sheetId: number, current: { rowCount: number; columnCount: number }): any[] => {
-    const requests: any[] = [];
+  const buildRequestPhases = (sheetId: number, current: { rowCount: number; columnCount: number }): any[][] => {
     const curRows = Math.max(1, current.rowCount);
     const curCols = Math.max(1, current.columnCount);
-    const everything = { sheetId, startRowIndex: 0, endRowIndex: curRows, startColumnIndex: 0, endColumnIndex: curCols };
+    // Wipe must cover the larger of old vs new grid so leftover cells outside the new
+    // layout cannot survive (e.g. old 8-card dashboard wider/taller than new).
+    const wipeRows = Math.max(curRows, rowCount);
+    const wipeCols = Math.max(curCols, columnCount);
+    const everything = {
+      sheetId,
+      startRowIndex: 0,
+      endRowIndex: wipeRows,
+      startColumnIndex: 0,
+      endColumnIndex: wipeCols,
+    };
 
-    // 1. Wipe the tab: old merges first, then every value and format.
-    requests.push({ unmergeCells: { range: everything } });
-    requests.push({ repeatCell: { range: everything, cell: {}, fields: 'userEnteredValue,userEnteredFormat,dataValidation' } });
-
-    // 2. Grid size, gridlines off, tab colour.
-    requests.push({
-      updateSheetProperties: {
-        properties: {
-          sheetId,
-          tabColorStyle: { rgbColor: rgb(P.brandBright) },
-          gridProperties: { hideGridlines: true, rowCount, columnCount },
+    const resize = [
+      {
+        updateSheetProperties: {
+          properties: {
+            sheetId,
+            tabColorStyle: { rgbColor: rgb(P.brandBright) },
+            gridProperties: {
+              hideGridlines: true,
+              rowCount: Math.max(rowCount, wipeRows),
+              columnCount: Math.max(columnCount, wipeCols),
+            },
+          },
+          fields: 'tabColorStyle,gridProperties(hideGridlines,rowCount,columnCount)',
         },
-        fields: 'tabColorStyle,gridProperties(hideGridlines,rowCount,columnCount)',
       },
-    });
+    ];
 
-    // 3. Row heights / column widths.
+    const wipe = [
+      { unmergeCells: { range: everything } },
+      { repeatCell: { range: everything, cell: {}, fields: 'userEnteredValue,userEnteredFormat' } },
+    ];
+
+    const shrink = [
+      {
+        updateSheetProperties: {
+          properties: {
+            sheetId,
+            gridProperties: { hideGridlines: true, rowCount, columnCount },
+          },
+          fields: 'gridProperties(hideGridlines,rowCount,columnCount)',
+        },
+      },
+    ];
+
+    const dimensions: any[] = [];
     ROW_DEFS.forEach(([, px], i) => {
-      requests.push({
+      dimensions.push({
         updateDimensionProperties: {
           range: { sheetId, dimension: 'ROWS', startIndex: i, endIndex: i + 1 },
           properties: { pixelSize: px },
@@ -788,7 +816,7 @@ export const buildDashboardLayout = (input: DashboardInput): DashboardLayout => 
       });
     });
     COL_PX.forEach((px, i) => {
-      requests.push({
+      dimensions.push({
         updateDimensionProperties: {
           range: { sheetId, dimension: 'COLUMNS', startIndex: i, endIndex: i + 1 },
           properties: { pixelSize: px },
@@ -797,89 +825,93 @@ export const buildDashboardLayout = (input: DashboardInput): DashboardLayout => 
       });
     });
 
-    // 4. Values (typed, never parsed from text).
-    requests.push({
-      updateCells: {
-        start: { sheetId, rowIndex: 0, columnIndex: 0 },
-        rows: values.map((row) => ({ values: row.map(toCellData) })),
-        fields: 'userEnteredValue',
+    const valuesReq = [
+      {
+        updateCells: {
+          start: { sheetId, rowIndex: 0, columnIndex: 0 },
+          rows: values.map((row) => ({ values: row.map(toCellData) })),
+          fields: 'userEnteredValue',
+        },
       },
-    });
+    ];
 
-    // 5. Merges, then formats in declaration order (later specs win), then borders.
-    specs.filter((s) => s.merge).forEach((s) => {
-      requests.push({ mergeCells: { range: range(sheetId, s), mergeType: 'MERGE_ALL' } });
-    });
-    specs.forEach((s) => {
-      requests.push({
-        repeatCell: { range: range(sheetId, s), cell: cellFormat(s.fmt), fields: FORMAT_FIELDS },
-      });
-    });
-    borders.forEach((b) => {
+    const merges = specs.filter((s) => s.merge).map((s) => ({
+      mergeCells: { range: range(sheetId, s), mergeType: 'MERGE_ALL' },
+    }));
+
+    const formats = specs.map((s) => ({
+      repeatCell: { range: range(sheetId, s), cell: cellFormat(s.fmt), fields: FORMAT_FIELDS },
+    }));
+
+    const borderReqs = borders.map((b) => {
       const edge = { style: 'SOLID', color: rgb(b.color) };
       const req: any = { range: range(sheetId, b) };
       if (b.top) req.top = edge;
       if (b.bottom) req.bottom = edge;
       if (b.left) req.left = edge;
       if (b.right) req.right = edge;
-      requests.push({ updateBorders: req });
+      return { updateBorders: req };
     });
 
-    // 6. Filter controls: period dropdown + date pickers on From / To.
-    requests.push({
-      setDataValidation: {
-        range: {
-          sheetId,
-          startRowIndex: ROW.filter,
-          endRowIndex: ROW.filter + 1,
-          startColumnIndex: 2,
-          endColumnIndex: 4,
-        },
-        rule: {
-          condition: {
-            type: 'ONE_OF_LIST',
-            values: DASHBOARD_PERIODS.map((p) => ({ userEnteredValue: p })),
+    const validations = [
+      {
+        setDataValidation: {
+          range: {
+            sheetId,
+            startRowIndex: ROW.filter,
+            endRowIndex: ROW.filter + 1,
+            startColumnIndex: 2,
+            endColumnIndex: 4,
           },
-          showCustomUi: true,
-          strict: true,
+          rule: {
+            condition: {
+              type: 'ONE_OF_LIST',
+              values: DASHBOARD_PERIODS.map((p) => ({ userEnteredValue: p })),
+            },
+            showCustomUi: true,
+            strict: true,
+          },
         },
       },
-    });
-    requests.push({
-      setDataValidation: {
-        range: {
-          sheetId,
-          startRowIndex: ROW.filter,
-          endRowIndex: ROW.filter + 1,
-          startColumnIndex: 5,
-          endColumnIndex: 6,
-        },
-        rule: {
-          condition: { type: 'DATE_IS_VALID' },
-          showCustomUi: true,
-          strict: false,
-        },
-      },
-    });
-    requests.push({
-      setDataValidation: {
-        range: {
-          sheetId,
-          startRowIndex: ROW.filter,
-          endRowIndex: ROW.filter + 1,
-          startColumnIndex: 7,
-          endColumnIndex: 9,
-        },
-        rule: {
-          condition: { type: 'DATE_IS_VALID' },
-          showCustomUi: true,
-          strict: false,
+      {
+        setDataValidation: {
+          range: {
+            sheetId,
+            startRowIndex: ROW.filter,
+            endRowIndex: ROW.filter + 1,
+            startColumnIndex: 5,
+            endColumnIndex: 6,
+          },
+          rule: {
+            condition: { type: 'DATE_IS_VALID' },
+            showCustomUi: true,
+            strict: false,
+          },
         },
       },
-    });
+      {
+        setDataValidation: {
+          range: {
+            sheetId,
+            startRowIndex: ROW.filter,
+            endRowIndex: ROW.filter + 1,
+            startColumnIndex: 7,
+            endColumnIndex: 9,
+          },
+          rule: {
+            condition: { type: 'DATE_IS_VALID' },
+            showCustomUi: true,
+            strict: false,
+          },
+        },
+      },
+    ];
 
-    return requests;
+    return [resize, wipe, shrink, dimensions, valuesReq, merges, formats, borderReqs, validations];
   };
 
-  return { rowCount, columnCount, values, buildRequests };
+  const buildRequests = (sheetId: number, current: { rowCount: number; columnCount: number }): any[] =>
+    buildRequestPhases(sheetId, current).flat();
+
+  return { rowCount, columnCount, values, buildRequests, buildRequestPhases };
 };

@@ -951,11 +951,19 @@ export default function App() {
       // 2. Write Lend & Borrow records to dedicated Lend_Borrow tab
       await overwriteLendItemsInSheet(sheetToken, activeSheet.id, currentLocalLends);
 
-      // 3. Update Dashboard KPI Totals & Trends
+      // 3. Update Dashboard KPI Totals & Trends (must not fail silently while txs succeed)
       const allSummary = calculateSummary(currentLocalTxs, currentLocalTxs);
       const catSummary = calculateCategoryBreakdown(currentLocalTxs);
       const { dayTotals } = calculateWeeklyDailyTrend(currentLocalTxs);
-      await syncDashboardStats(sheetToken, activeSheet.id, allSummary, catSummary, dayTotals, currentLocalTxs, currentLocalLends);
+      try {
+        await syncDashboardStats(sheetToken, activeSheet.id, allSummary, catSummary, dayTotals, currentLocalTxs, currentLocalLends);
+      } catch (dashErr: any) {
+        console.error('Dashboard sync failed:', dashErr);
+        const dashMsg = dashErr?.message || 'Dashboard rebuild failed';
+        // Always surface this — otherwise users only see Transactions update and think deploy failed.
+        showNotification(`Transactions synced, but Dashboard failed: ${dashMsg}`, 'error');
+        return false;
+      }
 
       const updatedMeta: GoogleSheetMeta = {
         ...activeSheet,

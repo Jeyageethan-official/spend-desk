@@ -212,8 +212,8 @@ export const createMoneyTrackerSpreadsheet = async (
         properties: {
           title: 'Dashboard',
           gridProperties: {
-            rowCount: 42,
-            columnCount: 14,
+            rowCount: 60,
+            columnCount: 20,
           },
         },
       },
@@ -708,13 +708,14 @@ export const applyTransactionsSheetDesign = async (
   }
 };
 
-const CHUNK_SIZE = 90;
+const CHUNK_SIZE = 80;
 
 const postSheetBatchUpdate = async (
   accessToken: string,
   spreadsheetId: string,
   requests: any[]
 ) => {
+  if (!requests.length) return;
   for (let i = 0; i < requests.length; i += CHUNK_SIZE) {
     const chunk = requests.slice(i, i + CHUNK_SIZE);
     const formatRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
@@ -759,9 +760,9 @@ export const readDashboardFilter = async (
 };
 
 /**
- * Rebuilds the whole Dashboard tab (values + formatting) via chunked batchUpdates.
- * The layout comes from `buildDashboardLayout` (src/lib/dashboardSheet.ts), which is
- * the single source of truth for both what is written and how it is styled.
+ * Rebuilds the whole Dashboard tab (values + formatting) in safe phases.
+ * Resize/wipe run before merges/formats so a format failure cannot leave a half-wiped tab
+ * without values — and Transactions sync can no longer succeed while Dashboard silently dies.
  */
 export const applyDashboardSheetDesign = async (
   accessToken: string,
@@ -785,12 +786,19 @@ export const applyDashboardSheetDesign = async (
   const sheetId = dashSheet.properties.sheetId;
   const grid = dashSheet.properties.gridProperties || {};
 
-  const requests = layout.buildRequests(sheetId, {
-    rowCount: grid.rowCount || 1000,
-    columnCount: grid.columnCount || 26,
-  });
+  const phases = layout.buildRequestPhases
+    ? layout.buildRequestPhases(sheetId, {
+        rowCount: grid.rowCount || 1000,
+        columnCount: grid.columnCount || 26,
+      })
+    : [layout.buildRequests(sheetId, {
+        rowCount: grid.rowCount || 1000,
+        columnCount: grid.columnCount || 26,
+      })];
 
-  await postSheetBatchUpdate(accessToken, spreadsheetId, requests);
+  for (const phase of phases) {
+    await postSheetBatchUpdate(accessToken, spreadsheetId, phase);
+  }
 
   // Clean up any embedded charts left on the Dashboard so the layout stays clean
   if (dashSheet.charts && dashSheet.charts.length > 0) {
