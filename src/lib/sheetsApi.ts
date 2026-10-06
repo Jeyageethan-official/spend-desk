@@ -274,19 +274,19 @@ export const applyTransactionsSheetDesign = async (
     const txSheet = metaData.sheets?.find((s: any) => s.properties?.title === 'Transactions') || metaData.sheets?.[0];
     const sheetId = txSheet?.properties?.sheetId ?? 0;
 
-    // Professional ledger palette (light highlights + brighter navy body text)
+    // Ledger palette: navy headers, ocean body text (#005975), soft red/green highlights
     const headerNavy = { red: 31 / 255, green: 58 / 255, blue: 100 / 255 }; // #1F3A64 headers only
-    const softNavy = { red: 59 / 255, green: 107 / 255, blue: 168 / 255 }; // #3B6BA8 brighter navy body text
+    const ocean = { red: 0 / 255, green: 89 / 255, blue: 117 / 255 }; // #005975 body + dates
     const white = { red: 1, green: 1, blue: 1 };
     const pageWhite = { red: 1, green: 1, blue: 1 };
     const greenText = { red: 21 / 255, green: 128 / 255, blue: 61 / 255 }; // #15803D
-    const greenBg = { red: 220 / 255, green: 252 / 255, blue: 231 / 255 }; // #DCFCE7 light green
+    const greenBg = { red: 245 / 255, green: 254 / 255, blue: 249 / 255 }; // #F5FEF9 very light green
     const redText = { red: 185 / 255, green: 28 / 255, blue: 28 / 255 }; // #B91C1C
-    const redBg = { red: 254 / 255, green: 226 / 255, blue: 226 / 255 }; // #FEE2E2 light red
-    const cardText = { red: 29 / 255, green: 78 / 255, blue: 216 / 255 }; // #1D4ED8
-    const cardBg = { red: 219 / 255, green: 234 / 255, blue: 254 / 255 }; // #DBEAFE light blue
+    const redBg = { red: 255 / 255, green: 250 / 255, blue: 250 / 255 }; // #FFFAFA very light red
+    const cardText = { red: 0 / 255, green: 89 / 255, blue: 117 / 255 }; // ocean for card/bank rows
+    const cardBg = { red: 232 / 255, green: 244 / 255, blue: 248 / 255 }; // #E8F4F8 light ocean
     const lightGreyBorder = { red: 226 / 255, green: 232 / 255, blue: 240 / 255 }; // #E2E8F0
-    const dateBannerBg = { red: 239 / 255, green: 246 / 255, blue: 255 / 255 }; // #EFF6FF soft date band
+    const dateBannerBg = { red: 232 / 255, green: 244 / 255, blue: 248 / 255 }; // #E8F4F8 soft date band
     const spacerBg = { red: 248 / 255, green: 250 / 255, blue: 252 / 255 }; // #F8FAFC
 
     const requests: any[] = [
@@ -383,7 +383,7 @@ export const applyTransactionsSheetDesign = async (
           cell: {
             userEnteredFormat: {
               backgroundColor: pageWhite,
-              textFormat: { foregroundColor: softNavy, bold: false, fontSize: 9 },
+              textFormat: { foregroundColor: ocean, bold: false, fontSize: 9 },
             },
           },
           fields: 'userEnteredFormat(backgroundColor,textFormat)',
@@ -420,20 +420,44 @@ export const applyTransactionsSheetDesign = async (
           cell: {
             userEnteredFormat: {
               backgroundColor: pageWhite,
-              textFormat: { foregroundColor: softNavy, bold: false },
+              textFormat: { foregroundColor: ocean, bold: false },
             },
           },
           fields: 'userEnteredFormat(backgroundColor,textFormat)',
         },
       },
 
-      // Date + Time → brighter navy, centered
+      // Category + notes (default body text — red/green come from conditional rules only)
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 3, endColumnIndex: 4 },
+          cell: {
+            userEnteredFormat: {
+              textFormat: { foregroundColor: ocean },
+            },
+          },
+          fields: 'userEnteredFormat(textFormat)',
+        },
+      },
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 5, endColumnIndex: 6 },
+          cell: {
+            userEnteredFormat: {
+              textFormat: { foregroundColor: ocean },
+            },
+          },
+          fields: 'userEnteredFormat(textFormat)',
+        },
+      },
+
+      // Date + Time → #005975, centered
       {
         repeatCell: {
           range: { sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 0, endColumnIndex: 2 },
           cell: {
             userEnteredFormat: {
-              textFormat: { foregroundColor: softNavy },
+              textFormat: { foregroundColor: ocean },
               horizontalAlignment: 'CENTER',
             },
           },
@@ -474,13 +498,13 @@ export const applyTransactionsSheetDesign = async (
           fields: 'userEnteredFormat(horizontalAlignment,verticalAlignment)',
         },
       },
-      // Balance → navy, right
+      // Balance → ocean, right
       {
         repeatCell: {
           range: { sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 7, endColumnIndex: 8 },
           cell: {
             userEnteredFormat: {
-              textFormat: { foregroundColor: softNavy },
+              textFormat: { foregroundColor: ocean },
               horizontalAlignment: 'RIGHT',
             },
           },
@@ -500,26 +524,26 @@ export const applyTransactionsSheetDesign = async (
           fields: 'userEnteredFormat(textFormat,horizontalAlignment)',
         },
       },
-      // Card Payment amounts → navy
+      // Card Payment amounts → ocean
       {
         repeatCell: {
           range: { sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 10, endColumnIndex: 11 },
           cell: {
             userEnteredFormat: {
-              textFormat: { foregroundColor: softNavy },
+              textFormat: { foregroundColor: ocean },
               horizontalAlignment: 'RIGHT',
             },
           },
           fields: 'userEnteredFormat(textFormat,horizontalAlignment)',
         },
       },
-      // Lend date / amount navy
+      // Lend block — dates #005975, other fields ocean
       {
         repeatCell: {
           range: { sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 12, endColumnIndex: 13 },
           cell: {
             userEnteredFormat: {
-              textFormat: { foregroundColor: softNavy },
+              textFormat: { foregroundColor: ocean },
               horizontalAlignment: 'CENTER',
             },
           },
@@ -529,8 +553,13 @@ export const applyTransactionsSheetDesign = async (
       {
         repeatCell: {
           range: { sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 13, endColumnIndex: 15 },
-          cell: { userEnteredFormat: { horizontalAlignment: 'LEFT' } },
-          fields: 'userEnteredFormat(horizontalAlignment)',
+          cell: {
+            userEnteredFormat: {
+              textFormat: { foregroundColor: ocean },
+              horizontalAlignment: 'LEFT',
+            },
+          },
+          fields: 'userEnteredFormat(textFormat,horizontalAlignment)',
         },
       },
       {
@@ -538,7 +567,7 @@ export const applyTransactionsSheetDesign = async (
           range: { sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 15, endColumnIndex: 16 },
           cell: {
             userEnteredFormat: {
-              textFormat: { foregroundColor: softNavy },
+              textFormat: { foregroundColor: ocean },
               horizontalAlignment: 'RIGHT',
             },
           },
@@ -569,7 +598,7 @@ export const applyTransactionsSheetDesign = async (
             cell: {
               userEnteredFormat: {
                 backgroundColor: dateBannerBg,
-                textFormat: { foregroundColor: softNavy, bold: true, fontSize: 10 },
+                textFormat: { foregroundColor: ocean, bold: true, fontSize: 10 },
                 horizontalAlignment: 'CENTER',
               },
             },
@@ -698,16 +727,19 @@ export const readDashboardFilter = async (
   try {
     const cells = getDashboardFilterCells();
     const res = await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(`Dashboard!${cells.range}`)}?valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER`,
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchGet?` +
+        `ranges=${encodeURIComponent(`Dashboard!${cells.period}`)}` +
+        `&ranges=${encodeURIComponent(`Dashboard!${cells.from}`)}` +
+        `&ranges=${encodeURIComponent(`Dashboard!${cells.to}`)}` +
+        `&valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER`,
       { headers: { Authorization: `Bearer ${accessToken}` } }
     );
     if (!res.ok) return fallback;
     const data = await res.json();
-    const row: any[] = data.values?.[0] || [];
-    // C=period, D=merge empty, E=FROM label, F=from date, G=TO label, H–I=to date
-    const period = normalizeDashboardPeriod(row[0]) as DashboardPeriod;
-    const startDate = parseSheetDateCell(row[3], '');
-    const endDate = parseSheetDateCell(row[5] ?? row[6], '');
+    const pick = (idx: number) => data.valueRanges?.[idx]?.values?.[0]?.[0];
+    const period = normalizeDashboardPeriod(pick(0)) as DashboardPeriod;
+    const startDate = parseSheetDateCell(pick(1), '');
+    const endDate = parseSheetDateCell(pick(2), '');
     return { period, startDate, endDate };
   } catch (e) {
     console.warn('Dashboard filter read notice:', e);

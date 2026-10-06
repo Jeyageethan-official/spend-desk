@@ -111,7 +111,7 @@ export const getDashboardFilterCells = () => {
   return {
     period: `C${r}`,
     from: `F${r}`,
-    to: `I${r}`,
+    to: `H${r}`,
     range: `C${r}:I${r}`,
   };
 };
@@ -142,6 +142,10 @@ const P = {
   track: '#EEF2F6',
   white: '#FFFFFF',
   filterBg: '#FFFFFF',
+  /** SpendDesk ocean — matches Transactions sheet body/date text */
+  ocean: '#005975',
+  oceanTint: '#E8F4F8',
+  oceanBorder: '#B8D4DE',
 } as const;
 
 const FONT = 'Roboto';
@@ -484,7 +488,7 @@ export const buildDashboardLayout = (input: DashboardInput): DashboardLayout => 
     bg: P.filterBg, color: P.muted, size: 8, bold: true, padL: 12, v: 'MIDDLE',
   });
   cell(ROW.filter, 2, 3, resolved.period, {
-    bg: P.headBg, color: P.ink, size: 11, bold: true, padL: 10, v: 'MIDDLE',
+    bg: P.oceanTint, color: P.ocean, size: 11, bold: true, padL: 10, v: 'MIDDLE',
   });
   cell(ROW.filter, 4, 4, 'FROM', {
     bg: P.filterBg, color: P.muted, size: 8, bold: true, h: 'RIGHT', padR: 6, v: 'MIDDLE',
@@ -493,11 +497,11 @@ export const buildDashboardLayout = (input: DashboardInput): DashboardLayout => 
     const serial = isoToSheetSerial(resolved.startDate);
     if (serial == null) {
       cell(ROW.filter, 5, 5, '', {
-        bg: P.headBg, color: P.faint, size: 11, h: 'CENTER', v: 'MIDDLE',
+        bg: P.oceanTint, color: P.faint, size: 11, h: 'CENTER', v: 'MIDDLE',
       });
     } else {
       cell(ROW.filter, 5, 5, serial, {
-        bg: P.headBg, color: P.ink, size: 11, bold: true, h: 'CENTER', v: 'MIDDLE',
+        bg: P.oceanTint, color: P.ocean, size: 11, bold: true, h: 'CENTER', v: 'MIDDLE',
         num: 'yyyy-mm-dd', numKind: 'DATE',
       });
     }
@@ -509,11 +513,11 @@ export const buildDashboardLayout = (input: DashboardInput): DashboardLayout => 
     const serial = isoToSheetSerial(resolved.endDate);
     if (serial == null) {
       cell(ROW.filter, 7, 8, '', {
-        bg: P.headBg, color: P.faint, size: 11, h: 'CENTER', v: 'MIDDLE',
+        bg: P.oceanTint, color: P.faint, size: 11, h: 'CENTER', v: 'MIDDLE',
       });
     } else {
       cell(ROW.filter, 7, 8, serial, {
-        bg: P.headBg, color: P.ink, size: 11, bold: true, h: 'CENTER', v: 'MIDDLE',
+        bg: P.oceanTint, color: P.ocean, size: 11, bold: true, h: 'CENTER', v: 'MIDDLE',
         num: 'yyyy-mm-dd', numKind: 'DATE',
       });
     }
@@ -521,7 +525,7 @@ export const buildDashboardLayout = (input: DashboardInput): DashboardLayout => 
   cell(ROW.filter, 10, 17, `${resolved.label}  ·  Edit Period / From / To, then Sync from SpendDesk`, {
     bg: P.filterBg, color: P.faint, size: 9, h: 'RIGHT', padR: 14, v: 'MIDDLE', italic: true,
   });
-  box(ROW.filter, FULL[0], ROW.filter, FULL[1], P.border);
+  box(ROW.filter, FULL[0], ROW.filter, FULL[1], P.oceanBorder);
 
   const sectionLabel = (row: number, text: string) => {
     cell(row, FULL[0], FULL[1], text, { bg: P.page, color: P.muted, size: 9, bold: true, v: 'BOTTOM' });
@@ -884,7 +888,8 @@ export const buildDashboardLayout = (input: DashboardInput): DashboardLayout => 
               values: DASHBOARD_PERIODS.map((p) => ({ userEnteredValue: p })),
             },
             showCustomUi: true,
-            strict: true,
+            strict: false,
+            inputMessage: 'Pick a period, set From/To for Custom, then Sync from SpendDesk.',
           },
         },
       },
@@ -901,6 +906,7 @@ export const buildDashboardLayout = (input: DashboardInput): DashboardLayout => 
             condition: { type: 'DATE_IS_VALID' },
             showCustomUi: true,
             strict: false,
+            inputMessage: 'Pick a start date (used when Period is Custom).',
           },
         },
       },
@@ -917,6 +923,7 @@ export const buildDashboardLayout = (input: DashboardInput): DashboardLayout => 
             condition: { type: 'DATE_IS_VALID' },
             showCustomUi: true,
             strict: false,
+            inputMessage: 'Pick an end date (used when Period is Custom).',
           },
         },
       },
