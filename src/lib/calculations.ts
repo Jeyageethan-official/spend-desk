@@ -143,17 +143,29 @@ export const sortTransactionsChronological = (transactions: Transaction[]): Tran
  * Any expense exceeding available cash is recorded in Out of Wallet.
  * Fresh Cash In (Income) directly increments wallet cash balance without eating past out-of-wallet expenses.
  */
+export interface BalanceCalcOptions {
+  /** Reset running cash to 0 at the start of each new calendar day. */
+  dailyBalanceReset?: boolean;
+}
+
 export const calculateRunningBalances = (
-  transactions: Transaction[]
+  transactions: Transaction[],
+  options: BalanceCalcOptions = {}
 ): Map<string, RunningBalanceItem> => {
   const sorted = sortTransactionsChronological(transactions);
   const result = new Map<string, RunningBalanceItem>();
 
   let runningCash = 0;
+  let lastDate = '';
   const isCashPayment = (method?: string) => !method || method.toLowerCase() === 'cash';
 
   for (const tx of sorted) {
     if (!tx || !tx.id) continue;
+    const txDate = tx.date || '';
+    if (options.dailyBalanceReset && txDate && txDate !== lastDate) {
+      runningCash = 0;
+    }
+    if (txDate) lastDate = txDate;
     const amt = Math.abs(tx.amount || 0);
 
     if (tx.type === 'cash_added') {
@@ -191,7 +203,8 @@ export const calculateRunningBalances = (
 
 export const calculateSummary = (
   allTransactions: Transaction[] = [],
-  filteredTransactions: Transaction[] = []
+  filteredTransactions: Transaction[] = [],
+  balanceOptions: BalanceCalcOptions = {}
 ): SpendingSummary => {
   const allTxs = Array.isArray(allTransactions) ? allTransactions : [];
   const filtTxs = Array.isArray(filteredTransactions) ? filteredTransactions : [];
@@ -200,7 +213,7 @@ export const calculateSummary = (
   const isCardOrBankPayment = (method?: string) => method && (method.toLowerCase() === 'card' || method.toLowerCase() === 'bank' || method.toLowerCase().includes('transfer'));
 
   // Calculate chronological running balances across all transactions
-  const runningBalances = calculateRunningBalances(allTxs);
+  const runningBalances = calculateRunningBalances(allTxs, balanceOptions);
   const sortedAll = sortTransactionsChronological(allTxs);
 
   let finalCashBalance = 0;

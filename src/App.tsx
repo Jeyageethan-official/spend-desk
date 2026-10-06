@@ -9,6 +9,11 @@ import {
   initWorkspaceAuth,
   signOutGoogleWorkspace,
   getCachedWorkspaceToken,
+  isUsableGoogleSheetsToken,
+  setCachedWorkspaceToken,
+  parseGoogleOAuthHash,
+  persistGoogleOAuthBundle,
+  inspectGoogleWorkspaceAccess,
 } from './lib/workspaceAuth';
 import { 
   Transaction, 
@@ -70,6 +75,7 @@ import {
   fetchAllLendItemsFromSheet,
   listUserSpreadsheets,
   requestGoogleAccessToken,
+  ensureGoogleSheetsAccessToken,
   fetchGoogleUserInfo,
   syncViaWebhook
 } from './lib/sheetsApi';
@@ -141,13 +147,7 @@ export default function App() {
       return null;
     }
   });
-  const [accessToken, setAccessToken] = useState<string | null>(() => {
-    try {
-      return localStorage.getItem('money_tracker_access_token');
-    } catch {
-      return null;
-    }
-  });
+  const [accessToken, setAccessToken] = useState<string | null>(() => getCachedWorkspaceToken());
   // After sign-out, keep the last account's offline workspace visible. This is
   // intentionally persisted so a refresh also retains the user's local ledger.
   // A later Google sign-in always replaces it with that Google account's scope.
@@ -173,7 +173,14 @@ export default function App() {
   const [currency, setCurrency] = useState<string>('Rs');
   const [userProfile, setUserProfile] = useState<UserProfile>(() => loadStoredProfile());
 
-  const overallSummary = useMemo(() => calculateSummary(transactions, transactions), [transactions]);
+  const balanceCalcOptions = useMemo(
+    () => ({ dailyBalanceReset: budgetConfig.dailyBalanceReset }),
+    [budgetConfig.dailyBalanceReset]
+  );
+  const overallSummary = useMemo(
+    () => calculateSummary(transactions, transactions, balanceCalcOptions),
+    [transactions, balanceCalcOptions]
+  );
 
   // Filter State
   const [filter, setFilter] = useState<FilterState>({
@@ -226,7 +233,7 @@ export default function App() {
           email: wsUser.email,
           photoURL: wsUser.picture,
         });
-        if (token) setAccessToken(token);
+        if (isUsableGoogleSheetsToken(token)) setAccessToken(token);
         if (email) {
           saveLastUserEmail(email);
           mergeGuestDataIntoUser(email);
@@ -243,7 +250,7 @@ export default function App() {
       (authedUser, token) => {
         const email = authedUser.email ? authedUser.email.trim().toLowerCase() : '';
         setUser((prev) => prev || authedUser);
-        if (token && (!accessToken || accessToken === 'local_token')) setAccessToken(token);
+        if (isUsableGoogleSheetsToken(token)) setAccessToken(token);
         if (email) {
           saveLastUserEmail(email);
           mergeGuestDataIntoUser(email);
@@ -276,19 +283,44 @@ export default function App() {
         return;
       }
 
-      const providerToken = params.get('provider_token');
+      const oauthBundle = parseGoogleOAuthHash(window.location.hash);
+      persistGoogleOAuthBundle({
+        accessToken: oauthBundle.providerToken,
+        refreshToken: oauthBundle.providerRefreshToken,
+        expiresInSeconds: oauthBundle.expiresIn ?? 3600,
+      });
+      const providerToken = oauthBundle.providerToken;
       const grantedScope = params.get('scope') || '';
-      if (providerToken) {
+      if (providerToken && isUsableGoogleSheetsToken(providerToken)) {
         setAccessToken(providerToken);
-        try { localStorage.setItem('money_tracker_access_token', providerToken); } catch {}
-        if (grantedScope && (!grantedScope.includes('spreadsheets') && !grantedScope.includes('drive'))) {
-          showNotification('Notice: Please check "Select all" permissions to enable Google Sheets syncing.', 'info');
-        }
+        void inspectGoogleWorkspaceAccess(providerToken).then((check) => {
+          if (!check.ok) {
+            showNotification(
+              'Notice: Please check "Select all" permissions to enable Google Sheets & Drive syncing.',
+              'info'
+            );
+          }
+        });
+      } else if (grantedScope && !grantedScope.includes('spreadsheets') && !grantedScope.includes('drive')) {
+        showNotification('Notice: Please check "Select all" permissions to enable Google Sheets syncing.', 'info');
       }
     } catch (e) {
       console.warn('Hash parse error:', e);
     }
   }, []);
+
+  // Restore Sheets/Drive after browser restart; single sign-in scope check when logged in.
+  useEffect(() => {
+    void (async () => {
+      let token = await ensureGoogleSheetsAccessToken(false);
+      if (isUsableGoogleSheetsToken(token)) setAccessToken(token);
+      if (!user?.email || !isUsableGoogleSheetsToken(token)) return;
+      const check = await inspectGoogleWorkspaceAccess(token);
+      if (check.ok) return;
+      token = await ensureGoogleSheetsAccessToken(true);
+      if (isUsableGoogleSheetsToken(token)) setAccessToken(token);
+    })().catch(() => {});
+  }, [user?.email]);
 
   // Network Connectivity State for Offline Mode & Auto-Sync
   const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true);
@@ -736,11 +768,10 @@ export default function App() {
       return;
     }
 
-    const hasGoogleSheetsToken = Boolean(token && token !== 'local_token' && !token.startsWith('eyJ'));
-    if (!hasGoogleSheetsToken) {
+    if (!isUsableGoogleSheetsToken(token)) {
       if (!options.interactive) return;
       try {
-        token = await requestGoogleAccessToken();
+        token = await ensureGoogleSheetsAccessToken(true);
         setAccessToken(token);
       } catch (error: any) {
         if (!options.silent) showNotification(error?.message || 'Google Sheet permission is required.', 'error');
@@ -748,9 +779,28 @@ export default function App() {
       }
     }
     setIsSyncing(true);
+    const pullRemote = async (sheetToken: string) => {
+      const remoteTxs = await fetchAllTransactionsFromSheet(sheetToken, sId, currentUserEmail || undefined);
+      const remoteLends = await fetchAllLendItemsFromSheet(sheetToken, sId);
+      return { remoteTxs, remoteLends };
+    };
     try {
-      const remoteTxs = await fetchAllTransactionsFromSheet(token, sId, currentUserEmail || undefined);
-      const remoteLends = await fetchAllLendItemsFromSheet(token, sId);
+      let remoteTxs: Transaction[];
+      let remoteLends: LendItem[];
+      try {
+        ({ remoteTxs, remoteLends } = await pullRemote(token!));
+      } catch (firstErr: any) {
+        const raw = String(firstErr?.message || firstErr);
+        const is401 =
+          raw.includes('401') ||
+          raw.includes('UNAUTHENTICATED') ||
+          raw.includes('invalid_credentials');
+        if (!is401 || !options.interactive) throw firstErr;
+        setCachedWorkspaceToken(null);
+        token = await ensureGoogleSheetsAccessToken(true);
+        setAccessToken(token);
+        ({ remoteTxs, remoteLends } = await pullRemote(token));
+      }
 
       const deletedIds = loadDeletedTxIds(currentUserEmail);
       const validRemoteTxs = remoteTxs.filter((t) => !deletedIds.has(t.id));
@@ -883,8 +933,6 @@ export default function App() {
     try {
       localStorage.removeItem('money_tracker_user');
       localStorage.removeItem('money_tracker_user_info');
-      localStorage.removeItem('spenddesk_google_token');
-      localStorage.removeItem('money_tracker_access_token');
     } catch (e) {}
     await signOutGoogleWorkspace();
     await signOutSupabase();
@@ -905,36 +953,32 @@ export default function App() {
     isPushingToSheetRef.current = true;
 
     let sheetToken = accessToken;
-    let hasGoogleSheetsToken = Boolean(sheetToken && sheetToken !== 'local_token' && !sheetToken.startsWith('eyJ') && sheetToken.length > 20);
-    if (!hasGoogleSheetsToken) {
+    if (!isUsableGoogleSheetsToken(sheetToken)) {
       const cached = getCachedWorkspaceToken();
-      if (cached && !cached.startsWith('eyJ') && cached !== 'local_token' && cached.length > 20) {
+      if (isUsableGoogleSheetsToken(cached)) {
         sheetToken = cached;
         setAccessToken(cached);
-        hasGoogleSheetsToken = true;
       }
     }
 
-    if (!hasGoogleSheetsToken) {
+    if (!isUsableGoogleSheetsToken(sheetToken)) {
       if (!options.interactive) {
         isPushingToSheetRef.current = false;
         return false;
       }
       try {
-        const freshToken = await requestGoogleAccessToken(true);
-        if (freshToken && !freshToken.startsWith('eyJ') && freshToken !== 'local_token' && freshToken.length > 20) {
-          sheetToken = freshToken;
-          setAccessToken(freshToken);
-          hasGoogleSheetsToken = true;
-        }
+        sheetToken = await ensureGoogleSheetsAccessToken(true);
+        setAccessToken(sheetToken);
       } catch (err: any) {
         if (!options.silent) {
           showNotification(err?.message || 'Google Sheet permission is required.', 'error');
         }
+        isPushingToSheetRef.current = false;
+        return false;
       }
     }
 
-    if (!hasGoogleSheetsToken) {
+    if (!isUsableGoogleSheetsToken(sheetToken)) {
       isPushingToSheetRef.current = false;
       return false;
     }
@@ -946,7 +990,35 @@ export default function App() {
       const currentLocalLends = snapshot?.lendItems ?? latestStateRef.current.lendItems;
 
       // 1. Write complete records to Transactions sheet (including Out of Wallet, Card Payment & Lend widget)
-      await overwriteTransactionsInSheet(sheetToken, activeSheet.id, currentLocalTxs, currentLocalLends);
+      const pushToSheet = async (token: string) => {
+        await overwriteTransactionsInSheet(token, activeSheet.id, currentLocalTxs, currentLocalLends, {
+          dailyBalanceReset: budgetConfig.dailyBalanceReset,
+        });
+        try {
+          await overwriteLendItemsInSheet(token, activeSheet.id, currentLocalLends);
+        } catch (lendErr) {
+          console.warn('Lend_Borrow cleanup notice:', lendErr);
+        }
+        const allSummary = calculateSummary(currentLocalTxs, currentLocalTxs, balanceCalcOptions);
+        const catSummary = calculateCategoryBreakdown(currentLocalTxs);
+        const { dayTotals } = calculateWeeklyDailyTrend(currentLocalTxs);
+        await syncDashboardStats(token, activeSheet.id, allSummary, catSummary, dayTotals, currentLocalTxs, currentLocalLends);
+      };
+
+      try {
+        await pushToSheet(sheetToken);
+      } catch (firstErr: any) {
+        const raw = String(firstErr?.message || firstErr);
+        const is401 =
+          raw.includes('401') ||
+          raw.includes('UNAUTHENTICATED') ||
+          raw.includes('invalid_credentials');
+        if (!is401 || !options.interactive) throw firstErr;
+        setCachedWorkspaceToken(null);
+        sheetToken = await ensureGoogleSheetsAccessToken(true);
+        setAccessToken(sheetToken);
+        await pushToSheet(sheetToken);
+      }
       
       // 2. Drop unused Lend_Borrow tab if it still exists (lend data is on Transactions M–P)
       try {

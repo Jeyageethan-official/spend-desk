@@ -1,5 +1,11 @@
 import { Transaction, SpendingSummary, CategorySummary, LendItem, TransactionType, LendType, LendStatus } from '../types/finance';
-import { signInWithGoogleWorkspace, getCachedWorkspaceToken, setCachedWorkspaceToken } from './workspaceAuth';
+import {
+  signInWithGoogleWorkspace,
+  getCachedWorkspaceToken,
+  setCachedWorkspaceToken,
+  isUsableGoogleSheetsToken,
+  ensurePersistentGoogleAccess,
+} from './workspaceAuth';
 import { sortTransactionsChronological, calculateRunningBalances } from './calculations';
 import { loadDeletedTxIds } from './storage';
 import {
@@ -10,7 +16,29 @@ import {
   getDashboardFilterCells,
   normalizeDashboardPeriod,
   parseSheetDateCell,
+  reconcileDashboardFilterState,
 } from './dashboardSheet';
+
+/** Returns false when the token is missing, expired, or lacks Sheets scope. */
+export const validateGoogleAccessToken = async (accessToken: string): Promise<boolean> => {
+  if (!isUsableGoogleSheetsToken(accessToken)) return false;
+  try {
+    const res = await fetch(
+      `https://www.googleapis.com/oauth2/v1/tokeninfo?access_token=${encodeURIComponent(accessToken)}`
+    );
+    if (!res.ok) return false;
+    const info = await res.json();
+    if (info.error) return false;
+    const scope = String(info.scope || info.scope_string || '');
+    return (
+      scope.includes('spreadsheets') ||
+      scope.includes('drive.file') ||
+      scope.includes('www.googleapis.com/auth/spreadsheets')
+    );
+  } catch {
+    return false;
+  }
+};
 
 // Use the officially provisioned and authorized OAuth Client ID for this applet
 export const GOOGLE_OAUTH_CLIENT_ID = '509348493041-ih637992a2lrmh6qdlvch1pkatpn70k0.apps.googleusercontent.com';
@@ -33,58 +61,87 @@ export const getStoredAccessToken = (): string | null => {
  * Single Google OAuth Access Token Request.
  * Uses official Workspace OAuth integration flow.
  */
+const requestGisAccessToken = (prompt: '' | 'consent' | 'select_account'): Promise<string> =>
+  new Promise((resolve, reject) => {
+    if (typeof window === 'undefined' || !(window as any).google?.accounts?.oauth2?.initTokenClient) {
+      reject(new Error('Google Sign-In is not ready yet. Please reload and try again.'));
+      return;
+    }
+    const timeout = setTimeout(() => reject(new Error('GIS timeout')), 12000);
+    try {
+      const client = (window as any).google.accounts.oauth2.initTokenClient({
+        client_id: GOOGLE_OAUTH_CLIENT_ID,
+        scope:
+          'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email',
+        prompt,
+        callback: (res: any) => {
+          clearTimeout(timeout);
+          if (res?.access_token && isUsableGoogleSheetsToken(res.access_token)) {
+            setCachedWorkspaceToken(res.access_token);
+            resolve(res.access_token);
+          } else if (res?.error) {
+            reject(new Error(res.error_description || res.error));
+          } else {
+            reject(new Error('No Google Sheets access token returned'));
+          }
+        },
+        error_callback: (err: any) => {
+          clearTimeout(timeout);
+          reject(err);
+        },
+      });
+      client.requestAccessToken({ prompt });
+    } catch (e) {
+      clearTimeout(timeout);
+      reject(e);
+    }
+  });
+
 export const requestGoogleAccessToken = async (promptUser = true): Promise<string> => {
   const existing = getStoredAccessToken();
-  if (existing && existing !== 'local_token' && !existing.startsWith('eyJ') && existing.length > 20) {
+  if (existing && isUsableGoogleSheetsToken(existing) && (await validateGoogleAccessToken(existing))) {
     return existing;
   }
-
-  // In background or silent mode, never invoke GIS or OAuth redirects to avoid browser popup blocks
-  if (!promptUser) {
-    return '';
+  if (existing) {
+    setCachedWorkspaceToken(null);
   }
 
-  // Attempt Google Identity Services (GIS) token request only when user initiated an action
-  if (typeof window !== 'undefined' && (window as any).google?.accounts?.oauth2?.initTokenClient) {
+  if (!promptUser) {
     try {
-      const tokenPromise = new Promise<string>((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error('GIS timeout')), 8000);
-        try {
-          const client = (window as any).google.accounts.oauth2.initTokenClient({
-            client_id: GOOGLE_OAUTH_CLIENT_ID,
-            scope: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email',
-            prompt: '',
-            callback: (res: any) => {
-              clearTimeout(timeout);
-              if (res?.access_token && !res.access_token.startsWith('eyJ')) {
-                setCachedWorkspaceToken(res.access_token);
-                resolve(res.access_token);
-              } else if (res?.error) {
-                reject(new Error(res.error_description || res.error));
-              } else {
-                reject(new Error('No token returned from GIS'));
-              }
-            },
-            error_callback: (err: any) => {
-              clearTimeout(timeout);
-              reject(err);
-            },
-          });
-          client.requestAccessToken({ prompt: '' });
-        } catch (e) {
-          clearTimeout(timeout);
-          reject(e);
-        }
-      });
-      const resToken = await tokenPromise;
-      if (resToken) return resToken;
-    } catch (e) {
-      console.warn('GIS token request note:', e);
+      return await requestGisAccessToken('');
+    } catch {
+      return '';
     }
+  }
+
+  try {
+    return await requestGisAccessToken('');
+  } catch (silentErr) {
+    console.warn('Silent GIS token note:', silentErr);
+  }
+
+  try {
+    return await requestGisAccessToken('consent');
+  } catch (e) {
+    console.warn('GIS consent token note:', e);
   }
 
   const { accessToken } = await signInWithGoogleWorkspace();
   return accessToken;
+};
+
+/** Validate cached token or obtain a fresh Sheets/Drive token (refresh token → silent GIS → consent). */
+export const ensureGoogleSheetsAccessToken = async (interactive = true): Promise<string> => {
+  const persisted = await ensurePersistentGoogleAccess(false);
+  if (persisted && (await validateGoogleAccessToken(persisted))) {
+    return persisted;
+  }
+  const cached = getStoredAccessToken();
+  if (cached && isUsableGoogleSheetsToken(cached) && (await validateGoogleAccessToken(cached))) {
+    return cached;
+  }
+  if (!interactive) return '';
+  return requestGoogleAccessToken(true);
 };
 
 /**
@@ -276,7 +333,8 @@ export const applyTransactionsSheetDesign = async (
 
     // Ledger palette: navy headers, ocean body text (#005975), soft red/green highlights
     const headerNavy = { red: 31 / 255, green: 58 / 255, blue: 100 / 255 }; // #1F3A64 headers only
-    const ocean = { red: 0 / 255, green: 89 / 255, blue: 117 / 255 }; // #005975 body + dates
+    const ocean = { red: 0 / 255, green: 89 / 255, blue: 117 / 255 }; // #005975 body text
+    const dateHeaderInk = { red: 27 / 255, green: 58 / 255, blue: 107 / 255 }; // #1b3a6b per-day date banner
     const white = { red: 1, green: 1, blue: 1 };
     const pageWhite = { red: 1, green: 1, blue: 1 };
     const greenText = { red: 21 / 255, green: 128 / 255, blue: 61 / 255 }; // #15803D
@@ -427,16 +485,17 @@ export const applyTransactionsSheetDesign = async (
         },
       },
 
-      // Category + notes (default body text — red/green come from conditional rules only)
+      // Category + notes — ocean text, left aligned (red/green come from conditional rules only)
       {
         repeatCell: {
           range: { sheetId, startRowIndex: 2, endRowIndex: 3000, startColumnIndex: 3, endColumnIndex: 4 },
           cell: {
             userEnteredFormat: {
               textFormat: { foregroundColor: ocean },
+              horizontalAlignment: 'LEFT',
             },
           },
-          fields: 'userEnteredFormat(textFormat)',
+          fields: 'userEnteredFormat(textFormat,horizontalAlignment)',
         },
       },
       {
@@ -445,9 +504,10 @@ export const applyTransactionsSheetDesign = async (
           cell: {
             userEnteredFormat: {
               textFormat: { foregroundColor: ocean },
+              horizontalAlignment: 'LEFT',
             },
           },
-          fields: 'userEnteredFormat(textFormat)',
+          fields: 'userEnteredFormat(textFormat,horizontalAlignment)',
         },
       },
 
@@ -598,7 +658,7 @@ export const applyTransactionsSheetDesign = async (
             cell: {
               userEnteredFormat: {
                 backgroundColor: dateBannerBg,
-                textFormat: { foregroundColor: ocean, bold: true, fontSize: 10 },
+                textFormat: { foregroundColor: dateHeaderInk, bold: true, fontSize: 10 },
                 horizontalAlignment: 'CENTER',
               },
             },
@@ -737,10 +797,11 @@ export const readDashboardFilter = async (
     if (!res.ok) return fallback;
     const data = await res.json();
     const pick = (idx: number) => data.valueRanges?.[idx]?.values?.[0]?.[0];
-    const period = normalizeDashboardPeriod(pick(0)) as DashboardPeriod;
-    const startDate = parseSheetDateCell(pick(1), '');
-    const endDate = parseSheetDateCell(pick(2), '');
-    return { period, startDate, endDate };
+    return reconcileDashboardFilterState({
+      period: normalizeDashboardPeriod(pick(0)) as DashboardPeriod,
+      startDate: pick(1),
+      endDate: pick(2),
+    });
   } catch (e) {
     console.warn('Dashboard filter read notice:', e);
     return fallback;
@@ -1177,7 +1238,8 @@ export const overwriteTransactionsInSheet = async (
   accessToken: string,
   spreadsheetId: string,
   transactions: Transaction[],
-  lendItems?: LendItem[]
+  lendItems?: LendItem[],
+  balanceOptions?: { dailyBalanceReset?: boolean }
 ) => {
   // CRITICAL: Always clear all transaction rows from row 3 downwards first so deleted rows NEVER stay!
   try {
@@ -1200,7 +1262,9 @@ export const overwriteTransactionsInSheet = async (
   }
 
   const sorted = sortTransactionsChronological(transactions);
-  const runningBalances = calculateRunningBalances(sorted);
+  const runningBalances = calculateRunningBalances(sorted, {
+    dailyBalanceReset: balanceOptions?.dailyBalanceReset,
+  });
   const safeLends = [...(lendItems || [])];
 
   // Group transactions chronologically by date

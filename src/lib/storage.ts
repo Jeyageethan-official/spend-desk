@@ -155,6 +155,7 @@ export const DEFAULT_BUDGET_CONFIG: BudgetConfig = {
   lowCashThreshold: 1000,
   dailySpendLimit: 0,
   notifyOnLimit: true,
+  dailyBalanceReset: true,
   smsAlertNumber: '',
 };
 

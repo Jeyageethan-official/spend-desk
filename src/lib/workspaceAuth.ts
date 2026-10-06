@@ -22,6 +22,95 @@ export interface WorkspaceUser {
 }
 
 const GOOGLE_TOKEN_KEY = 'spenddesk_google_token';
+const GOOGLE_REFRESH_TOKEN_KEY = 'spenddesk_google_refresh_token';
+const GOOGLE_TOKEN_EXPIRES_AT_KEY = 'spenddesk_google_token_expires_at';
+const TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000;
+
+export const REQUIRED_GOOGLE_SCOPES = [
+  'https://www.googleapis.com/auth/spreadsheets',
+  'https://www.googleapis.com/auth/drive.file',
+] as const;
+
+export const isUsableGoogleSheetsToken = (token: string | null | undefined): token is string =>
+  Boolean(token && token !== 'local_token' && !token.startsWith('eyJ') && token.length > 20);
+
+export const hasStoredGoogleRefreshToken = (): boolean => {
+  try {
+    return Boolean(localStorage.getItem(GOOGLE_REFRESH_TOKEN_KEY)?.trim());
+  } catch {
+    return false;
+  }
+};
+
+const readTokenExpiryMs = (): number | null => {
+  try {
+    const raw = localStorage.getItem(GOOGLE_TOKEN_EXPIRES_AT_KEY);
+    if (!raw) return null;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
+};
+
+export const isCachedGoogleTokenExpired = (): boolean => {
+  const expiresAt = readTokenExpiryMs();
+  if (!expiresAt) return false;
+  return Date.now() >= expiresAt - TOKEN_EXPIRY_BUFFER_MS;
+};
+
+export const clearGoogleOAuthCredentials = () => {
+  cachedAccessToken = null;
+  try {
+    localStorage.removeItem(GOOGLE_TOKEN_KEY);
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(GOOGLE_REFRESH_TOKEN_KEY);
+    localStorage.removeItem(GOOGLE_TOKEN_EXPIRES_AT_KEY);
+  } catch {}
+};
+
+export const persistGoogleOAuthBundle = (opts: {
+  accessToken?: string | null;
+  refreshToken?: string | null;
+  expiresInSeconds?: number | null;
+}) => {
+  if (opts.refreshToken?.trim()) {
+    try {
+      localStorage.setItem(GOOGLE_REFRESH_TOKEN_KEY, opts.refreshToken.trim());
+    } catch {}
+  }
+  if (opts.accessToken && isUsableGoogleSheetsToken(opts.accessToken)) {
+    setCachedWorkspaceToken(opts.accessToken, opts.expiresInSeconds ?? undefined);
+  } else if (opts.expiresInSeconds && opts.expiresInSeconds > 0) {
+    try {
+      localStorage.setItem(
+        GOOGLE_TOKEN_EXPIRES_AT_KEY,
+        String(Date.now() + opts.expiresInSeconds * 1000)
+      );
+    } catch {}
+  }
+};
+
+export const parseGoogleOAuthHash = (hash: string): {
+  providerToken?: string;
+  providerRefreshToken?: string;
+  expiresIn?: number;
+} => {
+  try {
+    const params = new URLSearchParams(hash.replace(/^#/, ''));
+    const providerToken = params.get('provider_token') || undefined;
+    const providerRefreshToken = params.get('provider_refresh_token') || undefined;
+    const expiresInRaw = params.get('expires_in');
+    const expiresIn = expiresInRaw ? Number(expiresInRaw) : undefined;
+    return {
+      providerToken,
+      providerRefreshToken,
+      expiresIn: Number.isFinite(expiresIn) ? expiresIn : undefined,
+    };
+  } catch {
+    return {};
+  }
+};
 
 export const getCachedWorkspaceToken = (): string | null => {
   if (cachedAccessToken && !cachedAccessToken.startsWith('eyJ') && cachedAccessToken !== 'local_token' && cachedAccessToken.length > 20) {
@@ -42,20 +131,111 @@ export const getCachedWorkspaceToken = (): string | null => {
   return null;
 };
 
-export const setCachedWorkspaceToken = (token: string | null) => {
-  if (token && !token.startsWith('eyJ') && token !== 'local_token' && token.length > 20) {
+export const setCachedWorkspaceToken = (token: string | null, expiresInSeconds?: number) => {
+  if (token && isUsableGoogleSheetsToken(token)) {
     cachedAccessToken = token;
     try {
       localStorage.setItem(GOOGLE_TOKEN_KEY, token);
       localStorage.setItem(TOKEN_KEY, token);
+      if (expiresInSeconds && expiresInSeconds > 0) {
+        localStorage.setItem(
+          GOOGLE_TOKEN_EXPIRES_AT_KEY,
+          String(Date.now() + expiresInSeconds * 1000)
+        );
+      }
     } catch {}
   } else if (!token) {
-    cachedAccessToken = null;
-    try {
-      localStorage.removeItem(GOOGLE_TOKEN_KEY);
-      localStorage.removeItem(TOKEN_KEY);
-    } catch {}
+    clearGoogleOAuthCredentials();
   }
+};
+
+/** Refresh Google access token using stored offline refresh token (survives browser restarts). */
+export const refreshGoogleAccessTokenFromRefreshToken = async (): Promise<string | null> => {
+  let refreshToken: string | null = null;
+  try {
+    refreshToken = localStorage.getItem(GOOGLE_REFRESH_TOKEN_KEY);
+  } catch {}
+  if (!refreshToken?.trim()) return null;
+
+  try {
+    const res = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: GOOGLE_OAUTH_CLIENT_ID,
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken.trim(),
+      }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const accessToken = data.access_token as string | undefined;
+    if (!accessToken || !isUsableGoogleSheetsToken(accessToken)) return null;
+    const expiresIn = typeof data.expires_in === 'number' ? data.expires_in : 3600;
+    setCachedWorkspaceToken(accessToken, expiresIn);
+    if (typeof data.refresh_token === 'string' && data.refresh_token.trim()) {
+      persistGoogleOAuthBundle({ refreshToken: data.refresh_token });
+    }
+    return accessToken;
+  } catch {
+    return null;
+  }
+};
+
+export const inspectGoogleWorkspaceAccess = async (
+  accessToken: string
+): Promise<{ ok: boolean; missingScopes: string[] }> => {
+  if (!isUsableGoogleSheetsToken(accessToken)) {
+    return { ok: false, missingScopes: [...REQUIRED_GOOGLE_SCOPES] };
+  }
+  try {
+    const res = await fetch(
+      `https://www.googleapis.com/oauth2/v1/tokeninfo?access_token=${encodeURIComponent(accessToken)}`
+    );
+    if (!res.ok) return { ok: false, missingScopes: [...REQUIRED_GOOGLE_SCOPES] };
+    const info = await res.json();
+    if (info.error) return { ok: false, missingScopes: [...REQUIRED_GOOGLE_SCOPES] };
+    const scope = String(info.scope || info.scope_string || '');
+    const hasSheets =
+      scope.includes('spreadsheets') || scope.includes('www.googleapis.com/auth/spreadsheets');
+    const hasDrive = scope.includes('drive.file') || scope.includes('drive');
+    if (!hasSheets || !hasDrive) {
+      return {
+        ok: false,
+        missingScopes: [
+          ...(!hasSheets ? ['https://www.googleapis.com/auth/spreadsheets'] : []),
+          ...(!hasDrive ? ['https://www.googleapis.com/auth/drive.file'] : []),
+        ],
+      };
+    }
+    return { ok: true, missingScopes: [] };
+  } catch {
+    return { ok: false, missingScopes: [...REQUIRED_GOOGLE_SCOPES] };
+  }
+};
+
+/** Validate or silently renew Sheets/Drive access (refresh token → GIS silent). */
+export const ensurePersistentGoogleAccess = async (interactive = false): Promise<string> => {
+  let token = getCachedWorkspaceToken();
+  if (token && !isCachedGoogleTokenExpired()) {
+    const check = await inspectGoogleWorkspaceAccess(token);
+    if (check.ok) return token;
+  }
+
+  if (token && isCachedGoogleTokenExpired()) {
+    setCachedWorkspaceToken(null);
+    token = null;
+  }
+
+  const refreshed = await refreshGoogleAccessTokenFromRefreshToken();
+  if (refreshed) {
+    const check = await inspectGoogleWorkspaceAccess(refreshed);
+    if (check.ok) return refreshed;
+  }
+
+  if (!interactive) return token && isUsableGoogleSheetsToken(token) ? token : '';
+
+  return token && isUsableGoogleSheetsToken(token) ? token : '';
 };
 
 /**
@@ -120,7 +300,7 @@ export const initWorkspaceAuth = (
     const token = getCachedWorkspaceToken();
     const savedUser = localStorage.getItem(USER_STORAGE_KEY) || localStorage.getItem('money_tracker_user');
 
-    if (savedUser && token && token !== 'local_token' && !token.startsWith('eyJ')) {
+    if (savedUser && isUsableGoogleSheetsToken(token)) {
       try {
         const parsed = JSON.parse(savedUser);
         const user: WorkspaceUser = {
@@ -167,9 +347,8 @@ export const signOutGoogleWorkspace = async () => {
       console.warn('Revoke token error:', e);
     }
   }
-  setCachedWorkspaceToken(null);
+  clearGoogleOAuthCredentials();
   try {
-    localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_STORAGE_KEY);
   } catch {}
 };
