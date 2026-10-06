@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -16,6 +16,12 @@ interface CalendarDateModalProps {
   onApply: (type: DateFilterType, start: string, end: string) => void;
 }
 
+/** Parse YYYY-MM-DD as a LOCAL date (new Date('YYYY-MM-DD') is UTC and can shift the day). */
+const parseLocalDate = (iso: string): Date => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '');
+  return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : new Date();
+};
+
 export const CalendarDateModal: React.FC<CalendarDateModalProps> = ({
   isOpen,
   onClose,
@@ -23,17 +29,20 @@ export const CalendarDateModal: React.FC<CalendarDateModalProps> = ({
   endDate,
   onApply,
 }) => {
-  const [tempStart, setTempStart] = useState<string>(() => {
-    if (startDate) return startDate;
-    return new Date().toISOString().split('T')[0];
-  });
-  const [tempEnd, setTempEnd] = useState<string>(() => endDate || '');
+  const [tempStart, setTempStart] = useState<string>(startDate || '');
+  const [tempEnd, setTempEnd] = useState<string>(endDate || '');
 
   // Month navigation for visual interactive calendar view
-  const [viewDate, setViewDate] = useState(() => {
-    if (startDate) return new Date(startDate);
-    return new Date();
-  });
+  const [viewDate, setViewDate] = useState(() => (startDate ? parseLocalDate(startDate) : new Date()));
+
+  // The modal stays mounted while closed, so re-sync with the real filter every time it opens
+  // (otherwise it shows stale dates after a preset like Today/Week/Month was used).
+  useEffect(() => {
+    if (!isOpen) return;
+    setTempStart(startDate || '');
+    setTempEnd(endDate || '');
+    setViewDate(startDate ? parseLocalDate(startDate) : new Date());
+  }, [isOpen, startDate, endDate]);
 
   if (!isOpen) return null;
 
@@ -56,37 +65,33 @@ export const CalendarDateModal: React.FC<CalendarDateModalProps> = ({
     setViewDate(new Date(year, month + 1, 1));
   };
 
+  // Clicking a day selects exactly that day (From = To) and applies it immediately,
+  // so the app shows that date's transactions with no "pick the To date" pending step.
+  // To select a range, use the FROM DATE / TO DATE cards below.
   const handleDayClick = (day: number) => {
     const dayStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    
-    let newStart = tempStart;
-    let newEnd = tempEnd;
-
-    if (!tempStart || (tempStart && tempEnd)) {
-      newStart = dayStr;
-      newEnd = '';
-    } else if (tempStart && !tempEnd) {
-      if (dayStr >= tempStart) {
-        newEnd = dayStr;
-      } else {
-        newEnd = tempStart;
-        newStart = dayStr;
-      }
-    }
-
-    setTempStart(newStart);
-    setTempEnd(newEnd);
-    onApply('custom', newStart, newEnd);
+    setTempStart(dayStr);
+    setTempEnd(dayStr);
+    onApply('custom', dayStr, dayStr);
   };
 
   const handleManualStartChange = (val: string) => {
+    if (!val) return;
+    // Keep the range valid: if From moves past To (or To is empty), To follows From.
+    const newEnd = !tempEnd || val > tempEnd ? val : tempEnd;
     setTempStart(val);
-    onApply('custom', val, tempEnd);
+    setTempEnd(newEnd);
+    setViewDate(parseLocalDate(val));
+    onApply('custom', val, newEnd);
   };
 
   const handleManualEndChange = (val: string) => {
+    if (!val) return;
+    // If To is picked before From (or From is empty), From follows To.
+    const newStart = !tempStart || val < tempStart ? val : tempStart;
+    setTempStart(newStart);
     setTempEnd(val);
-    onApply('custom', tempStart, val);
+    onApply('custom', newStart, val);
   };
 
   return (
@@ -153,7 +158,7 @@ export const CalendarDateModal: React.FC<CalendarDateModalProps> = ({
               const isSelectedStart = tempStart === dayStr;
               const isSelectedEnd = tempEnd === dayStr;
               const isInRange = tempStart && tempEnd && dayStr > tempStart && dayStr < tempEnd;
-              const isOnlyStart = isSelectedStart && !tempEnd;
+              const isOnlyStart = isSelectedStart && !tempEnd; // legacy single-end state
 
               return (
                 <button

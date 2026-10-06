@@ -322,27 +322,6 @@ export const resolveDashboardFilter = (
   return { period, startDate: preset.startDate, endDate: preset.endDate, label };
 };
 
-/** Normalize Period / From / To read from the sheet before applying filters on sync. */
-export const reconcileDashboardFilterState = (
-  raw: DashboardFilterState,
-  now: Date = new Date()
-): DashboardFilterState => {
-  const startRaw = parseSheetDateCell(raw.startDate, '');
-  const endRaw = parseSheetDateCell(raw.endDate, '');
-  let period = normalizeDashboardPeriod(raw.period);
-
-  if (startRaw || endRaw) {
-    return { period: 'Custom', startDate: startRaw, endDate: endRaw };
-  }
-
-  const resolved = resolveDashboardFilter({ period, startDate: '', endDate: '' }, now);
-  return {
-    period: resolved.period,
-    startDate: resolved.startDate,
-    endDate: resolved.endDate,
-  };
-};
-
 /** "2026-10-05" -> "05 Oct" (adds a 2-digit year when it is not the current year). */
 const shortDate = (iso: string, currentYear: number): string => {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '');
@@ -543,7 +522,7 @@ export const buildDashboardLayout = (input: DashboardInput): DashboardLayout => 
       });
     }
   }
-  cell(ROW.filter, 10, 17, `${resolved.label}  ·  Pick Period or set From/To, then Sync from SpendDesk to refresh`, {
+  cell(ROW.filter, 10, 17, `${resolved.label}  ·  Edit Period / From / To, then Sync from SpendDesk`, {
     bg: P.filterBg, color: P.faint, size: 9, h: 'RIGHT', padR: 14, v: 'MIDDLE', italic: true,
   });
   box(ROW.filter, FULL[0], ROW.filter, FULL[1], P.oceanBorder);

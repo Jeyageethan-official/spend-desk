@@ -1,12 +1,4 @@
 import { createClient, SupabaseClient, User } from '@supabase/supabase-js';
-import {
-  getCachedWorkspaceToken,
-  hasStoredGoogleRefreshToken,
-  isUsableGoogleSheetsToken,
-  parseGoogleOAuthHash,
-  persistGoogleOAuthBundle,
-  setCachedWorkspaceToken,
-} from './workspaceAuth';
 
 const SUPABASE_URL_KEY = 'spenddesk_supabase_url';
 const SUPABASE_ANON_KEY = 'spenddesk_supabase_anon_key';
@@ -38,8 +30,6 @@ export const getSupabase = (): SupabaseClient => {
         persistSession: true,
         autoRefreshToken: true,
         detectSessionInUrl: true,
-        storage: typeof window !== 'undefined' ? window.localStorage : undefined,
-        storageKey: 'spenddesk-supabase-auth',
       },
     });
   }
@@ -75,7 +65,7 @@ export const signInWithGoogleSupabase = async (): Promise<AuthResult> => {
         redirectTo: redirectUrl,
         queryParams: {
           access_type: 'offline',
-          prompt: hasStoredGoogleRefreshToken() ? 'select_account' : 'consent select_account',
+          prompt: 'select_account',
           enable_granular_consent: 'false',
           include_granted_scopes: 'true',
         },
@@ -175,45 +165,6 @@ export const signOutSupabase = async () => {
   localStorage.removeItem(TOKEN_STORAGE_KEY);
 };
 
-const applySupabaseSession = (
-  session: {
-    user: User;
-    provider_token?: string | null;
-    provider_refresh_token?: string | null;
-    expires_in?: number;
-  },
-  onAuthSuccess?: (user: { displayName: string; email: string; photoURL?: string }, token: string) => void
-) => {
-  const u = session.user;
-  const userInfo = {
-    displayName: u.user_metadata?.full_name || u.email?.split('@')[0] || 'User',
-    email: u.email || '',
-    photoURL: u.user_metadata?.avatar_url || undefined,
-  };
-  persistGoogleOAuthBundle({
-    accessToken: session.provider_token,
-    refreshToken: session.provider_refresh_token,
-    expiresInSeconds: session.expires_in ?? 3600,
-  });
-  try {
-    localStorage.setItem(
-      USER_STORAGE_KEY,
-      JSON.stringify({
-        id: u.id,
-        name: userInfo.displayName,
-        email: userInfo.email,
-        picture: userInfo.photoURL,
-      })
-    );
-    localStorage.setItem('money_tracker_user', JSON.stringify(userInfo));
-  } catch {}
-  const storedToken = getCachedWorkspaceToken();
-  const tokenToUse =
-    (session.provider_token && isUsableGoogleSheetsToken(session.provider_token) && session.provider_token) ||
-    (storedToken && isUsableGoogleSheetsToken(storedToken) ? storedToken : '');
-  if (onAuthSuccess) onAuthSuccess(userInfo, tokenToUse);
-};
-
 /**
  * Auth state listener
  */
@@ -223,35 +174,73 @@ export const initSupabaseAuth = (
 ) => {
   const supabase = getSupabase();
 
-  // Capture Google provider tokens from the OAuth redirect hash (single sign-in bundle).
+  // If provider_token is directly in the URL hash, capture it
   if (typeof window !== 'undefined' && window.location.hash) {
     try {
-      const parsed = parseGoogleOAuthHash(window.location.hash);
-      persistGoogleOAuthBundle({
-        accessToken: parsed.providerToken,
-        refreshToken: parsed.providerRefreshToken,
-        expiresInSeconds: parsed.expiresIn ?? 3600,
-      });
+      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+      const pToken = hashParams.get('provider_token');
+      if (pToken) {
+        localStorage.setItem(TOKEN_STORAGE_KEY, pToken);
+      }
     } catch {}
   }
-
-  const hasLocalGoogleSession = (): boolean => {
-    const savedUser = localStorage.getItem(USER_STORAGE_KEY) || localStorage.getItem('money_tracker_user');
-    return Boolean(savedUser && getCachedWorkspaceToken());
-  };
 
   // Check current session
   supabase.auth.getSession().then(({ data: { session } }) => {
     if (session?.user) {
-      applySupabaseSession(session, onAuthSuccess);
-    } else if (!hasLocalGoogleSession() && onAuthFailure) {
-      onAuthFailure();
+      const u = session.user;
+      const userInfo = {
+        displayName: u.user_metadata?.full_name || u.email?.split('@')[0] || 'User',
+        email: u.email || '',
+        photoURL: u.user_metadata?.avatar_url || undefined,
+      };
+      if (session.provider_token) {
+        try {
+          localStorage.setItem(TOKEN_STORAGE_KEY, session.provider_token);
+        } catch {}
+      }
+      try {
+        localStorage.setItem(USER_STORAGE_KEY, JSON.stringify({
+          id: u.id,
+          name: userInfo.displayName,
+          email: userInfo.email,
+          picture: userInfo.photoURL,
+        }));
+        localStorage.setItem('money_tracker_user', JSON.stringify(userInfo));
+      } catch {}
+      const storedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
+      const tokenToUse = session.provider_token || (storedToken && !storedToken.startsWith('eyJ') ? storedToken : session.access_token);
+      if (onAuthSuccess) onAuthSuccess(userInfo, tokenToUse);
+    } else {
+      if (onAuthFailure) onAuthFailure();
     }
   });
 
   const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
     if (session?.user) {
-      applySupabaseSession(session, onAuthSuccess);
+      const u = session.user;
+      const userInfo = {
+        displayName: u.user_metadata?.full_name || u.email?.split('@')[0] || 'User',
+        email: u.email || '',
+        photoURL: u.user_metadata?.avatar_url || undefined,
+      };
+      if (session.provider_token) {
+        try {
+          localStorage.setItem(TOKEN_STORAGE_KEY, session.provider_token);
+        } catch {}
+      }
+      try {
+        localStorage.setItem(USER_STORAGE_KEY, JSON.stringify({
+          id: u.id,
+          name: userInfo.displayName,
+          email: userInfo.email,
+          picture: userInfo.photoURL,
+        }));
+        localStorage.setItem('money_tracker_user', JSON.stringify(userInfo));
+      } catch {}
+      const storedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
+      const tokenToUse = session.provider_token || (storedToken && !storedToken.startsWith('eyJ') ? storedToken : session.access_token);
+      if (onAuthSuccess) onAuthSuccess(userInfo, tokenToUse);
     } else if (event === 'SIGNED_OUT') {
       if (onAuthFailure) onAuthFailure();
     }

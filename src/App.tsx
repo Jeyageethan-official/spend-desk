@@ -9,11 +9,6 @@ import {
   initWorkspaceAuth,
   signOutGoogleWorkspace,
   getCachedWorkspaceToken,
-  isUsableGoogleSheetsToken,
-  setCachedWorkspaceToken,
-  parseGoogleOAuthHash,
-  persistGoogleOAuthBundle,
-  inspectGoogleWorkspaceAccess,
 } from './lib/workspaceAuth';
 import { 
   Transaction, 
@@ -75,7 +70,6 @@ import {
   fetchAllLendItemsFromSheet,
   listUserSpreadsheets,
   requestGoogleAccessToken,
-  ensureGoogleSheetsAccessToken,
   fetchGoogleUserInfo,
   syncViaWebhook
 } from './lib/sheetsApi';
@@ -147,7 +141,13 @@ export default function App() {
       return null;
     }
   });
-  const [accessToken, setAccessToken] = useState<string | null>(() => getCachedWorkspaceToken());
+  const [accessToken, setAccessToken] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('money_tracker_access_token');
+    } catch {
+      return null;
+    }
+  });
   // After sign-out, keep the last account's offline workspace visible. This is
   // intentionally persisted so a refresh also retains the user's local ledger.
   // A later Google sign-in always replaces it with that Google account's scope.
@@ -171,16 +171,18 @@ export default function App() {
   const [telegramAlertConfig, setTelegramAlertConfig] = useState<TelegramAlertConfig>(() => loadStoredTelegramAlertConfig(initialScope));
   const [budgetConfig, setBudgetConfig] = useState<BudgetConfig>(() => loadStoredBudgetConfig(initialScope));
   const [currency, setCurrency] = useState<string>('Rs');
+  // Daily refresh: when ON (default) the dashboard rolls over to the new day automatically
+  // (today's spend / balance figures start fresh each day). User can switch it off in Settings.
+  const [dailyRefresh, setDailyRefresh] = useState<boolean>(() => {
+    try { return localStorage.getItem('spenddesk_daily_refresh') !== 'off'; } catch { return true; }
+  });
+  const handleUpdateDailyRefresh = (enabled: boolean) => {
+    setDailyRefresh(enabled);
+    try { localStorage.setItem('spenddesk_daily_refresh', enabled ? 'on' : 'off'); } catch {}
+  };
   const [userProfile, setUserProfile] = useState<UserProfile>(() => loadStoredProfile());
 
-  const balanceCalcOptions = useMemo(
-    () => ({ dailyBalanceReset: budgetConfig.dailyBalanceReset }),
-    [budgetConfig.dailyBalanceReset]
-  );
-  const overallSummary = useMemo(
-    () => calculateSummary(transactions, transactions, balanceCalcOptions),
-    [transactions, balanceCalcOptions]
-  );
+  const overallSummary = useMemo(() => calculateSummary(transactions, transactions), [transactions]);
 
   // Filter State
   const [filter, setFilter] = useState<FilterState>({
@@ -233,7 +235,7 @@ export default function App() {
           email: wsUser.email,
           photoURL: wsUser.picture,
         });
-        if (isUsableGoogleSheetsToken(token)) setAccessToken(token);
+        if (token) setAccessToken(token);
         if (email) {
           saveLastUserEmail(email);
           mergeGuestDataIntoUser(email);
@@ -250,7 +252,7 @@ export default function App() {
       (authedUser, token) => {
         const email = authedUser.email ? authedUser.email.trim().toLowerCase() : '';
         setUser((prev) => prev || authedUser);
-        if (isUsableGoogleSheetsToken(token)) setAccessToken(token);
+        if (token && (!accessToken || accessToken === 'local_token')) setAccessToken(token);
         if (email) {
           saveLastUserEmail(email);
           mergeGuestDataIntoUser(email);
@@ -283,44 +285,19 @@ export default function App() {
         return;
       }
 
-      const oauthBundle = parseGoogleOAuthHash(window.location.hash);
-      persistGoogleOAuthBundle({
-        accessToken: oauthBundle.providerToken,
-        refreshToken: oauthBundle.providerRefreshToken,
-        expiresInSeconds: oauthBundle.expiresIn ?? 3600,
-      });
-      const providerToken = oauthBundle.providerToken;
+      const providerToken = params.get('provider_token');
       const grantedScope = params.get('scope') || '';
-      if (providerToken && isUsableGoogleSheetsToken(providerToken)) {
+      if (providerToken) {
         setAccessToken(providerToken);
-        void inspectGoogleWorkspaceAccess(providerToken).then((check) => {
-          if (!check.ok) {
-            showNotification(
-              'Notice: Please check "Select all" permissions to enable Google Sheets & Drive syncing.',
-              'info'
-            );
-          }
-        });
-      } else if (grantedScope && !grantedScope.includes('spreadsheets') && !grantedScope.includes('drive')) {
-        showNotification('Notice: Please check "Select all" permissions to enable Google Sheets syncing.', 'info');
+        try { localStorage.setItem('money_tracker_access_token', providerToken); } catch {}
+        if (grantedScope && (!grantedScope.includes('spreadsheets') && !grantedScope.includes('drive'))) {
+          showNotification('Notice: Please check "Select all" permissions to enable Google Sheets syncing.', 'info');
+        }
       }
     } catch (e) {
       console.warn('Hash parse error:', e);
     }
   }, []);
-
-  // Restore Sheets/Drive after browser restart; single sign-in scope check when logged in.
-  useEffect(() => {
-    void (async () => {
-      let token = await ensureGoogleSheetsAccessToken(false);
-      if (isUsableGoogleSheetsToken(token)) setAccessToken(token);
-      if (!user?.email || !isUsableGoogleSheetsToken(token)) return;
-      const check = await inspectGoogleWorkspaceAccess(token);
-      if (check.ok) return;
-      token = await ensureGoogleSheetsAccessToken(true);
-      if (isUsableGoogleSheetsToken(token)) setAccessToken(token);
-    })().catch(() => {});
-  }, [user?.email]);
 
   // Network Connectivity State for Offline Mode & Auto-Sync
   const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true);
@@ -491,6 +468,7 @@ export default function App() {
     activeSheet,
     userProfile,
     currency,
+    dailyRefresh,
     currentUserEmail,
   });
 
@@ -504,6 +482,7 @@ export default function App() {
       activeSheet,
       userProfile,
       currency,
+      dailyRefresh,
       currentUserEmail,
     };
   });
@@ -522,6 +501,7 @@ export default function App() {
       activeSheet: s.activeSheet,
       profile: s.userProfile,
       currency: s.currency,
+      dailyRefresh: s.dailyRefresh,
     };
   }, []);
 
@@ -600,6 +580,10 @@ export default function App() {
     setUserProfile(nextProfile);
     saveStoredProfile(nextProfile, scope);
     if (typeof workspace.currency === 'string' && workspace.currency.trim()) setCurrency(workspace.currency);
+    if (typeof workspace.dailyRefresh === 'boolean') {
+      setDailyRefresh(workspace.dailyRefresh);
+      try { localStorage.setItem('spenddesk_daily_refresh', workspace.dailyRefresh ? 'on' : 'off'); } catch {}
+    }
     setCloudWorkspaceRevision((revision) => revision + 1);
   }, [currentUserEmail]);
 
@@ -768,10 +752,11 @@ export default function App() {
       return;
     }
 
-    if (!isUsableGoogleSheetsToken(token)) {
+    const hasGoogleSheetsToken = Boolean(token && token !== 'local_token' && !token.startsWith('eyJ'));
+    if (!hasGoogleSheetsToken) {
       if (!options.interactive) return;
       try {
-        token = await ensureGoogleSheetsAccessToken(true);
+        token = await requestGoogleAccessToken();
         setAccessToken(token);
       } catch (error: any) {
         if (!options.silent) showNotification(error?.message || 'Google Sheet permission is required.', 'error');
@@ -779,28 +764,9 @@ export default function App() {
       }
     }
     setIsSyncing(true);
-    const pullRemote = async (sheetToken: string) => {
-      const remoteTxs = await fetchAllTransactionsFromSheet(sheetToken, sId, currentUserEmail || undefined);
-      const remoteLends = await fetchAllLendItemsFromSheet(sheetToken, sId);
-      return { remoteTxs, remoteLends };
-    };
     try {
-      let remoteTxs: Transaction[];
-      let remoteLends: LendItem[];
-      try {
-        ({ remoteTxs, remoteLends } = await pullRemote(token!));
-      } catch (firstErr: any) {
-        const raw = String(firstErr?.message || firstErr);
-        const is401 =
-          raw.includes('401') ||
-          raw.includes('UNAUTHENTICATED') ||
-          raw.includes('invalid_credentials');
-        if (!is401 || !options.interactive) throw firstErr;
-        setCachedWorkspaceToken(null);
-        token = await ensureGoogleSheetsAccessToken(true);
-        setAccessToken(token);
-        ({ remoteTxs, remoteLends } = await pullRemote(token));
-      }
+      const remoteTxs = await fetchAllTransactionsFromSheet(token, sId, currentUserEmail || undefined);
+      const remoteLends = await fetchAllLendItemsFromSheet(token, sId);
 
       const deletedIds = loadDeletedTxIds(currentUserEmail);
       const validRemoteTxs = remoteTxs.filter((t) => !deletedIds.has(t.id));
@@ -933,6 +899,8 @@ export default function App() {
     try {
       localStorage.removeItem('money_tracker_user');
       localStorage.removeItem('money_tracker_user_info');
+      localStorage.removeItem('spenddesk_google_token');
+      localStorage.removeItem('money_tracker_access_token');
     } catch (e) {}
     await signOutGoogleWorkspace();
     await signOutSupabase();
@@ -953,32 +921,36 @@ export default function App() {
     isPushingToSheetRef.current = true;
 
     let sheetToken = accessToken;
-    if (!isUsableGoogleSheetsToken(sheetToken)) {
+    let hasGoogleSheetsToken = Boolean(sheetToken && sheetToken !== 'local_token' && !sheetToken.startsWith('eyJ') && sheetToken.length > 20);
+    if (!hasGoogleSheetsToken) {
       const cached = getCachedWorkspaceToken();
-      if (isUsableGoogleSheetsToken(cached)) {
+      if (cached && !cached.startsWith('eyJ') && cached !== 'local_token' && cached.length > 20) {
         sheetToken = cached;
         setAccessToken(cached);
+        hasGoogleSheetsToken = true;
       }
     }
 
-    if (!isUsableGoogleSheetsToken(sheetToken)) {
+    if (!hasGoogleSheetsToken) {
       if (!options.interactive) {
         isPushingToSheetRef.current = false;
         return false;
       }
       try {
-        sheetToken = await ensureGoogleSheetsAccessToken(true);
-        setAccessToken(sheetToken);
+        const freshToken = await requestGoogleAccessToken(true);
+        if (freshToken && !freshToken.startsWith('eyJ') && freshToken !== 'local_token' && freshToken.length > 20) {
+          sheetToken = freshToken;
+          setAccessToken(freshToken);
+          hasGoogleSheetsToken = true;
+        }
       } catch (err: any) {
         if (!options.silent) {
           showNotification(err?.message || 'Google Sheet permission is required.', 'error');
         }
-        isPushingToSheetRef.current = false;
-        return false;
       }
     }
 
-    if (!isUsableGoogleSheetsToken(sheetToken)) {
+    if (!hasGoogleSheetsToken) {
       isPushingToSheetRef.current = false;
       return false;
     }
@@ -990,35 +962,7 @@ export default function App() {
       const currentLocalLends = snapshot?.lendItems ?? latestStateRef.current.lendItems;
 
       // 1. Write complete records to Transactions sheet (including Out of Wallet, Card Payment & Lend widget)
-      const pushToSheet = async (token: string) => {
-        await overwriteTransactionsInSheet(token, activeSheet.id, currentLocalTxs, currentLocalLends, {
-          dailyBalanceReset: budgetConfig.dailyBalanceReset,
-        });
-        try {
-          await overwriteLendItemsInSheet(token, activeSheet.id, currentLocalLends);
-        } catch (lendErr) {
-          console.warn('Lend_Borrow cleanup notice:', lendErr);
-        }
-        const allSummary = calculateSummary(currentLocalTxs, currentLocalTxs, balanceCalcOptions);
-        const catSummary = calculateCategoryBreakdown(currentLocalTxs);
-        const { dayTotals } = calculateWeeklyDailyTrend(currentLocalTxs);
-        await syncDashboardStats(token, activeSheet.id, allSummary, catSummary, dayTotals, currentLocalTxs, currentLocalLends);
-      };
-
-      try {
-        await pushToSheet(sheetToken);
-      } catch (firstErr: any) {
-        const raw = String(firstErr?.message || firstErr);
-        const is401 =
-          raw.includes('401') ||
-          raw.includes('UNAUTHENTICATED') ||
-          raw.includes('invalid_credentials');
-        if (!is401 || !options.interactive) throw firstErr;
-        setCachedWorkspaceToken(null);
-        sheetToken = await ensureGoogleSheetsAccessToken(true);
-        setAccessToken(sheetToken);
-        await pushToSheet(sheetToken);
-      }
+      await overwriteTransactionsInSheet(sheetToken, activeSheet.id, currentLocalTxs, currentLocalLends);
       
       // 2. Drop unused Lend_Borrow tab if it still exists (lend data is on Transactions M–P)
       try {
@@ -1402,12 +1346,15 @@ export default function App() {
 
   const [currentDateStr, setCurrentDateStr] = useState<string>(() => getLocalDateString());
 
-  // Automatically refresh date every 30s or on window focus so every day starts fresh with 0 daily spend
+  // Daily refresh (controlled from Settings): refresh the date every 30s / on focus so each
+  // new day starts fresh. When switched OFF the dashboard keeps showing the day it was opened on.
   useEffect(() => {
+    if (!dailyRefresh) return;
     const updateDate = () => {
       const freshDate = getLocalDateString();
       setCurrentDateStr((prev) => (prev !== freshDate ? freshDate : prev));
     };
+    updateDate(); // catch up immediately when the toggle is turned back ON
     const interval = setInterval(updateDate, 30000);
     window.addEventListener('focus', updateDate);
     document.addEventListener('visibilitychange', updateDate);
@@ -1416,7 +1363,7 @@ export default function App() {
       window.removeEventListener('focus', updateDate);
       document.removeEventListener('visibilitychange', updateDate);
     };
-  }, []);
+  }, [dailyRefresh]);
 
   const todayStr = currentDateStr;
 
@@ -1693,6 +1640,13 @@ export default function App() {
                   void saveCloudWorkspace(nextWs).catch(console.warn);
                 }
                 showNotification(`Currency updated to ${c}`, 'success');
+              }}
+              dailyRefresh={dailyRefresh}
+              onUpdateDailyRefresh={(enabled) => {
+                markSettingsDirty(currentUserEmail);
+                handleUpdateDailyRefresh(enabled);
+                queueCloudSync();
+                showNotification(`Daily refresh turned ${enabled ? 'ON' : 'OFF'}`, 'success');
               }}
               budgetConfig={budgetConfig}
               onUpdateBudgetConfig={handleUpdateBudgetConfig}

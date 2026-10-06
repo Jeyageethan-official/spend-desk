@@ -15,6 +15,7 @@ export interface CloudWorkspace {
   activeSheet: GoogleSheetMeta | null;
   profile: UserProfile;
   currency: string;
+  dailyRefresh?: boolean;
 }
 
 let activeWorkspaceChannel: RealtimeChannel | null = null;

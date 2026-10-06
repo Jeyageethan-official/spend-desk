@@ -77,8 +77,6 @@ export interface BudgetConfig {
   lowCashThreshold: number;
   dailySpendLimit: number;
   notifyOnLimit: boolean;
-  /** When true, running cash balance resets to 0 at the start of each calendar day. */
-  dailyBalanceReset: boolean;
   smsAlertNumber?: string;
 }
 

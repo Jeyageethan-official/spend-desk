@@ -10,7 +10,7 @@ import {
   Download
 } from 'lucide-react';
 import { FilterState, DateFilterType, Category, Transaction } from '../types/finance';
-import { STANDARD_CATEGORIES } from '../lib/calculations';
+import { STANDARD_CATEGORIES, getPresetRange } from '../lib/calculations';
 import { loadStoredCustomCategories } from '../lib/storage';
 import { CalendarDateModal } from './CalendarDateModal';
 import { DownloadRecordsModal } from './DownloadRecordsModal';
@@ -43,37 +43,10 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   const [isDownloadModalOpen, setIsDownloadModalOpen] = useState<boolean>(false);
   const customCategories = loadStoredCustomCategories();
 
-  const getPresetDates = (type: DateFilterType): { startDate: string; endDate: string } => {
-    const now = new Date();
-    const todayStr = now.toISOString().split('T')[0];
-
-    if (type === 'today') {
-      return { startDate: todayStr, endDate: todayStr };
-    }
-    if (type === 'yesterday') {
-      const yesterday = new Date(now);
-      yesterday.setDate(yesterday.getDate() - 1);
-      const yStr = yesterday.toISOString().split('T')[0];
-      return { startDate: yStr, endDate: yStr };
-    }
-    if (type === 'week') {
-      const curr = new Date(now);
-      const day = curr.getDay(); // 0 is Sun
-      const diffToMon = curr.getDate() - day + (day === 0 ? -6 : 1);
-      const monday = new Date(curr.setDate(diffToMon));
-      const monStr = monday.toISOString().split('T')[0];
-      return { startDate: monStr, endDate: todayStr };
-    }
-    if (type === 'month') {
-      const year = now.getFullYear();
-      const month = String(now.getMonth() + 1).padStart(2, '0');
-      return { startDate: `${year}-${month}-01`, endDate: todayStr };
-    }
-    if (type === 'all') {
-      return { startDate: '', endDate: '' };
-    }
-    return { startDate: filter.startDate, endDate: filter.endDate };
-  };
+  // Uses the shared LOCAL-date helper (toISOString() is UTC and gave the wrong day
+  // for early-morning hours in timezones ahead of UTC, e.g. Sri Lanka).
+  const getPresetDates = (type: DateFilterType): { startDate: string; endDate: string } =>
+    getPresetRange(type) ?? { startDate: filter.startDate, endDate: filter.endDate };
 
   const handlePresetClick = (type: DateFilterType) => {
     if (type === 'custom') {

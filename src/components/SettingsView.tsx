@@ -50,6 +50,8 @@ interface SettingsViewProps {
   onBack: () => void;
   currency: string;
   onUpdateCurrency: (curr: string) => void;
+  dailyRefresh?: boolean;
+  onUpdateDailyRefresh?: (enabled: boolean) => void;
   budgetConfig: BudgetConfig;
   onUpdateBudgetConfig: (config: BudgetConfig) => void;
   alertPhone: string;
@@ -91,6 +93,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onBack,
   currency,
   onUpdateCurrency,
+  dailyRefresh = true,
+  onUpdateDailyRefresh,
   budgetConfig,
   onUpdateBudgetConfig,
   alertPhone,
@@ -1313,7 +1317,23 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       <span className="text-[10px] text-slate-400 mt-1 block">Warns when cash balance drops below this amount.</span>
                     </div>
 
-                    <div className="pt-2">
+                    <div className="pt-2 space-y-3">
+                      <label className="flex items-start gap-2.5 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={dailyRefresh}
+                          onChange={(e) => onUpdateDailyRefresh?.(e.target.checked)}
+                          className="w-4 h-4 mt-0.5 rounded text-emerald-600 focus:ring-emerald-500"
+                        />
+                        <span>
+                          <span className="block text-xs font-bold text-slate-800 dark:text-slate-200">
+                            Daily refresh
+                          </span>
+                          <span className="block text-[10px] text-slate-400 mt-0.5">
+                            ON: every new day the dashboard refreshes automatically and today's figures start fresh. OFF: it keeps the day you opened the app until you reload.
+                          </span>
+                        </span>
+                      </label>
                       <label className="flex items-center gap-2.5 cursor-pointer">
                         <input
                           type="checkbox"
