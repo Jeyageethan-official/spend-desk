@@ -1,3 +1,5 @@
+import { getSupabase, signInWithGoogleSupabase } from './supabase';
+
 export const GOOGLE_OAUTH_CLIENT_ID = '509348493041-ih637992a2lrmh6qdlvch1pkatpn70k0.apps.googleusercontent.com';
 
 export const GOOGLE_SCOPES = [
@@ -17,31 +19,7 @@ let silentRefreshPromise: Promise<string | null> | null = null;
 let interactiveAuthPromise: Promise<{ user: WorkspaceUser; accessToken: string }> | null = null;
 
 export const ensureGoogleGsiLoaded = async (): Promise<boolean> => {
-  if (typeof window === 'undefined') return false;
-  if ((window as any).google?.accounts?.oauth2?.initTokenClient) {
-    return true;
-  }
-
-  // Check if script tag is in DOM, if not append it
-  let script = document.querySelector('script[src*="accounts.google.com/gsi/client"]') as HTMLScriptElement | null;
-  if (!script) {
-    script = document.createElement('script');
-    script.src = 'https://accounts.google.com/gsi/client';
-    script.async = true;
-    script.defer = true;
-    document.head.appendChild(script);
-  }
-
-  // Wait up to 3000ms for window.google to be initialized
-  const start = Date.now();
-  while (Date.now() - start < 3000) {
-    if ((window as any).google?.accounts?.oauth2?.initTokenClient) {
-      return true;
-    }
-    await new Promise((r) => setTimeout(r, 50));
-  }
-
-  return Boolean((window as any).google?.accounts?.oauth2?.initTokenClient);
+  return false;
 };
 
 export interface WorkspaceUser {
@@ -106,56 +84,23 @@ export const setCachedWorkspaceToken = (token: string | null, expiresInSeconds?:
  * Silent Google Identity Services token refresh (no user popup).
  * Keeps session, Sheets & Drive access alive indefinitely.
  */
-export const refreshGoogleTokenSilently = async (userEmail?: string): Promise<string | null> => {
+export const refreshGoogleTokenSilently = async (_userEmail?: string): Promise<string | null> => {
   if (silentRefreshPromise) return silentRefreshPromise;
 
-  silentRefreshPromise = new Promise<string | null>((resolve) => {
-    if (typeof window === 'undefined' || !(window as any).google?.accounts?.oauth2?.initTokenClient) {
-      resolve(null);
-      return;
-    }
-
-    const email = userEmail || (() => {
-      try {
-        const saved = localStorage.getItem(USER_STORAGE_KEY) || localStorage.getItem('money_tracker_user');
-        return saved ? JSON.parse(saved).email : undefined;
-      } catch {
-        return undefined;
-      }
-    })();
-
-    const timeout = setTimeout(() => {
-      resolve(null);
-    }, 6000);
-
+  silentRefreshPromise = (async () => {
     try {
-      const client = (window as any).google.accounts.oauth2.initTokenClient({
-        client_id: GOOGLE_OAUTH_CLIENT_ID,
-        scope: GOOGLE_SCOPES,
-        hint: email || undefined,
-        prompt: '',
-        callback: (res: any) => {
-          clearTimeout(timeout);
-          if (res?.access_token && !res.access_token.startsWith('eyJ')) {
-            const expiresIn = parseInt(res.expires_in, 10) || 3540;
-            setCachedWorkspaceToken(res.access_token, expiresIn);
-            resolve(res.access_token);
-          } else {
-            resolve(null);
-          }
-        },
-        error_callback: () => {
-          clearTimeout(timeout);
-          resolve(null);
-        },
-      });
+      const supabase = getSupabase();
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.provider_token && !session.provider_token.startsWith('eyJ')) {
+        setCachedWorkspaceToken(session.provider_token);
+        return session.provider_token;
+      }
+    } catch {}
 
-      client.requestAccessToken({ prompt: '', hint: email || undefined });
-    } catch {
-      clearTimeout(timeout);
-      resolve(null);
-    }
-  }).finally(() => {
+    const cached = getCachedWorkspaceToken();
+    if (cached) return cached;
+    return null;
+  })().finally(() => {
     silentRefreshPromise = null;
   });
 
@@ -183,9 +128,8 @@ export const fetchGoogleUserInfo = async (accessToken: string): Promise<{
 };
 
 /**
- * Single Sign-In with Google Workspace (Google Identity Services + Supabase fallback).
- * In a single sign-in flow, user grants Drive and Sheets permissions directly.
- * The session, user info, Drive and Sheets access are immediately ready.
+ * Single Sign-In with Google via Supabase OAuth.
+ * Performs a single clean redirect displaying the user's Gmail account chooser list.
  */
 export const signInWithGoogleWorkspace = async (): Promise<{ user: WorkspaceUser; accessToken: string }> => {
   if (interactiveAuthPromise) {
@@ -193,102 +137,12 @@ export const signInWithGoogleWorkspace = async (): Promise<{ user: WorkspaceUser
   }
 
   interactiveAuthPromise = (async () => {
-    // 1. Ensure Google Identity Services (GIS) client library is fully loaded
-    const isReady = await ensureGoogleGsiLoaded();
-
-    if (isReady && typeof window !== 'undefined' && (window as any).google?.accounts?.oauth2?.initTokenClient) {
-      try {
-        const authResult = await new Promise<{ user: WorkspaceUser; accessToken: string }>((resolve, reject) => {
-          let isSettled = false;
-          const timeout = setTimeout(() => {
-            if (!isSettled) {
-              isSettled = true;
-              reject(new Error('Sign-In timed out. Please try again.'));
-            }
-          }, 90000);
-
-          try {
-            const client = (window as any).google.accounts.oauth2.initTokenClient({
-              client_id: GOOGLE_OAUTH_CLIENT_ID,
-              scope: GOOGLE_SCOPES,
-              prompt: 'select_account',
-              callback: async (res: any) => {
-                if (isSettled) return;
-                isSettled = true;
-                clearTimeout(timeout);
-
-                if (res?.access_token && !res.access_token.startsWith('eyJ')) {
-                  const token = res.access_token;
-                  const expiresIn = parseInt(res.expires_in, 10) || 3540;
-                  setCachedWorkspaceToken(token, expiresIn);
-
-                  try {
-                    const info = await fetchGoogleUserInfo(token);
-                    const user: WorkspaceUser = {
-                      id: info.sub,
-                      email: (info.email || '').trim().toLowerCase(),
-                      name: info.name || info.email?.split('@')[0] || 'Google User',
-                      picture: info.picture,
-                    };
-                    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
-                    localStorage.setItem('money_tracker_user', JSON.stringify({
-                      displayName: user.name,
-                      email: user.email,
-                      photoURL: user.picture,
-                    }));
-                    window.dispatchEvent(new CustomEvent('spenddesk_google_auth', { detail: { user, token } }));
-                    resolve({ user, accessToken: token });
-                  } catch {
-                    const fallbackUser: WorkspaceUser = {
-                      id: 'google_user',
-                      email: '',
-                      name: 'Google User',
-                    };
-                    resolve({ user: fallbackUser, accessToken: token });
-                  }
-                } else if (res?.error) {
-                  if (res.error === 'access_denied' || res.error === 'popup_closed_by_user') {
-                    reject(new Error('Sign in was cancelled.'));
-                  } else {
-                    reject(new Error(res.error_description || res.error));
-                  }
-                } else {
-                  reject(new Error('Sign in was cancelled or no token returned.'));
-                }
-              },
-              error_callback: (err: any) => {
-                if (isSettled) return;
-                isSettled = true;
-                clearTimeout(timeout);
-                const msg = err?.message || String(err);
-                if (msg.includes('closed') || msg.includes('cancel')) {
-                  reject(new Error('Sign in was cancelled.'));
-                } else {
-                  reject(err);
-                }
-              },
-            });
-
-            // Directly open Google's native popup showing the user's Gmail accounts list
-            client.requestAccessToken({ prompt: 'select_account' });
-          } catch (e) {
-            if (!isSettled) {
-              isSettled = true;
-              clearTimeout(timeout);
-              reject(e);
-            }
-          }
-        });
-
-        return authResult;
-      } catch (gisError: any) {
-        const msg = String(gisError?.message || gisError);
-        console.warn('GIS interactive token client notice:', msg);
-        throw gisError;
-      }
+    const res = await signInWithGoogleSupabase();
+    if (!res.success && res.errorMessage) {
+      throw new Error(res.errorMessage);
     }
-
-    throw new Error('Google Sign-In is still loading. Please try again in a moment.');
+    // Redirect is in progress
+    return new Promise<{ user: WorkspaceUser; accessToken: string }>(() => {});
   })().finally(() => {
     interactiveAuthPromise = null;
   });

@@ -55,10 +55,10 @@ export const signInWithGoogleSupabase = async (): Promise<AuthResult> => {
     const supabase = getSupabase();
     // Dynamic redirect URL to ensure user stays on the exact current website domain (Live site vs Localhost)
     const currentOrigin = window.location.origin;
-    const currentPath = window.location.pathname;
-    const redirectUrl = `${currentOrigin}${currentPath}`.replace(/\/+$/, '') + '/';
+    const cleanPath = window.location.pathname.replace(/\/?[^/]*\.[^/]+$/, '');
+    const redirectUrl = `${currentOrigin}${cleanPath}`.replace(/\/+$/, '') + '/';
 
-    const { error } = await supabase.auth.signInWithOAuth({
+    const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
         scopes: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email',
@@ -78,6 +78,10 @@ export const signInWithGoogleSupabase = async (): Promise<AuthResult> => {
         success: false,
         errorMessage: error.message,
       };
+    }
+
+    if (data?.url) {
+      window.location.href = data.url;
     }
 
     return { success: true };
@@ -181,6 +185,8 @@ export const initSupabaseAuth = (
       const pToken = hashParams.get('provider_token');
       if (pToken) {
         localStorage.setItem(TOKEN_STORAGE_KEY, pToken);
+        localStorage.setItem('spenddesk_google_token', pToken);
+        localStorage.setItem('spenddesk_token_expires_at', String(Date.now() + 3540 * 1000));
       }
     } catch {}
   }
@@ -197,6 +203,8 @@ export const initSupabaseAuth = (
       if (session.provider_token) {
         try {
           localStorage.setItem(TOKEN_STORAGE_KEY, session.provider_token);
+          localStorage.setItem('spenddesk_google_token', session.provider_token);
+          localStorage.setItem('spenddesk_token_expires_at', String(Date.now() + 3540 * 1000));
         } catch {}
       }
       try {
@@ -208,7 +216,7 @@ export const initSupabaseAuth = (
         }));
         localStorage.setItem('money_tracker_user', JSON.stringify(userInfo));
       } catch {}
-      const storedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
+      const storedToken = localStorage.getItem('spenddesk_google_token') || localStorage.getItem(TOKEN_STORAGE_KEY);
       const tokenToUse = session.provider_token || (storedToken && !storedToken.startsWith('eyJ') ? storedToken : session.access_token);
       if (onAuthSuccess) onAuthSuccess(userInfo, tokenToUse);
     } else {
@@ -227,6 +235,8 @@ export const initSupabaseAuth = (
       if (session.provider_token) {
         try {
           localStorage.setItem(TOKEN_STORAGE_KEY, session.provider_token);
+          localStorage.setItem('spenddesk_google_token', session.provider_token);
+          localStorage.setItem('spenddesk_token_expires_at', String(Date.now() + 3540 * 1000));
         } catch {}
       }
       try {
@@ -238,7 +248,7 @@ export const initSupabaseAuth = (
         }));
         localStorage.setItem('money_tracker_user', JSON.stringify(userInfo));
       } catch {}
-      const storedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
+      const storedToken = localStorage.getItem('spenddesk_google_token') || localStorage.getItem(TOKEN_STORAGE_KEY);
       const tokenToUse = session.provider_token || (storedToken && !storedToken.startsWith('eyJ') ? storedToken : session.access_token);
       if (onAuthSuccess) onAuthSuccess(userInfo, tokenToUse);
     } else if (event === 'SIGNED_OUT') {

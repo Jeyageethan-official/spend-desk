@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { 
   initSupabaseAuth, 
-  signOutSupabase 
+  signOutSupabase,
+  signInWithGoogleSupabase 
 } from './lib/supabase';
 import {
   signInWithGoogleWorkspace,
@@ -294,12 +295,37 @@ export default function App() {
     const unsubSupabase = initSupabaseAuth(
       (authedUser, token) => {
         const email = authedUser.email ? authedUser.email.trim().toLowerCase() : '';
-        setUser((prev) => prev || authedUser);
-        if (token && (!accessToken || accessToken === 'local_token')) setAccessToken(token);
+        setUser(authedUser);
+        if (token && (!accessToken || accessToken === 'local_token' || accessToken.startsWith('eyJ'))) {
+          setAccessToken(token);
+        }
         if (email) {
           saveLastUserEmail(email);
           mergeGuestDataIntoUser(email);
           setOfflineWorkspaceEmail(email);
+
+          // Auto-connect last connected Google Sheet if not currently set
+          const lastSheet = loadStoredSheetMeta(email) || loadStoredSheetMeta(null);
+          if (lastSheet) {
+            setActiveSheet(lastSheet);
+            saveStoredSheetMeta(lastSheet, email);
+          } else if (token && token.length > 20 && !token.startsWith('eyJ')) {
+            // Auto-discover Drive spreadsheets on initial sign-in
+            listUserSpreadsheets(token).then((driveList) => {
+              if (driveList.length > 0) {
+                const match = driveList.find((s) => /spenddesk|cash|wallet|money/i.test(s.name)) || driveList[0];
+                const sheetMeta: GoogleSheetMeta = {
+                  id: match.id,
+                  name: match.name,
+                  url: match.webViewLink || `https://docs.google.com/spreadsheets/d/${match.id}/edit`,
+                  lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                };
+                setActiveSheet(sheetMeta);
+                saveStoredSheetMeta(sheetMeta, email);
+                saveKnownSpreadsheet(sheetMeta, email);
+              }
+            }).catch(console.warn);
+          }
         }
       },
       () => {
@@ -332,10 +358,19 @@ export default function App() {
       const grantedScope = params.get('scope') || '';
       if (providerToken) {
         setAccessToken(providerToken);
-        try { localStorage.setItem('money_tracker_access_token', providerToken); } catch {}
+        try { 
+          localStorage.setItem('money_tracker_access_token', providerToken);
+          localStorage.setItem('spenddesk_google_token', providerToken);
+          localStorage.setItem('spenddesk_token_expires_at', String(Date.now() + 3540 * 1000));
+        } catch {}
         if (grantedScope && (!grantedScope.includes('spreadsheets') && !grantedScope.includes('drive'))) {
           showNotification('Notice: Please check "Select all" permissions to enable Google Sheets syncing.', 'info');
         }
+      }
+
+      // Clean token hash from browser URL bar cleanly
+      if (window.history && window.history.replaceState) {
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
       }
     } catch (e) {
       console.warn('Hash parse error:', e);
@@ -979,55 +1014,13 @@ export default function App() {
     showNotification(`Deleted ${txIds.length} transactions.`, 'info');
   };
 
-  // Unified Single Sign-In with Google: Drive and Sheet access ready in one single step!
+  // Unified Single Sign-In with Google via Supabase OAuth: Single redirect to Gmail account chooser
   const handleSignIn = async () => {
     try {
-      showNotification('Opening Google Sign-In...', 'info');
-      const res = await signInWithGoogleWorkspace();
-      if (res?.accessToken) {
-        setAccessToken(res.accessToken);
-        if (res.user?.email) {
-          const email = res.user.email.trim().toLowerCase();
-          const authedUser = {
-            displayName: res.user.name,
-            email: res.user.email,
-            photoURL: res.user.picture,
-          };
-          setUser(authedUser);
-          saveLastUserEmail(email);
-          mergeGuestDataIntoUser(email);
-          setOfflineWorkspaceEmail(email);
-
-          // Auto-connect last connected Google Sheet or discover from Drive
-          let sheetToConnect = loadStoredSheetMeta(email) || loadStoredSheetMeta(null) || loadStoredSheetMeta('guest');
-
-          if (!sheetToConnect && res.accessToken) {
-            try {
-              const driveList = await listUserSpreadsheets(res.accessToken);
-              if (driveList.length > 0) {
-                const match = driveList.find((s) => /spenddesk|cash|wallet|money/i.test(s.name)) || driveList[0];
-                sheetToConnect = {
-                  id: match.id,
-                  name: match.name,
-                  url: match.webViewLink || `https://docs.google.com/spreadsheets/d/${match.id}/edit`,
-                  lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                };
-              }
-            } catch (driveErr) {
-              console.warn('Auto-discover Drive spreadsheets on sign-in note:', driveErr);
-            }
-          }
-
-          if (sheetToConnect) {
-            setActiveSheet(sheetToConnect);
-            saveStoredSheetMeta(sheetToConnect, email);
-            saveKnownSpreadsheet(sheetToConnect, email);
-            void handlePullFromSheet(sheetToConnect.id, res.accessToken, { interactive: false, silent: true }).catch(console.warn);
-            showNotification(`Signed in! Auto-connected to "${sheetToConnect.name}".`, 'success');
-          } else {
-            showNotification('Signed in with Google! Google Drive & Sheets access ready.', 'success');
-          }
-        }
+      showNotification('Redirecting to Google Sign-In...', 'info');
+      const res = await signInWithGoogleSupabase();
+      if (!res.success && res.errorMessage) {
+        showNotification('Google Sign-In notice: ' + res.errorMessage, 'error');
       }
     } catch (err: any) {
       console.warn('Google Sign-In Exception:', err);

@@ -103,9 +103,9 @@ export const requestGoogleAccessToken = async (promptUser = true): Promise<strin
     return existing || '';
   }
 
-  // Unified single sign-in flow (opens exactly one Google account chooser popup)
-  const { accessToken } = await signInWithGoogleWorkspace();
-  return accessToken;
+  // Unified single sign-in flow via Supabase Google OAuth
+  await signInWithGoogleWorkspace();
+  return existing || '';
 };
 
 /**
