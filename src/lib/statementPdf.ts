@@ -115,6 +115,8 @@ export const generateBankStatementPdf = (
             font-size: 14px;
             font-weight: 800;
             color: #0f172a;
+            white-space: nowrap;
+            font-variant-numeric: tabular-nums;
           }
           .summary-val.credit { color: #059669; }
           .summary-val.debit { color: #e11d48; }
@@ -123,6 +125,7 @@ export const generateBankStatementPdf = (
             width: 100%;
             border-collapse: collapse;
             margin-top: 10px;
+            table-layout: auto;
           }
           th {
             background: #0f172a;
@@ -144,6 +147,22 @@ export const generateBankStatementPdf = (
           }
           .text-right { text-align: right; }
           .text-center { text-align: center; }
+          .price-col {
+            white-space: nowrap !important;
+            word-break: keep-all !important;
+            overflow-wrap: normal !important;
+            font-variant-numeric: tabular-nums;
+            letter-spacing: -0.2px;
+          }
+          th.price-col, td.price-col {
+            white-space: nowrap !important;
+            word-break: keep-all !important;
+          }
+          .nowrap-amt {
+            display: inline-block;
+            white-space: nowrap !important;
+            word-break: keep-all !important;
+          }
           .badge {
             display: inline-block;
             padding: 2px 6px;
@@ -199,27 +218,27 @@ export const generateBankStatementPdf = (
           </div>
           <div class="summary-card">
             <div class="summary-title">Total Cash In (Credit)</div>
-            <div class="summary-val credit">+${currency} ${totalCredits.toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+            <div class="summary-val credit price-col"><span class="nowrap-amt">+${currency}&nbsp;${totalCredits.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span></div>
           </div>
           <div class="summary-card">
             <div class="summary-title">Total Outflow (Debit)</div>
-            <div class="summary-val debit">-${currency} ${totalDebits.toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+            <div class="summary-val debit price-col"><span class="nowrap-amt">-${currency}&nbsp;${totalDebits.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span></div>
           </div>
           <div class="summary-card">
             <div class="summary-title">Net Closing Balance</div>
-            <div class="summary-val">${currency} ${runningBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+            <div class="summary-val price-col"><span class="nowrap-amt">${currency}&nbsp;${runningBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span></div>
           </div>
         </div>
 
         <table>
           <thead>
             <tr>
-              <th>Date & Time</th>
+              <th style="width: 17%; white-space: nowrap;">Date & Time</th>
               <th>Description / Notes</th>
-              <th>Payment Method</th>
-              <th class="text-right">Debit (-)</th>
-              <th class="text-right">Credit (+)</th>
-              <th class="text-right">Balance</th>
+              <th style="width: 13%; white-space: nowrap;">Payment Method</th>
+              <th class="text-right price-col" style="width: 16%;">Debit (-)</th>
+              <th class="text-right price-col" style="width: 16%;">Credit (+)</th>
+              <th class="text-right price-col" style="width: 17%;">Balance</th>
             </tr>
           </thead>
           <tbody>
@@ -228,14 +247,14 @@ export const generateBankStatementPdf = (
                 <td><strong>${row.date}</strong> ${row.time !== '00:00' ? `<span style="color:#64748b; font-size:10px;">${row.time}</span>` : ''}</td>
                 <td>${row.notes}</td>
                 <td><span class="badge">${row.method}</span></td>
-                <td class="text-right" style="color:${row.debit > 0 ? '#e11d48' : '#cbd5e1'}; font-weight:${row.debit > 0 ? 'bold' : 'normal'};">
-                  ${row.debit > 0 ? `-${currency} ${row.debit.toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '—'}
+                <td class="text-right price-col" style="color:${row.debit > 0 ? '#e11d48' : '#cbd5e1'}; font-weight:${row.debit > 0 ? 'bold' : 'normal'};">
+                  ${row.debit > 0 ? `<span class="nowrap-amt">-${currency}&nbsp;${row.debit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>` : '—'}
                 </td>
-                <td class="text-right" style="color:${row.credit > 0 ? '#059669' : '#cbd5e1'}; font-weight:${row.credit > 0 ? 'bold' : 'normal'};">
-                  ${row.credit > 0 ? `+${currency} ${row.credit.toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '—'}
+                <td class="text-right price-col" style="color:${row.credit > 0 ? '#059669' : '#cbd5e1'}; font-weight:${row.credit > 0 ? 'bold' : 'normal'};">
+                  ${row.credit > 0 ? `<span class="nowrap-amt">+${currency}&nbsp;${row.credit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>` : '—'}
                 </td>
-                <td class="text-right" style="font-weight:bold;">
-                  ${currency} ${row.balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                <td class="text-right price-col" style="font-weight:bold;">
+                  <span class="nowrap-amt">${currency}&nbsp;${row.balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                 </td>
               </tr>
             `).join('')}

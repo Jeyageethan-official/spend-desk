@@ -103,6 +103,7 @@ interface SettingsViewProps {
   user?: any;
   userProfile?: UserProfile;
   onUpdateProfile?: (updated: Partial<UserProfile>) => void;
+  onUpdateCategories?: (cats: CategoryDef[]) => void;
   onResetAllData?: () => void;
   onRestoreTransactions?: (txs: Transaction[], lends?: LendItem[]) => void;
   initialSection?: 'main' | 'categories' | 'preferences' | 'budget' | 'cloud' | 'data' | 'about' | 'profile';
@@ -159,6 +160,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   user,
   userProfile,
   onUpdateProfile,
+  onUpdateCategories,
   onResetAllData,
   onRestoreTransactions,
   initialSection = 'main',
@@ -201,19 +203,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   // Custom Profile Avatar state (synced with user, userProfile or localStorage)
   const [customAvatar, setCustomAvatar] = useState<string | null>(() => {
-    return user?.photoURL || userProfile?.avatar || localStorage.getItem('money_tracker_custom_avatar') || null;
+    return userProfile?.avatar || localStorage.getItem('money_tracker_custom_avatar') || user?.photoURL || null;
   });
 
   // Custom User Profile Name state
   const [profileName, setProfileName] = useState<string>(() => {
-    const stored = user?.displayName || userProfile?.name || localStorage.getItem('money_tracker_profile_name');
-    return stored && stored !== 'Jeyaram Tech' ? stored : 'My Wallet';
+    const stored = userProfile?.name || localStorage.getItem('money_tracker_profile_name') || user?.displayName;
+    return stored && stored.trim() !== '' ? stored : 'My Wallet';
   });
 
   // Profile Email state
   const [profileEmail, setProfileEmail] = useState<string>(() => {
-    const stored = user?.email || userProfile?.email || localStorage.getItem('money_tracker_profile_email');
-    return stored && stored !== 'jeyaramantech05@gmail.com' ? stored : '';
+    const stored = userProfile?.email || localStorage.getItem('money_tracker_profile_email') || user?.email;
+    return stored || '';
   });
 
   // Edit Form State (for full dedicated profile page)
@@ -227,9 +229,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   // Keep in sync with user & userProfile prop changes
   useEffect(() => {
-    const nextName = user?.displayName || (userProfile?.name && userProfile.name !== 'Jeyaram Tech' ? userProfile.name : 'My Wallet');
-    const nextAvatar = user?.photoURL || userProfile?.avatar || null;
-    const nextEmail = user?.email || (userProfile?.email && userProfile.email !== 'jeyaramantech05@gmail.com' ? userProfile.email : '');
+    const nextName = userProfile?.name || localStorage.getItem('money_tracker_profile_name') || user?.displayName || 'My Wallet';
+    const nextAvatar = userProfile?.avatar || localStorage.getItem('money_tracker_custom_avatar') || user?.photoURL || null;
+    const nextEmail = userProfile?.email || localStorage.getItem('money_tracker_profile_email') || user?.email || '';
 
     setProfileName(nextName);
     setEditModalName(nextName);
@@ -425,6 +427,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     const updated = [...categories, newDef];
     setCategories(updated);
     saveStoredCategoryDefs(updated, workspaceEmail);
+    onUpdateCategories?.(updated);
     onCloudSyncRequested?.();
     setFormCatName('');
     setFormCatIcon('Tag');
@@ -457,6 +460,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
     setCategories(updated);
     saveStoredCategoryDefs(updated, workspaceEmail);
+    onUpdateCategories?.(updated);
     onCloudSyncRequested?.();
     setEditingCategory(null);
     setFormCatName('');
@@ -469,6 +473,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     const updated = categories.filter((c) => c.id !== deleteCandidate.id);
     setCategories(updated);
     saveStoredCategoryDefs(updated, workspaceEmail);
+    onUpdateCategories?.(updated);
     onCloudSyncRequested?.();
     const candidateName = deleteCandidate.name;
     setDeleteCandidate(null);
@@ -479,6 +484,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const handleResetCategories = () => {
     const defaults = resetToDefaultCategoryDefs(workspaceEmail);
     setCategories(defaults);
+    saveStoredCategoryDefs(defaults, workspaceEmail);
+    onUpdateCategories?.(defaults);
     setShowResetCatConfirm(false);
     onCloudSyncRequested?.();
     onNotification?.('Categories restored to default standard set.', 'success');
@@ -650,9 +657,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
   }, [transactions, categories, lendItems]);
 
-  const activeUserAvatar = user?.photoURL || customAvatar;
-  const activeUserEmail = user?.email || profileEmail || (userProfile?.email && userProfile.email !== 'jeyaramantech05@gmail.com' ? userProfile.email : '');
-  const activeUserName = user?.displayName || profileName || (userProfile?.name && userProfile.name !== 'Jeyaram Tech' ? userProfile.name : 'My Wallet');
+  const activeUserAvatar = customAvatar || userProfile?.avatar || user?.photoURL || null;
+  const activeUserEmail = profileEmail || userProfile?.email || user?.email || '';
+  const activeUserName = profileName || userProfile?.name || user?.displayName || 'My Wallet';
 
   return (
     <div className="min-h-screen bg-slate-50/80 dark:bg-slate-950 pb-20 transition-colors">

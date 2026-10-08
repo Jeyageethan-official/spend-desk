@@ -29,23 +29,20 @@ const getScopedKey = (baseKey: string, email?: string | null): string => {
 
 export const loadStoredProfile = (email?: string | null): UserProfile => {
   const cleanEmail = email && email !== 'guest' ? email.trim().toLowerCase() : null;
-  if (!cleanEmail) {
-    return { name: 'My Wallet', avatar: null, email: '' };
-  }
   try {
     const nameKey = getScopedKey(PROFILE_NAME_KEY, cleanEmail);
     const avatarKey = getScopedKey(CUSTOM_AVATAR_KEY, cleanEmail);
     const emailKey = getScopedKey(PROFILE_EMAIL_KEY, cleanEmail);
 
-    let name = localStorage.getItem(nameKey);
-    if (!name || name === 'Jeyaram Tech' || name === 'My Wallet') {
-      name = cleanEmail.split('@')[0];
+    let name = localStorage.getItem(nameKey) || localStorage.getItem(PROFILE_NAME_KEY);
+    if (!name || name.trim() === '') {
+      name = cleanEmail ? cleanEmail.split('@')[0] : 'My Wallet';
     }
-    const avatar = localStorage.getItem(avatarKey);
-    const storedEmail = localStorage.getItem(emailKey) || cleanEmail;
-    return { name, avatar, email: storedEmail };
+    const avatar = localStorage.getItem(avatarKey) || localStorage.getItem(CUSTOM_AVATAR_KEY);
+    const storedEmail = localStorage.getItem(emailKey) || localStorage.getItem(PROFILE_EMAIL_KEY) || (cleanEmail || '');
+    return { name, avatar: avatar || null, email: storedEmail };
   } catch {
-    return { name: cleanEmail.split('@')[0], avatar: null, email: cleanEmail };
+    return { name: cleanEmail ? cleanEmail.split('@')[0] : 'My Wallet', avatar: null, email: cleanEmail || '' };
   }
 };
 
@@ -56,15 +53,23 @@ export const saveStoredProfile = (profile: Partial<UserProfile>, email?: string 
     const avatarKey = getScopedKey(CUSTOM_AVATAR_KEY, userEmail);
     const emailKey = getScopedKey(PROFILE_EMAIL_KEY, userEmail);
 
-    if (profile.name !== undefined) localStorage.setItem(nameKey, profile.name);
+    if (profile.name !== undefined) {
+      localStorage.setItem(nameKey, profile.name);
+      localStorage.setItem(PROFILE_NAME_KEY, profile.name);
+    }
     if (profile.avatar !== undefined) {
       if (profile.avatar) {
         localStorage.setItem(avatarKey, profile.avatar);
+        localStorage.setItem(CUSTOM_AVATAR_KEY, profile.avatar);
       } else {
         localStorage.removeItem(avatarKey);
+        localStorage.removeItem(CUSTOM_AVATAR_KEY);
       }
     }
-    if (profile.email !== undefined) localStorage.setItem(emailKey, profile.email);
+    if (profile.email !== undefined) {
+      localStorage.setItem(emailKey, profile.email);
+      localStorage.setItem(PROFILE_EMAIL_KEY, profile.email);
+    }
   } catch (e) {
     console.error('Failed to save profile to storage', e);
   }

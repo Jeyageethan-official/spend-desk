@@ -26,6 +26,8 @@ import {
 import { Transaction, Category, FilterState } from '../types/finance';
 import { formatCurrency } from '../lib/calculations';
 import { triggerFeedback } from '../lib/haptics';
+import { getCategoryIcon as getRegisteredCategoryIcon, resolveCategoryIcon } from '../lib/icons';
+import { loadStoredCategoryDefs, CategoryDef } from '../lib/storage';
 
 interface TransactionTableProps {
   transactions: Transaction[];
@@ -39,6 +41,8 @@ interface TransactionTableProps {
   onFilterChange?: (newFilter: FilterState) => void;
   selectedTxIds?: string[];
   onSelectedTxIdsChange?: (txIds: string[]) => void;
+  categoryDefs?: CategoryDef[];
+  storageEmail?: string | null;
 }
 
 const formatSectionDate = (dateStr: string): string => {
@@ -59,18 +63,6 @@ const formatSectionDate = (dateStr: string): string => {
   }
 };
 
-const getCategoryIcon = (cat: Category, colorClass: string) => {
-  switch (cat) {
-    case 'Food': return <Utensils className={`w-4 h-4 ${colorClass}`} />;
-    case 'Transport': return <Car className={`w-4 h-4 ${colorClass}`} />;
-    case 'Shopping': return <ShoppingBag className={`w-4 h-4 ${colorClass}`} />;
-    case 'Bills': return <Zap className={`w-4 h-4 ${colorClass}`} />;
-    case 'Entertainment': return <Film className={`w-4 h-4 ${colorClass}`} />;
-    case 'Education': return <GraduationCap className={`w-4 h-4 ${colorClass}`} />;
-    default: return <MoreHorizontal className={`w-4 h-4 ${colorClass}`} />;
-  }
-};
-
 export const TransactionTable: React.FC<TransactionTableProps> = ({
   transactions,
   allTransactions,
@@ -83,6 +75,8 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
   onFilterChange,
   selectedTxIds: controlledSelectedTxIds,
   onSelectedTxIdsChange,
+  categoryDefs,
+  storageEmail,
 }) => {
   const [sortField, setSortField] = useState<'date' | 'amount'>('date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
@@ -93,6 +87,30 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
   const longPressTimerRef = useRef<number | null>(null);
   const pressStartRef = useRef<{ x: number; y: number } | null>(null);
   const didLongPressRef = useRef(false);
+
+  const catDefs = useMemo(() => {
+    return categoryDefs || loadStoredCategoryDefs(storageEmail);
+  }, [categoryDefs, storageEmail]);
+
+  const catIconMap = useMemo(() => {
+    const map = new Map<string, string>();
+    catDefs.forEach((c) => {
+      if (c.name && c.iconName) {
+        map.set(c.name.toLowerCase().trim(), c.iconName);
+      }
+    });
+    return map;
+  }, [catDefs]);
+
+  const renderTransactionIcon = (tx: Transaction, colorClass: string) => {
+    if (tx.type === 'cash_added') {
+      return <ArrowDownLeft className="w-5 h-5 stroke-[2.5]" />;
+    }
+    const catName = (tx.category || '').toLowerCase().trim();
+    const iconName = catIconMap.get(catName);
+    const IconComp = resolveCategoryIcon(tx.category, iconName, catDefs);
+    return <IconComp className={`w-5 h-5 stroke-[2.2] ${colorClass}`} />;
+  };
 
   const selectedTxIds = controlledSelectedTxIds ?? internalSelectedTxIds;
   const updateSelectedTxIds = (next: string[] | ((current: string[]) => string[])) => {
@@ -496,13 +514,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
                   {/* Left Icon & Category Details */}
                   <div className="flex items-center gap-3 flex-1 min-w-0">
                     <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${boxBgClass}`}>
-                      {isCashIn ? (
-                        <ArrowDownLeft className="w-5 h-5 stroke-[2.5]" />
-                      ) : isCard ? (
-                        <CreditCard className="w-5 h-5 stroke-[2.5]" />
-                      ) : (
-                        getCategoryIcon(tx.category, textColorClass)
-                      )}
+                      {renderTransactionIcon(tx, textColorClass)}
                     </div>
 
                     <div className="truncate flex-1">

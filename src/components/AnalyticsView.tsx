@@ -6,13 +6,6 @@ import {
   Wallet, 
   TrendingUp, 
   Calendar,
-  Utensils,
-  Car,
-  ShoppingBag,
-  Zap,
-  Film,
-  GraduationCap,
-  MoreHorizontal,
   Flame
 } from 'lucide-react';
 import { 
@@ -23,6 +16,7 @@ import {
   FilterState 
 } from '../types/finance';
 import { formatCurrency } from '../lib/calculations';
+import { getCategoryIcon as getRegisteredCategoryIcon, resolveCategoryIcon } from '../lib/icons';
 import { FilterBar } from './FilterBar';
 
 interface AnalyticsViewProps {
@@ -36,16 +30,8 @@ interface AnalyticsViewProps {
   currency?: string;
 }
 
-const getCategoryIcon = (category: Category) => {
-  switch (category) {
-    case 'Food': return <Utensils className="w-4 h-4 text-red-500" />;
-    case 'Transport': return <Car className="w-4 h-4 text-blue-500" />;
-    case 'Shopping': return <ShoppingBag className="w-4 h-4 text-purple-500" />;
-    case 'Bills': return <Zap className="w-4 h-4 text-amber-500" />;
-    case 'Entertainment': return <Film className="w-4 h-4 text-pink-500" />;
-    case 'Education': return <GraduationCap className="w-4 h-4 text-emerald-500" />;
-    default: return <MoreHorizontal className="w-4 h-4 text-gray-500" />;
-  }
+const resolveCategoryIconComp = (iconName?: string, categoryName?: string) => {
+  return resolveCategoryIcon(categoryName, iconName);
 };
 
 export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
@@ -281,7 +267,10 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                 <div className="flex items-center justify-between mb-1.5">
                   <div className="flex items-center gap-2.5">
                     <div className="p-1.5 rounded-xl bg-white border border-slate-200/80 shadow-2xs">
-                      {getCategoryIcon(cat.category)}
+                      {(() => {
+                        const IconComp = resolveCategoryIconComp(cat.iconName, cat.category);
+                        return <IconComp className="w-4 h-4" style={{ color: cat.color || '#0ea5e9' }} />;
+                      })()}
                     </div>
                     <div>
                       <span className="font-bold text-xs sm:text-sm text-slate-900 block leading-tight">

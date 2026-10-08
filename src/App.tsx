@@ -38,6 +38,7 @@ import {
   TelegramAlertConfig,
   loadStoredCategoryDefs,
   saveStoredCategoryDefs,
+  CategoryDef,
   loadStoredProfile,
   saveStoredProfile,
   mergeGuestDataIntoUser,
@@ -172,6 +173,7 @@ export default function App() {
   const [alertPhone, setAlertPhone] = useState<string>(() => loadStoredAlertPhone(initialScope));
   const [telegramAlertConfig, setTelegramAlertConfig] = useState<TelegramAlertConfig>(() => loadStoredTelegramAlertConfig(initialScope));
   const [budgetConfig, setBudgetConfig] = useState<BudgetConfig>(() => loadStoredBudgetConfig(initialScope));
+  const [categories, setCategories] = useState<CategoryDef[]>(() => loadStoredCategoryDefs(initialScope));
   const [currency, setCurrency] = useState<string>('Rs');
 
   const [currentDateStr, setCurrentDateStr] = useState<string>(() => {
@@ -489,6 +491,7 @@ export default function App() {
     setTelegramAlertConfig(storedTelegram);
 
     setBudgetConfig(loadStoredBudgetConfig(scope));
+    setCategories(loadStoredCategoryDefs(scope));
     setUserProfile(loadStoredProfile(scope));
     setLoadedStorageScope(scope);
   }, [currentUserEmail]);
@@ -498,6 +501,24 @@ export default function App() {
     const nextProfile = { ...userProfile, ...updated };
     setUserProfile(nextProfile);
     saveStoredProfile(nextProfile, currentUserEmail);
+    if (user) {
+      const nextUser = {
+        ...user,
+        displayName: updated.name !== undefined ? updated.name : user.displayName,
+        photoURL: updated.avatar !== undefined ? updated.avatar : user.photoURL,
+        email: updated.email !== undefined && updated.email ? updated.email : user.email,
+      };
+      setUser(nextUser);
+      try {
+        localStorage.setItem('money_tracker_user', JSON.stringify(nextUser));
+        localStorage.setItem('money_tracker_user_info', JSON.stringify({
+          ...nextUser,
+          name: nextUser.displayName,
+          picture: nextUser.photoURL,
+        }));
+      } catch {}
+    }
+    queueCloudSync();
   };
 
   // Save transactions to user-scoped local storage whenever they change
@@ -1528,6 +1549,9 @@ export default function App() {
             }
             return f;
           });
+          if (activeSheet && user?.email && isOnline) {
+            void handlePushToSheet({ silent: true });
+          }
           return freshDate;
         }
         return prev;
@@ -1560,8 +1584,8 @@ export default function App() {
   }, [transactions, todayStr]);
 
   const categoryBreakdown = useMemo(() => {
-    return calculateCategoryBreakdown(filteredTransactions);
-  }, [filteredTransactions]);
+    return calculateCategoryBreakdown(filteredTransactions, categories);
+  }, [filteredTransactions, categories]);
 
   const { trendItems } = useMemo(() => {
     return calculateWeeklyDailyTrend(filteredTransactions);
@@ -1849,6 +1873,7 @@ export default function App() {
               lendItems={lendItems}
               userProfile={userProfile}
               onUpdateProfile={handleUpdateProfile}
+              onUpdateCategories={(newCats) => setCategories(newCats)}
               onResetAllData={() => {
                 setTransactions([]);
                 setLendItems([]);
@@ -1960,6 +1985,8 @@ export default function App() {
                   transactions={filteredTransactions.slice(0, 8)}
                   allTransactions={transactions}
                   currency={currency}
+                  categoryDefs={categories}
+                  storageEmail={currentUserEmail}
                   onAddNew={() => {
                     setEditingTransaction(null);
                     setModalDefaultType('cash_expense');
@@ -1995,6 +2022,8 @@ export default function App() {
                 transactions={filteredTransactions}
                 allTransactions={transactions}
                 currency={currency}
+                categoryDefs={categories}
+                storageEmail={currentUserEmail}
                 onAddNew={() => {
                   setEditingTransaction(null);
                   setModalDefaultType('cash_expense');
@@ -2022,7 +2051,7 @@ export default function App() {
                 onFilterChange={setFilter}
                 onExportCSV={handleExportCSV}
                 totalTransactionsCount={filteredTransactions.length}
-                currency="Rs"
+                currency={currency}
               />
             </main>
           )}

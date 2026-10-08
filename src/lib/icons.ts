@@ -177,10 +177,95 @@ export const ICON_MAP: Record<string, any> = {
   Film,
   GraduationCap,
   MoreHorizontal,
-  ...Object.fromEntries(ICON_CATALOG.map((i) => [i.name, i.component]))
+  ...Object.fromEntries(ICON_CATALOG.map((i) => [i.name, i.component])),
+  // Standard and common category aliases
+  Food: Utensils,
+  food: Utensils,
+  Dining: Utensils,
+  dining: Utensils,
+  Transport: Car,
+  transport: Car,
+  Travel: Car,
+  travel: Car,
+  Shopping: ShoppingBag,
+  shopping: ShoppingBag,
+  Bills: Zap,
+  bills: Zap,
+  Utilities: Zap,
+  utilities: Zap,
+  Entertainment: Film,
+  entertainment: Film,
+  Movies: Film,
+  movies: Film,
+  Education: GraduationCap,
+  education: GraduationCap,
+  Tuition: GraduationCap,
+  tuition: GraduationCap,
+  Other: MoreHorizontal,
+  other: MoreHorizontal,
+  Others: MoreHorizontal,
+  others: MoreHorizontal,
+  Health: HeartPulse,
+  health: HeartPulse,
+  Medical: HeartPulse,
+  medical: HeartPulse,
+  Medicine: Pill,
+  medicine: Pill,
+  Gym: Dumbbell,
+  gym: Dumbbell,
+  Fitness: Dumbbell,
+  fitness: Dumbbell,
+  Sports: Activity,
+  sports: Activity,
+  Home: Home,
+  home: Home,
+  Rent: Key,
+  rent: Key,
+  Work: Briefcase,
+  work: Briefcase,
+  Salary: Briefcase,
+  salary: Briefcase,
+  Savings: PiggyBank,
+  savings: PiggyBank,
+  Investment: PiggyBank,
+  investment: PiggyBank,
+  Groceries: ShoppingCart,
+  groceries: ShoppingCart,
+  Gaming: Gamepad2,
+  gaming: Gamepad2,
+  Book: Book,
+  Books: Book,
+  Party: PartyPopper,
+  party: PartyPopper,
+  Gift: Gift,
+  Gifts: Gift,
 };
 
-export const getCategoryIcon = (iconName?: string) => {
-  if (!iconName) return Tag;
-  return ICON_MAP[iconName] || Tag;
+export const getCategoryIcon = (iconOrCatName?: string) => {
+  if (!iconOrCatName) return Tag;
+  const trimmed = iconOrCatName.trim();
+  if (ICON_MAP[trimmed]) return ICON_MAP[trimmed];
+  const lower = trimmed.toLowerCase();
+  for (const [key, comp] of Object.entries(ICON_MAP)) {
+    if (key.toLowerCase() === lower) return comp;
+  }
+  return Tag;
+};
+
+export const resolveCategoryIcon = (
+  categoryName?: string,
+  iconName?: string,
+  categoryDefs?: Array<{ name: string; iconName: string }>
+) => {
+  if (iconName && ICON_MAP[iconName.trim()]) {
+    return ICON_MAP[iconName.trim()];
+  }
+  if (categoryDefs && categoryName) {
+    const cleanCat = categoryName.trim().toLowerCase();
+    const found = categoryDefs.find((c) => c.name && c.name.trim().toLowerCase() === cleanCat);
+    if (found && found.iconName && ICON_MAP[found.iconName.trim()]) {
+      return ICON_MAP[found.iconName.trim()];
+    }
+  }
+  return getCategoryIcon(iconName || categoryName);
 };

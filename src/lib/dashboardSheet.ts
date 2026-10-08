@@ -107,12 +107,11 @@ export const DASHBOARD_PERIODS: DashboardPeriod[] = [
 
 /** A1 helpers for reading/writing the filter bar before a rebuild. */
 export const getDashboardFilterCells = () => {
-  const r = ROW.filter + 1; // 1-based for A1
   return {
-    period: `C${r}`,
-    from: `F${r}`,
-    to: `H${r}`,
-    range: `C${r}:I${r}`,
+    period: 'C7',
+    from: 'F7',
+    to: 'H7',
+    range: 'C7:I7',
   };
 };
 
@@ -185,43 +184,50 @@ const CARDS: [number, number][] = [
 ];
 const TABLE_ROWS = 7;
 
-const ROW_DEFS: [string, number][] = [
-  ['top', 10],
-  ['hdrTitle', 34],
-  ['hdrSub', 22],
-  ['hdrPad', 8],
-  ['hdrLine', 3],
-  ['gap0', 10],
-  ['filter', 36],
-  ['gap1', 14],
-  ['secOverview', 22],
-  ['gap2', 10],
-  ['k1Acc', 4],
-  ['k1Label', 24],
-  ['k1Value', 44],
-  ['k1Sub', 24],
-  ['gap3', 20],
-  ['secAnalysis', 22],
-  ['gap4', 10],
-  ['p1Title', 34],
-  ['p1Head', 26],
-  ...Array.from({ length: TABLE_ROWS }, (_, i): [string, number] => [`p1r${i}`, 30]),
-  ['p1Total', 32],
-  ['gap5', 20],
-  ['secLedger', 22],
-  ['gap6', 10],
-  ['p2Title', 34],
-  ['p2Head', 26],
-  ...Array.from({ length: TABLE_ROWS }, (_, i): [string, number] => [`p2r${i}`, 30]),
-  ['p2Foot', 32],
-  ['gap7', 16],
-  ['note', 22],
-  ['bottom', 10],
-];
-const ROW: Record<string, number> = {};
-ROW_DEFS.forEach(([name], i) => {
-  ROW[name] = i;
-});
+export const getDashboardRowDefs = (catRowCount: number = 7): { rowDefs: [string, number][]; rowMap: Record<string, number> } => {
+  const rowDefs: [string, number][] = [
+    ['top', 10],
+    ['hdrTitle', 34],
+    ['hdrSub', 22],
+    ['hdrPad', 8],
+    ['hdrLine', 3],
+    ['gap0', 10],
+    ['filter', 36],
+    ['gap1', 14],
+    ['secOverview', 22],
+    ['gap2', 10],
+    ['k1Acc', 4],
+    ['k1Label', 24],
+    ['k1Value', 44],
+    ['k1Sub', 24],
+    ['gap3', 20],
+    ['secAnalysis', 22],
+    ['gap4', 10],
+    ['p1Title', 34],
+    ['p1Head', 26],
+    ...Array.from({ length: catRowCount }, (_, i): [string, number] => [`p1r${i}`, 30]),
+    ['p1Total', 32],
+    ['gap5', 20],
+    ['secLedger', 22],
+    ['gap6', 10],
+    ['p2Title', 34],
+    ['p2Head', 26],
+    ...Array.from({ length: TABLE_ROWS }, (_, i): [string, number] => [`p2r${i}`, 30]),
+    ['p2Foot', 32],
+    ['gap7', 16],
+    ['note', 22],
+    ['bottom', 10],
+  ];
+  const rowMap: Record<string, number> = {};
+  rowDefs.forEach(([name], i) => {
+    rowMap[name] = i;
+  });
+  return { rowDefs, rowMap };
+};
+
+const DEFAULT_GRID_CONFIG = getDashboardRowDefs(7);
+export const ROW_DEFS: [string, number][] = DEFAULT_GRID_CONFIG.rowDefs;
+export const ROW: Record<string, number> = DEFAULT_GRID_CONFIG.rowMap;
 
 // ─── Small helpers ───────────────────────────────────────────────────────────
 
@@ -408,21 +414,23 @@ export const buildDashboardLayout = (input: DashboardInput): DashboardLayout => 
     }))
     .filter((c) => c.amount > 0)
     .sort((a, b) => b.amount - a.amount || a.name.localeCompare(b.name));
+  
+  let allCatsToShow = spent;
+  if (allCatsToShow.length === 0 && Array.isArray(categories) && categories.length > 0) {
+    allCatsToShow = categories.map((c) => ({
+      name: String(c.category),
+      amount: safeNum(c.amount),
+      count: safeNum(c.count),
+      color: safeColor(c.color, P.slate),
+    }));
+  }
+
+  // All categories must be shown directly in Spending by Category without grouping into Others
+  const catRows = allCatsToShow;
+  const catRowCount = Math.max(TABLE_ROWS, catRows.length);
+  const { rowDefs: activeRowDefs, rowMap: ROW } = getDashboardRowDefs(catRowCount);
   const catTotal = spent.reduce((s, c) => s + c.amount, 0);
   const catCount = spent.reduce((s, c) => s + c.count, 0);
-  let catRows = spent;
-  if (spent.length > TABLE_ROWS) {
-    const rest = spent.slice(TABLE_ROWS - 1);
-    catRows = [
-      ...spent.slice(0, TABLE_ROWS - 1),
-      {
-        name: `Others (${rest.length})`,
-        amount: rest.reduce((s, c) => s + c.amount, 0),
-        count: rest.reduce((s, c) => s + c.count, 0),
-        color: P.slate,
-      },
-    ];
-  }
   const catMax = Math.max(0, ...catRows.map((c) => c.amount));
 
   // Weekdays
@@ -446,7 +454,7 @@ export const buildDashboardLayout = (input: DashboardInput): DashboardLayout => 
   // ── Spec registry ──────────────────────────────────────────────────────────
   const specs: Spec[] = [];
   const borders: BorderSpec[] = [];
-  const lastRow = ROW_DEFS.length - 1;
+  const lastRow = activeRowDefs.length - 1;
   const lastCol = COL_PX.length - 1;
 
   const fill = (r1: number, c1: number, r2: number, c2: number, bg: string) =>
@@ -493,36 +501,36 @@ export const buildDashboardLayout = (input: DashboardInput): DashboardLayout => 
   cell(ROW.filter, 4, 4, 'FROM', {
     bg: P.filterBg, color: P.muted, size: 8, bold: true, h: 'RIGHT', padR: 6, v: 'MIDDLE',
   });
-  {
-    const serial = isoToSheetSerial(resolved.startDate);
-    if (serial == null) {
-      cell(ROW.filter, 5, 5, '', {
-        bg: P.oceanTint, color: P.faint, size: 11, h: 'CENTER', v: 'MIDDLE',
-      });
-    } else {
-      cell(ROW.filter, 5, 5, serial, {
-        bg: P.oceanTint, color: P.ocean, size: 11, bold: true, h: 'CENTER', v: 'MIDDLE',
-        num: 'yyyy-mm-dd', numKind: 'DATE',
-      });
-    }
-  }
+  const fromVal: CellValue =
+    resolved.period === 'Custom' && resolved.startDate
+      ? (isoToSheetSerial(resolved.startDate) ?? '')
+      : {
+          formula:
+            '=IF(C7="All time","",IF(C7="Today",TODAY(),IF(C7="This week",TODAY()-WEEKDAY(TODAY(),2)+1,IF(C7="This month",DATE(YEAR(TODAY()),MONTH(TODAY()),1),DATE(YEAR(TODAY()),MONTH(TODAY()),1)))))',
+        };
+
+  cell(ROW.filter, 5, 5, fromVal, {
+    bg: P.oceanTint, color: P.ocean, size: 11, bold: true, h: 'CENTER', v: 'MIDDLE',
+    num: 'yyyy-mm-dd', numKind: 'DATE',
+  });
+
   cell(ROW.filter, 6, 6, 'TO', {
     bg: P.filterBg, color: P.muted, size: 8, bold: true, h: 'RIGHT', padR: 6, v: 'MIDDLE',
   });
-  {
-    const serial = isoToSheetSerial(resolved.endDate);
-    if (serial == null) {
-      cell(ROW.filter, 7, 8, '', {
-        bg: P.oceanTint, color: P.faint, size: 11, h: 'CENTER', v: 'MIDDLE',
-      });
-    } else {
-      cell(ROW.filter, 7, 8, serial, {
-        bg: P.oceanTint, color: P.ocean, size: 11, bold: true, h: 'CENTER', v: 'MIDDLE',
-        num: 'yyyy-mm-dd', numKind: 'DATE',
-      });
-    }
-  }
-  cell(ROW.filter, 10, 17, `${resolved.label}  ·  Edit Period / From / To, then Sync from SpendDesk`, {
+
+  const toVal: CellValue =
+    resolved.period === 'Custom' && resolved.endDate
+      ? (isoToSheetSerial(resolved.endDate) ?? '')
+      : {
+          formula: '=IF(C7="All time","",TODAY())',
+        };
+
+  cell(ROW.filter, 7, 8, toVal, {
+    bg: P.oceanTint, color: P.ocean, size: 11, bold: true, h: 'CENTER', v: 'MIDDLE',
+    num: 'yyyy-mm-dd', numKind: 'DATE',
+  });
+
+  cell(ROW.filter, 10, 17, 'Live Auto-Refresh · Select Period (Today / This week / This month / All time)', {
     bg: P.filterBg, color: P.faint, size: 9, h: 'RIGHT', padR: 14, v: 'MIDDLE', italic: true,
   });
   box(ROW.filter, FULL[0], ROW.filter, FULL[1], P.oceanBorder);
@@ -532,11 +540,11 @@ export const buildDashboardLayout = (input: DashboardInput): DashboardLayout => 
     lineBelow(row, FULL[0], FULL[1], P.border);
   };
 
-  // ── KPI cards (single row — Today / Month spend removed) ───────────────────
+  // ── KPI cards (dynamic live formulas connected to Transactions) ───────────
   interface Kpi {
     label: string;
-    value: number;
-    sub: string;
+    value: CellValue;
+    sub: CellValue;
     accent: string;
     valueColor: string;
     subColor: string;
@@ -552,18 +560,52 @@ export const buildDashboardLayout = (input: DashboardInput): DashboardLayout => 
           ? { text: 'Low cash', color: P.warn }
           : { text: 'Healthy', color: P.good };
 
-  const rangeHint = resolved.period === 'All time' ? 'All time' : resolved.period;
-
   const kpiRow: Kpi[] = [
-    { label: 'Cash balance', value: bal, sub: balanceStatus.text, accent: P.brandBright, valueColor: P.brand, subColor: balanceStatus.color, hero: true },
-    { label: 'Cash in', value: summary.cashAdded, sub: rangeHint, accent: '#10B981', valueColor: P.ink, subColor: P.faint },
-    { label: 'Cash spent', value: summary.cashSpent, sub: rangeHint, accent: '#E11D48', valueColor: summary.cashSpent > 0 ? P.bad : P.ink, subColor: P.faint },
-    { label: 'Card & digital', value: summary.cardSpend, sub: rangeHint, accent: P.blue, valueColor: P.ink, subColor: P.faint },
-    { label: 'Total spend', value: summary.totalSpend, sub: 'Cash + card & digital', accent: '#475569', valueColor: P.ink, subColor: P.faint },
+    {
+      label: 'Cash balance',
+      value: { formula: '=SUMIF(Transactions!C:C, "IN", Transactions!E:E) - SUMIFS(Transactions!E:E, Transactions!C:C, "OUT", Transactions!G:G, "Cash")' },
+      sub: { formula: '=IF(B13<0, "Deficit — spending exceeds cash", IF(B13=0, "No cash on hand", IF(B13<1500, "Low cash", "Healthy")))' },
+      accent: P.brandBright,
+      valueColor: P.brand,
+      subColor: balanceStatus.color,
+      hero: true,
+    },
+    {
+      label: 'Cash in',
+      value: { formula: '=IF(OR(C7="All time", F7=""), SUMIF(Transactions!C:C, "IN", Transactions!E:E), SUMIFS(Transactions!E:E, Transactions!C:C, "IN", Transactions!A:A, ">="&F7, Transactions!A:A, "<="&H7))' },
+      sub: { formula: '=IF(C7="All time", "All time", C7)' },
+      accent: '#10B981',
+      valueColor: P.ink,
+      subColor: P.faint,
+    },
+    {
+      label: 'Cash spent',
+      value: { formula: '=IF(OR(C7="All time", F7=""), SUMIFS(Transactions!E:E, Transactions!C:C, "OUT", Transactions!G:G, "Cash"), SUMIFS(Transactions!E:E, Transactions!C:C, "OUT", Transactions!G:G, "Cash", Transactions!A:A, ">="&F7, Transactions!A:A, "<="&H7))' },
+      sub: { formula: '=IF(C7="All time", "All time", C7)' },
+      accent: '#E11D48',
+      valueColor: P.bad,
+      subColor: P.faint,
+    },
+    {
+      label: 'Card & digital',
+      value: { formula: '=IF(OR(C7="All time", F7=""), SUMIFS(Transactions!E:E, Transactions!C:C, "OUT", Transactions!G:G, "<>Cash"), SUMIFS(Transactions!E:E, Transactions!C:C, "OUT", Transactions!G:G, "<>Cash", Transactions!A:A, ">="&F7, Transactions!A:A, "<="&H7))' },
+      sub: { formula: '=IF(C7="All time", "All time", C7)' },
+      accent: P.blue,
+      valueColor: P.ink,
+      subColor: P.faint,
+    },
+    {
+      label: 'Total spend',
+      value: { formula: '=IF(OR(C7="All time", F7=""), SUMIF(Transactions!C:C, "OUT", Transactions!E:E), SUMIFS(Transactions!E:E, Transactions!C:C, "OUT", Transactions!A:A, ">="&F7, Transactions!A:A, "<="&H7))' },
+      sub: 'Cash + card & digital',
+      accent: '#475569',
+      valueColor: P.ink,
+      subColor: P.faint,
+    },
     {
       label: 'Out of wallet',
-      value: summary.outOfWallet,
-      sub: summary.outOfWallet > 0 ? 'Spent beyond cash on hand' : 'Nothing beyond cash on hand',
+      value: { formula: '=IF(B13<0, ABS(B13), 0)' },
+      sub: { formula: '=IF(B13<0, "Spent beyond cash on hand", "Nothing beyond cash on hand")' },
       accent: '#D97706',
       valueColor: summary.outOfWallet > 0 ? P.warn : P.ink,
       subColor: summary.outOfWallet > 0 ? P.warn : P.faint,
@@ -607,24 +649,53 @@ export const buildDashboardLayout = (input: DashboardInput): DashboardLayout => 
   headCell(ROW.p1Head, 5, 5, 'SHARE', 'RIGHT');
   headCell(ROW.p1Head, 6, 8, 'DISTRIBUTION', 'LEFT', 14);
   lineBelow(ROW.p1Head, LEFT[0], LEFT[1], P.border);
-  for (let i = 0; i < TABLE_ROWS; i++) {
+  for (let i = 0; i < catRowCount; i++) {
     const row = ROW.p1r0 + i;
+    const sheetRowNum = row + 1;
     const item = catRows[i];
     if (item) {
       cell(row, 1, 2, item.name, dataFmt({ padL: 14 }));
-      cell(row, 3, 4, item.amount, dataFmt({ h: 'RIGHT', num: RS, numKind: 'CURRENCY' }));
-      cell(row, 5, 5, catTotal > 0 ? item.amount / catTotal : 0, dataFmt({ h: 'RIGHT', color: P.muted, num: PCT, numKind: 'PERCENT' }));
+      cell(
+        row,
+        3,
+        4,
+        {
+          formula: `=IF(OR($C$7="All time",$F$7=""), SUMIFS(Transactions!E:E, Transactions!C:C, "OUT", Transactions!D:D, B${sheetRowNum}), SUMIFS(Transactions!E:E, Transactions!C:C, "OUT", Transactions!D:D, B${sheetRowNum}, Transactions!A:A, ">="&$F$7, Transactions!A:A, "<="&$H$7))`,
+        },
+        dataFmt({ h: 'RIGHT', num: RS, numKind: 'CURRENCY' })
+      );
+      cell(
+        row,
+        5,
+        5,
+        {
+          formula: `=IF($N$13>0, D${sheetRowNum}/$N$13, 0)`,
+        },
+        dataFmt({ h: 'RIGHT', color: P.muted, num: PCT, numKind: 'PERCENT' })
+      );
       cell(row, 6, 8, sparkBar(item.amount, catMax, item.color), dataFmt({ padL: 14 }));
     } else if (i === 0) {
-      cell(row, 1, 5, 'No spending in this date range', dataFmt({ padL: 14, color: P.faint, italic: true }));
+      cell(row, 1, 5, 'No spending recorded yet', dataFmt({ padL: 14, color: P.faint, italic: true }));
     }
     lineBelow(row, LEFT[0], LEFT[1], P.divider);
   }
   fill(ROW.p1Total, LEFT[0], ROW.p1Total, LEFT[1], P.headBg);
   const catTotalBg = { bg: P.headBg, size: 10, bold: true, color: P.ink };
   cell(ROW.p1Total, 1, 2, catCount > 0 ? `Total · ${plural(catCount, 'txn', 'txns')}` : 'Total', { ...catTotalBg, padL: 14 });
-  cell(ROW.p1Total, 3, 4, catTotal, { ...catTotalBg, h: 'RIGHT', num: RS, numKind: 'CURRENCY' });
-  cell(ROW.p1Total, 5, 5, catTotal > 0 ? 1 : 0, { ...catTotalBg, h: 'RIGHT', color: P.muted, num: PCT, numKind: 'PERCENT' });
+  cell(
+    ROW.p1Total,
+    3,
+    4,
+    { formula: `=SUM(D${ROW.p1r0 + 1}:D${ROW.p1r0 + catRowCount})` },
+    { ...catTotalBg, h: 'RIGHT', num: RS, numKind: 'CURRENCY' }
+  );
+  cell(
+    ROW.p1Total,
+    5,
+    5,
+    { formula: `=IF(D${ROW.p1Total + 1}>0, 1, 0)` },
+    { ...catTotalBg, h: 'RIGHT', color: P.muted, num: PCT, numKind: 'PERCENT' }
+  );
   lineAbove(ROW.p1Total, LEFT[0], LEFT[1], P.border);
   box(ROW.p1Title, LEFT[0], ROW.p1Total, LEFT[1], P.border);
 
@@ -636,22 +707,53 @@ export const buildDashboardLayout = (input: DashboardInput): DashboardLayout => 
   headCell(ROW.p1Head, 14, 14, 'SHARE', 'RIGHT');
   headCell(ROW.p1Head, 15, 17, 'TREND', 'LEFT', 14);
   lineBelow(ROW.p1Head, RIGHT[0], RIGHT[1], P.border);
-  dayRows.forEach((d, i) => {
+  for (let i = 0; i < catRowCount; i++) {
     const row = ROW.p1r0 + i;
-    const isPeak = peakDay !== undefined && d.short === peakDay.short;
-    cell(row, 10, 11, d.long, dataFmt({ padL: 14, bold: isPeak }));
-    cell(row, 12, 13, d.amount, dataFmt({
-      h: 'RIGHT', num: RS, numKind: 'CURRENCY', bold: isPeak, color: d.amount > 0 ? P.ink : P.faint,
-    }));
-    cell(row, 14, 14, dayTotal > 0 ? d.amount / dayTotal : 0, dataFmt({ h: 'RIGHT', color: P.muted, num: PCT, numKind: 'PERCENT' }));
-    cell(row, 15, 17, d.amount > 0 ? sparkBar(d.amount, dayMax, isPeak ? P.blue : P.blueSoft) : null, dataFmt({ padL: 14 }));
+    const sheetRowNum = row + 1;
+    if (i < dayRows.length) {
+      const d = dayRows[i];
+      const isPeak = peakDay !== undefined && d.short === peakDay.short;
+      const dayNum = i + 1;
+      cell(row, 10, 11, d.long, dataFmt({ padL: 14, bold: isPeak }));
+      cell(
+        row,
+        12,
+        13,
+        {
+          formula: `=IF(OR($C$7="All time",$F$7=""), SUMPRODUCT((Transactions!$C$3:$C$1000="OUT")*(Transactions!$A$3:$A$1000<>"")*(WEEKDAY(Transactions!$A$3:$A$1000,2)=${dayNum})*(Transactions!$E$3:$E$1000)), SUMPRODUCT((Transactions!$C$3:$C$1000="OUT")*(Transactions!$A$3:$A$1000<>"")*(WEEKDAY(Transactions!$A$3:$A$1000,2)=${dayNum})*(Transactions!$A$3:$A$1000>=$F$7)*(Transactions!$A$3:$A$1000<=$H$7)*(Transactions!$E$3:$E$1000)))`,
+        },
+        dataFmt({
+          h: 'RIGHT', num: RS, numKind: 'CURRENCY', bold: isPeak, color: d.amount > 0 ? P.ink : P.faint,
+        })
+      );
+      cell(
+        row,
+        14,
+        14,
+        { formula: `=IF($N$13>0, M${sheetRowNum}/$N$13, 0)` },
+        dataFmt({ h: 'RIGHT', color: P.muted, num: PCT, numKind: 'PERCENT' })
+      );
+      cell(row, 15, 17, d.amount > 0 ? sparkBar(d.amount, dayMax, isPeak ? P.blue : P.blueSoft) : null, dataFmt({ padL: 14 }));
+    }
     lineBelow(row, RIGHT[0], RIGHT[1], P.divider);
-  });
+  }
   fill(ROW.p1Total, RIGHT[0], ROW.p1Total, RIGHT[1], P.headBg);
   const dayTotalBg = { bg: P.headBg, size: 10, bold: true, color: P.ink };
   cell(ROW.p1Total, 10, 11, peakDay ? `Total · peak ${peakDay.short}` : 'Total', { ...dayTotalBg, padL: 14 });
-  cell(ROW.p1Total, 12, 13, dayTotal, { ...dayTotalBg, h: 'RIGHT', num: RS, numKind: 'CURRENCY' });
-  cell(ROW.p1Total, 14, 14, dayTotal > 0 ? 1 : 0, { ...dayTotalBg, h: 'RIGHT', color: P.muted, num: PCT, numKind: 'PERCENT' });
+  cell(
+    ROW.p1Total,
+    12,
+    13,
+    { formula: `=SUM(M${ROW.p1r0 + 1}:M${ROW.p1r0 + Math.min(catRowCount, 7)})` },
+    { ...dayTotalBg, h: 'RIGHT', num: RS, numKind: 'CURRENCY' }
+  );
+  cell(
+    ROW.p1Total,
+    14,
+    14,
+    { formula: `=IF(M${ROW.p1Total + 1}>0, 1, 0)` },
+    { ...dayTotalBg, h: 'RIGHT', color: P.muted, num: PCT, numKind: 'PERCENT' }
+  );
   lineAbove(ROW.p1Total, RIGHT[0], RIGHT[1], P.border);
   box(ROW.p1Title, RIGHT[0], ROW.p1Total, RIGHT[1], P.border);
 
@@ -733,7 +835,7 @@ export const buildDashboardLayout = (input: DashboardInput): DashboardLayout => 
   });
 
   // ── Output ─────────────────────────────────────────────────────────────────
-  const rowCount = ROW_DEFS.length;
+  const rowCount = activeRowDefs.length;
   const columnCount = COL_PX.length;
   const values: CellValue[][] = Array.from({ length: rowCount }, () => Array<CellValue>(columnCount).fill(null));
   specs.forEach((s) => {
@@ -825,7 +927,7 @@ export const buildDashboardLayout = (input: DashboardInput): DashboardLayout => 
     ];
 
     const dimensions: any[] = [];
-    ROW_DEFS.forEach(([, px], i) => {
+    activeRowDefs.forEach(([, px], i) => {
       dimensions.push({
         updateDimensionProperties: {
           range: { sheetId, dimension: 'ROWS', startIndex: i, endIndex: i + 1 },

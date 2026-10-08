@@ -92,19 +92,17 @@ export const Header: React.FC<HeaderProps> = ({
 
   // Determine effective display name, avatar, and email strictly isolated per account
   const isOnlineUser = Boolean(user && user.email);
-  const effectiveEmail = isOnlineUser 
+  const effectiveEmail = userProfile?.email || (isOnlineUser 
     ? user.email 
-    : (storageEmail && storageEmail !== 'guest' ? storageEmail : 'Local Offline Mode');
+    : (storageEmail && storageEmail !== 'guest' ? storageEmail : 'Local Offline Mode'));
     
-  const effectiveName = isOnlineUser
-    ? (user.displayName || user.email?.split('@')[0] || 'Google User')
-    : (userProfile?.name && userProfile.name !== 'Jeyaram Tech' && userProfile.name !== 'My Wallet'
-        ? userProfile.name
+  const effectiveName = userProfile?.name && userProfile.name.trim() !== ''
+    ? userProfile.name
+    : (isOnlineUser
+        ? (user.displayName || user.email?.split('@')[0] || 'Google User')
         : (storageEmail && storageEmail !== 'guest' ? storageEmail.split('@')[0] : 'My Wallet'));
 
-  const effectiveAvatar = isOnlineUser 
-    ? (user.photoURL || userProfile?.avatar || null) 
-    : (userProfile?.avatar || null);
+  const effectiveAvatar = userProfile?.avatar || user?.photoURL || null;
 
   const effectiveInitial = (effectiveName && effectiveName.trim().length > 0 
     ? effectiveName.trim().charAt(0).toUpperCase() 
