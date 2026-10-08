@@ -215,9 +215,8 @@ export const generateBankStatementPdf = (
           <thead>
             <tr>
               <th>Date & Time</th>
-              <th>Category</th>
               <th>Description / Notes</th>
-              <th>Mode</th>
+              <th>Payment Method</th>
               <th class="text-right">Debit (-)</th>
               <th class="text-right">Credit (+)</th>
               <th class="text-right">Balance</th>
@@ -227,7 +226,6 @@ export const generateBankStatementPdf = (
             ${statementRows.map(row => `
               <tr>
                 <td><strong>${row.date}</strong> ${row.time !== '00:00' ? `<span style="color:#64748b; font-size:10px;">${row.time}</span>` : ''}</td>
-                <td><strong>${row.category}</strong></td>
                 <td>${row.notes}</td>
                 <td><span class="badge">${row.method}</span></td>
                 <td class="text-right" style="color:${row.debit > 0 ? '#e11d48' : '#cbd5e1'}; font-weight:${row.debit > 0 ? 'bold' : 'normal'};">

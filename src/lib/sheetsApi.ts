@@ -1,5 +1,12 @@
 import { Transaction, SpendingSummary, CategorySummary, LendItem, TransactionType, LendType, LendStatus } from '../types/finance';
-import { signInWithGoogleWorkspace, getCachedWorkspaceToken, setCachedWorkspaceToken } from './workspaceAuth';
+import { 
+  signInWithGoogleWorkspace, 
+  getCachedWorkspaceToken, 
+  setCachedWorkspaceToken,
+  isGoogleTokenExpired,
+  refreshGoogleTokenSilently,
+  GOOGLE_SCOPES 
+} from './workspaceAuth';
 import { sortTransactionsChronological, calculateRunningBalances } from './calculations';
 import { loadDeletedTxIds } from './storage';
 import {
@@ -30,34 +37,87 @@ export const getStoredAccessToken = (): string | null => {
 };
 
 /**
+ * Executes a Google API fetch call with automatic silent token refresh on expiry or 401.
+ * Seamlessly preserves user session and prevents unauthenticated errors.
+ */
+export const fetchGoogleWithAutoRefresh = async (
+  url: string,
+  options: RequestInit = {},
+  fallbackToken?: string
+): Promise<Response> => {
+  let token = fallbackToken || getCachedWorkspaceToken();
+
+  // If token is missing, expired, or a Supabase JWT (starts with eyJ), silently refresh first
+  if (!token || token.startsWith('eyJ') || isGoogleTokenExpired()) {
+    try {
+      const fresh = await refreshGoogleTokenSilently();
+      if (fresh) token = fresh;
+    } catch {}
+  }
+
+  const exec = (authToken: string | null) =>
+    fetch(url, {
+      ...options,
+      headers: {
+        ...(options.headers || {}),
+        Authorization: `Bearer ${authToken || ''}`,
+      },
+    });
+
+  let res = await exec(token);
+
+  if (res.status === 401) {
+    // Attempt silent refresh and retry once
+    try {
+      const refreshed = await refreshGoogleTokenSilently();
+      if (refreshed && refreshed !== token) {
+        token = refreshed;
+        res = await exec(refreshed);
+      }
+    } catch {}
+  }
+
+  return res;
+};
+
+/**
  * Single Google OAuth Access Token Request.
  * Uses official Workspace OAuth integration flow.
  */
 export const requestGoogleAccessToken = async (promptUser = true): Promise<string> => {
   const existing = getStoredAccessToken();
   if (existing && existing !== 'local_token' && !existing.startsWith('eyJ') && existing.length > 20) {
-    return existing;
+    if (!isGoogleTokenExpired()) {
+      return existing;
+    }
   }
+
+  // If token is expired or missing, try silent refresh first
+  try {
+    const silentlyRefreshed = await refreshGoogleTokenSilently();
+    if (silentlyRefreshed) return silentlyRefreshed;
+  } catch {}
 
   // In background or silent mode, never invoke GIS or OAuth redirects to avoid browser popup blocks
   if (!promptUser) {
-    return '';
+    return existing || '';
   }
 
   // Attempt Google Identity Services (GIS) token request only when user initiated an action
   if (typeof window !== 'undefined' && (window as any).google?.accounts?.oauth2?.initTokenClient) {
     try {
       const tokenPromise = new Promise<string>((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error('GIS timeout')), 8000);
+        const timeout = setTimeout(() => reject(new Error('GIS timeout')), 15000);
         try {
           const client = (window as any).google.accounts.oauth2.initTokenClient({
             client_id: GOOGLE_OAUTH_CLIENT_ID,
-            scope: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email',
-            prompt: '',
+            scope: GOOGLE_SCOPES,
+            prompt: 'select_account',
             callback: (res: any) => {
               clearTimeout(timeout);
               if (res?.access_token && !res.access_token.startsWith('eyJ')) {
-                setCachedWorkspaceToken(res.access_token);
+                const expiresIn = parseInt(res.expires_in, 10) || 3540;
+                setCachedWorkspaceToken(res.access_token, expiresIn);
                 resolve(res.access_token);
               } else if (res?.error) {
                 reject(new Error(res.error_description || res.error));
@@ -70,7 +130,7 @@ export const requestGoogleAccessToken = async (promptUser = true): Promise<strin
               reject(err);
             },
           });
-          client.requestAccessToken({ prompt: '' });
+          client.requestAccessToken({ prompt: 'select_account' });
         } catch (e) {
           clearTimeout(timeout);
           reject(e);
@@ -79,7 +139,7 @@ export const requestGoogleAccessToken = async (promptUser = true): Promise<strin
       const resToken = await tokenPromise;
       if (resToken) return resToken;
     } catch (e) {
-      console.warn('GIS token request note:', e);
+      console.warn('GIS interactive token request note:', e);
     }
   }
 
@@ -148,6 +208,10 @@ const parseGoogleApiError = (status: number, errorText: string, defaultContext: 
     const json = JSON.parse(errorText);
     message = json?.error?.message || errorText;
   } catch (e) {}
+
+  if (status === 401 || message.includes('UNAUTHENTICATED') || message.includes('invalid authentication credentials') || message.includes('OAuth 2 access token')) {
+    return new Error('Google session expired. Tap "Connect Google" to refresh access.');
+  }
 
   if (message.includes('Google Sheets API has not been used') || message.includes('sheets.googleapis.com') || message.includes('SERVICE_DISABLED')) {
     return new Error('GOOGLE_SHEETS_API_DISABLED: Google Sheets API is not enabled in your Google Cloud Console project.');
@@ -974,18 +1038,15 @@ export const fetchAllTransactionsFromSheet = async (
   spreadsheetId: string,
   emailScope?: string
 ): Promise<Transaction[]> => {
-  const res = await fetch(
+  const res = await fetchGoogleWithAutoRefresh(
     `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Transactions!A1:Z2000`,
-    {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    }
+    {},
+    accessToken
   );
 
   if (!res.ok) {
     const error = await res.text();
-    throw new Error(`Failed to fetch transactions: ${res.status} ${error}`);
+    throw parseGoogleApiError(res.status, error, 'Failed to fetch transactions');
   }
 
   const deletedIds = loadDeletedTxIds(emailScope);
@@ -1398,13 +1459,10 @@ export const fetchAllLendItemsFromSheet = async (
   spreadsheetId: string
 ): Promise<LendItem[]> => {
   try {
-    const res = await fetch(
+    const res = await fetchGoogleWithAutoRefresh(
       `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Lend_Borrow!A1:I500`,
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      }
+      {},
+      accessToken
     );
 
     if (!res.ok) return [];

@@ -190,7 +190,6 @@ export const DownloadRecordsModal: React.FC<DownloadRecordsModalProps> = ({
             <thead>
               <tr>
                 <th>Date</th>
-                <th>Type</th>
                 <th>Category</th>
                 <th>Payment Mode</th>
                 <th>Merchant / Notes</th>
@@ -202,7 +201,6 @@ export const DownloadRecordsModal: React.FC<DownloadRecordsModalProps> = ({
                 .map((t) => `
                 <tr>
                   <td>${t.date}</td>
-                  <td>${t.type === 'cash_added' ? 'Cash Top-up' : t.type === 'card_expense' ? 'Card Spend' : 'Cash Expense'}</td>
                   <td><strong>${t.category}</strong></td>
                   <td>${t.paymentMethod || 'Cash'}</td>
                   <td>${t.notes || '-'}</td>

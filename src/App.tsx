@@ -9,6 +9,8 @@ import {
   initWorkspaceAuth,
   signOutGoogleWorkspace,
   getCachedWorkspaceToken,
+  isGoogleTokenExpired,
+  refreshGoogleTokenSilently,
 } from './lib/workspaceAuth';
 import { 
   Transaction, 
@@ -171,28 +173,63 @@ export default function App() {
   const [telegramAlertConfig, setTelegramAlertConfig] = useState<TelegramAlertConfig>(() => loadStoredTelegramAlertConfig(initialScope));
   const [budgetConfig, setBudgetConfig] = useState<BudgetConfig>(() => loadStoredBudgetConfig(initialScope));
   const [currency, setCurrency] = useState<string>('Rs');
+
+  const [currentDateStr, setCurrentDateStr] = useState<string>(() => {
+    try {
+      if (localStorage.getItem('spenddesk_daily_refresh') === 'off') {
+        const locked = localStorage.getItem('spenddesk_locked_date');
+        if (locked) return locked;
+      }
+    } catch {}
+    return getLocalDateString();
+  });
+
   // Daily refresh: when ON (default) the dashboard rolls over to the new day automatically
-  // (today's spend / balance figures start fresh each day). User can switch it off in Settings.
+  // (today's spend / balance figures start fresh each day). When switched OFF, date is frozen and will NOT roll over.
   const [dailyRefresh, setDailyRefresh] = useState<boolean>(() => {
     try { return localStorage.getItem('spenddesk_daily_refresh') !== 'off'; } catch { return true; }
   });
   const handleUpdateDailyRefresh = (enabled: boolean) => {
     setDailyRefresh(enabled);
-    try { localStorage.setItem('spenddesk_daily_refresh', enabled ? 'on' : 'off'); } catch {}
+    try {
+      localStorage.setItem('spenddesk_daily_refresh', enabled ? 'on' : 'off');
+      if (!enabled) {
+        localStorage.setItem('spenddesk_locked_date', currentDateStr);
+      } else {
+        localStorage.removeItem('spenddesk_locked_date');
+        const fresh = getLocalDateString();
+        setCurrentDateStr(fresh);
+      }
+    } catch {}
   };
   const [userProfile, setUserProfile] = useState<UserProfile>(() => loadStoredProfile());
 
   const overallSummary = useMemo(() => calculateSummary(transactions, transactions), [transactions]);
 
-  // Filter State
-  const [filter, setFilter] = useState<FilterState>({
+  // Default Filter State - always starts on 'all'
+  const DEFAULT_FILTER: FilterState = useMemo(() => ({
     type: 'all',
     startDate: '',
     endDate: '',
     category: 'All',
     paymentMethod: 'All',
     searchQuery: '',
-  });
+  }), []);
+
+  // Filter State - resets to 'all' whenever tab changes or app opens
+  const [filter, setFilter] = useState<FilterState>(DEFAULT_FILTER);
+
+  // Automatically reset filter to 'all' whenever navigating between pages/tabs
+  useEffect(() => {
+    setFilter({
+      type: 'all',
+      startDate: '',
+      endDate: '',
+      category: 'All',
+      paymentMethod: 'All',
+      searchQuery: '',
+    });
+  }, [activeTab]);
 
   // Modal & View States
   const [isTxModalOpen, setIsTxModalOpen] = useState(false);
@@ -298,6 +335,19 @@ export default function App() {
       console.warn('Hash parse error:', e);
     }
   }, []);
+
+  // Google Session Persistence: Automatically refresh expired Google token silently in background so Sheets & Drive stay ready
+  useEffect(() => {
+    if (user?.email) {
+      if (!accessToken || accessToken === 'local_token' || accessToken.startsWith('eyJ') || isGoogleTokenExpired()) {
+        void refreshGoogleTokenSilently(user.email).then((newToken) => {
+          if (newToken) {
+            setAccessToken(newToken);
+          }
+        }).catch(console.warn);
+      }
+    }
+  }, [user?.email, accessToken]);
 
   // Network Connectivity State for Offline Mode & Auto-Sync
   const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true);
@@ -821,14 +871,35 @@ export default function App() {
                     raw.includes('UNAUTHENTICATED') || 
                     raw.includes('invalid_client') || 
                     raw.includes('invalid_credentials') ||
-                    raw.includes('INSUFFICIENT');
+                    raw.includes('INSUFFICIENT') ||
+                    raw.includes('OAuth 2 access token');
 
       if (is401) {
-        try { localStorage.removeItem('money_tracker_access_token'); } catch (e) {}
-        setAccessToken(null);
+        if (options.interactive) {
+          try {
+            const fresh = await requestGoogleAccessToken(true);
+            if (fresh) {
+              setAccessToken(fresh);
+              await handlePullFromSheet(sId, fresh, { interactive: false, silent: options.silent });
+              return;
+            }
+          } catch {}
+        } else {
+          try {
+            const fresh = await refreshGoogleTokenSilently();
+            if (fresh) {
+              setAccessToken(fresh);
+              await handlePullFromSheet(sId, fresh, { interactive: false, silent: options.silent });
+              return;
+            }
+          } catch {}
+        }
       }
       if (!options.silent) {
-        showNotification(err?.message || 'Could not pull records from Google Sheet.', 'error');
+        const friendlyMsg = is401
+          ? 'Google session expired. Tap to reconnect your Google account.'
+          : (err?.message || 'Could not pull records from Google Sheet.');
+        showNotification(friendlyMsg, 'error');
       }
     } finally {
       setIsSyncing(false);
@@ -863,13 +934,26 @@ export default function App() {
     showNotification(`Deleted ${txIds.length} transactions.`, 'info');
   };
 
-  // Google Login handler via Supabase Google OAuth (shows all Gmails, zero origin_mismatch)
+  // Unified Single Sign-In with Google: Drive and Sheet access ready in one single step!
   const handleSignIn = async () => {
     try {
-      showNotification('Opening Google Sign-In... Please check "Select all" on the screen.', 'info');
-      const res = await signInWithGoogleSupabase();
-      if (!res.success && res.errorMessage) {
-        showNotification(res.errorMessage, 'error');
+      showNotification('Opening Google Sign-In...', 'info');
+      const res = await signInWithGoogleWorkspace();
+      if (res?.accessToken) {
+        setAccessToken(res.accessToken);
+        if (res.user?.email) {
+          const email = res.user.email.trim().toLowerCase();
+          const authedUser = {
+            displayName: res.user.name,
+            email: res.user.email,
+            photoURL: res.user.picture,
+          };
+          setUser(authedUser);
+          saveLastUserEmail(email);
+          mergeGuestDataIntoUser(email);
+          setOfflineWorkspaceEmail(email);
+          showNotification('Signed in with Google! Google Drive & Sheets access ready.', 'success');
+        }
       }
     } catch (err: any) {
       console.warn('Google Sign-In Exception:', err);
@@ -1344,15 +1428,30 @@ export default function App() {
     return calculateSummary(transactions, filteredTransactions);
   }, [transactions, filteredTransactions]);
 
-  const [currentDateStr, setCurrentDateStr] = useState<string>(() => getLocalDateString());
-
   // Daily refresh (controlled from Settings): refresh the date every 30s / on focus so each
   // new day starts fresh. When switched OFF the dashboard keeps showing the day it was opened on.
   useEffect(() => {
     if (!dailyRefresh) return;
     const updateDate = () => {
       const freshDate = getLocalDateString();
-      setCurrentDateStr((prev) => (prev !== freshDate ? freshDate : prev));
+      setCurrentDateStr((prev) => {
+        if (prev !== freshDate) {
+          setFilter((f) => {
+            if (f.type === 'today') {
+              return { ...f, startDate: freshDate, endDate: freshDate };
+            }
+            if (f.type === 'yesterday') {
+              const y = new Date();
+              y.setDate(y.getDate() - 1);
+              const yStr = getLocalDateString(y);
+              return { ...f, startDate: yStr, endDate: yStr };
+            }
+            return f;
+          });
+          return freshDate;
+        }
+        return prev;
+      });
     };
     updateDate(); // catch up immediately when the toggle is turned back ON
     const interval = setInterval(updateDate, 30000);

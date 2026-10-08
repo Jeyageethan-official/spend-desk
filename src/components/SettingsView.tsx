@@ -20,6 +20,7 @@ import {
   AlertTriangle,
   RotateCcw,
   ChevronRight,
+  ChevronDown,
   HardDrive,
   Lock,
   CheckCircle2,
@@ -45,6 +46,38 @@ import { ConfirmModal } from './ConfirmModal';
 import { UserProfile } from '../lib/storage';
 import { TelegramAlertConfig } from '../lib/storage';
 import { generateBankStatementPdf } from '../lib/statementPdf';
+import { triggerFeedback } from '../lib/haptics';
+
+interface IosSwitchProps {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  disabled?: boolean;
+}
+
+const IosSwitch: React.FC<IosSwitchProps> = ({ checked, onChange, disabled }) => {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={() => {
+        triggerFeedback('tap');
+        onChange(!checked);
+      }}
+      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden focus-visible:ring-2 focus-visible:ring-emerald-500 ${
+        checked ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-700'
+      } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+    >
+      <span
+        aria-hidden="true"
+        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+          checked ? 'translate-x-5' : 'translate-x-0'
+        }`}
+      />
+    </button>
+  );
+};
 
 interface SettingsViewProps {
   onBack: () => void;
@@ -77,16 +110,29 @@ interface SettingsViewProps {
 }
 
 const COMMON_CURRENCIES = [
-  { code: 'Rs', label: 'Rs (Rupees - LKR/INR)', symbol: 'Rs' },
-  { code: '$', label: 'USD ($ - Dollar)', symbol: '$' },
-  { code: '€', label: 'EUR (€ - Euro)', symbol: '€' },
-  { code: '£', label: 'GBP (£ - British Pound)', symbol: '£' },
-  { code: 'AED', label: 'AED (Dirham)', symbol: 'AED' },
+  { code: 'Rs', label: 'Rs (Rupees - LKR/INR/PKR)', symbol: 'Rs' },
+  { code: 'INR', label: '₹ (INR - Indian Rupee)', symbol: '₹' },
+  { code: 'USD', label: '$ (USD - US Dollar)', symbol: '$' },
+  { code: 'EUR', label: '€ (EUR - Euro)', symbol: '€' },
+  { code: 'GBP', label: '£ (GBP - British Pound)', symbol: '£' },
+  { code: 'AED', label: 'AED (UAE Dirham)', symbol: 'AED' },
   { code: 'SAR', label: 'SAR (Saudi Riyal)', symbol: 'SAR' },
-  { code: 'SGD', label: 'SGD (Singapore Dollar)', symbol: 'S$' },
-  { code: 'MYR', label: 'MYR (Malaysian Ringgit)', symbol: 'RM' },
-  { code: 'CAD', label: 'CAD (Canadian Dollar)', symbol: 'C$' },
-  { code: 'AUD', label: 'AUD (Australian Dollar)', symbol: 'A$' },
+  { code: 'QAR', label: 'QAR (Qatari Riyal)', symbol: 'QAR' },
+  { code: 'KWD', label: 'KD (Kuwaiti Dinar)', symbol: 'KD' },
+  { code: 'OMR', label: 'OMR (Omani Rial)', symbol: 'OMR' },
+  { code: 'BHD', label: 'BHD (Bahraini Dinar)', symbol: 'BHD' },
+  { code: 'SGD', label: 'S$ (SGD - Singapore Dollar)', symbol: 'S$' },
+  { code: 'MYR', label: 'RM (MYR - Malaysian Ringgit)', symbol: 'RM' },
+  { code: 'CAD', label: 'C$ (CAD - Canadian Dollar)', symbol: 'C$' },
+  { code: 'AUD', label: 'A$ (AUD - Australian Dollar)', symbol: 'A$' },
+  { code: 'NZD', label: 'NZ$ (New Zealand Dollar)', symbol: 'NZ$' },
+  { code: 'JPY', label: '¥ (JPY - Japanese Yen)', symbol: '¥' },
+  { code: 'CHF', label: 'CHF (Swiss Franc)', symbol: 'CHF' },
+  { code: 'BDT', label: '৳ (BDT - Bangladeshi Taka)', symbol: '৳' },
+  { code: 'PHP', label: '₱ (PHP - Philippine Peso)', symbol: '₱' },
+  { code: 'THB', label: '฿ (THB - Thai Baht)', symbol: '฿' },
+  { code: 'IDR', label: 'Rp (IDR - Indonesian Rupiah)', symbol: 'Rp' },
+  { code: 'ZAR', label: 'R (ZAR - South African Rand)', symbol: 'R' },
 ];
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
@@ -273,9 +319,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [showResetDataConfirm, setShowResetDataConfirm] = useState(false);
   const [resetConfirmInput, setResetConfirmInput] = useState('');
 
-  // Currency & Preferences State
-  const [customCurrencyInput, setCustomCurrencyInput] = useState(currency);
-
   // Budget State
   const [budgetForm, setBudgetForm] = useState<BudgetConfig>(budgetConfig);
 
@@ -293,7 +336,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   useEffect(() => {
     setCategories(loadStoredCategoryDefs(workspaceEmail));
     setBudgetForm(budgetConfig);
-    setCustomCurrencyInput(currency);
     setPhoneInput(alertPhone);
   }, [cloudWorkspaceRevision, workspaceEmail, budgetConfig, currency, alertPhone]);
 
@@ -445,7 +487,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   // Save Currency
   const handleSaveCurrency = (newCurr: string) => {
     onUpdateCurrency(newCurr);
-    setCustomCurrencyInput(newCurr);
     onNotification?.(`Currency changed to ${newCurr}`, 'success');
   };
 
@@ -453,10 +494,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const handleSaveBudget = (e: React.FormEvent) => {
     e.preventDefault();
     onUpdateBudgetConfig(budgetForm);
-    if (customCurrencyInput.trim() && customCurrencyInput.trim() !== currency) {
-      onUpdateCurrency(customCurrencyInput.trim());
-    }
-    onNotification?.('Financial targets and currency saved successfully.', 'success');
+    onNotification?.('Financial targets saved successfully.', 'success');
     handleBackToMain();
   };
 
@@ -1240,46 +1278,27 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <form onSubmit={handleSaveBudget} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/90 dark:border-slate-800 p-5 sm:p-6 shadow-xs space-y-5">
                   <h3 className="text-sm font-bold text-slate-900 dark:text-white">Financial Targets &amp; Currency</h3>
 
-                  {/* Currency Selection Dropdown & Quick Presets */}
-                  <div className="space-y-3 pb-4 border-b border-slate-100 dark:border-slate-800">
+                  {/* Currency Selection Dropdown */}
+                  <div className="space-y-2 pb-4 border-b border-slate-100 dark:border-slate-800">
                     <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
                       Primary Currency
                     </label>
-
-                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                      {COMMON_CURRENCIES.map((c) => {
-                        const isSelected = currency === c.symbol;
-                        return (
-                          <button
-                            key={c.code}
-                            type="button"
-                            onClick={() => handleSaveCurrency(c.symbol)}
-                            className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
-                              isSelected
-                                ? 'border-emerald-600 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-300 font-bold'
-                                : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-300'
-                            }`}
-                          >
-                            <span className="text-base font-bold block">{c.symbol}</span>
-                            <span className="text-[10px] text-slate-500 dark:text-slate-400 block truncate">{c.label}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    <div className="pt-2">
-                      <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
-                        Custom Currency Symbol
-                      </label>
-                      <div className="flex items-center gap-2 max-w-xs">
-                        <input
-                          type="text"
-                          value={customCurrencyInput}
-                          onChange={(e) => setCustomCurrencyInput(e.target.value)}
-                          placeholder="e.g. Rs, INR, $"
-                          className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold font-mono text-slate-900 dark:text-white focus:outline-hidden bg-slate-50 dark:bg-slate-800 flex-1"
-                        />
-                      </div>
+                    <div className="relative max-w-md">
+                      <select
+                        value={currency}
+                        onChange={(e) => handleSaveCurrency(e.target.value)}
+                        className="w-full px-3.5 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-900 dark:text-white bg-slate-50 dark:bg-slate-800 focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all cursor-pointer appearance-none pr-9"
+                      >
+                        {COMMON_CURRENCIES.map((c) => (
+                          <option key={c.code} value={c.symbol}>
+                            {c.label}
+                          </option>
+                        ))}
+                        {!COMMON_CURRENCIES.some((c) => c.symbol === currency) && (
+                          <option value={currency}>{currency}</option>
+                        )}
+                      </select>
+                      <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                     </div>
                   </div>
 
@@ -1318,33 +1337,37 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     </div>
 
                     <div className="pt-2 space-y-3">
-                      <label className="flex items-start gap-2.5 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={dailyRefresh}
-                          onChange={(e) => onUpdateDailyRefresh?.(e.target.checked)}
-                          className="w-4 h-4 mt-0.5 rounded text-emerald-600 focus:ring-emerald-500"
-                        />
-                        <span>
-                          <span className="block text-xs font-bold text-slate-800 dark:text-slate-200">
+                      <div className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80">
+                        <div className="pr-2">
+                          <span className="block text-xs font-bold text-slate-800 dark:text-slate-100">
                             Daily refresh
                           </span>
-                          <span className="block text-[10px] text-slate-400 mt-0.5">
-                            ON: every new day the dashboard refreshes automatically and today's figures start fresh. OFF: it keeps the day you opened the app until you reload.
+                          <span className="block text-[10px] text-slate-400 mt-0.5 leading-relaxed">
+                            {dailyRefresh
+                              ? 'ON: Every new day, dashboard automatically refreshes and today’s figures start fresh at 0.00.'
+                              : 'OFF: Refresh is disabled. Date is locked and will NOT refresh or roll over to new days.'}
                           </span>
-                        </span>
-                      </label>
-                      <label className="flex items-center gap-2.5 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={budgetForm.notifyOnLimit}
-                          onChange={(e) => setBudgetForm({ ...budgetForm, notifyOnLimit: e.target.checked })}
-                          className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500"
+                        </div>
+                        <IosSwitch
+                          checked={dailyRefresh}
+                          onChange={(checked) => onUpdateDailyRefresh?.(checked)}
                         />
-                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                          Show alert banners when exceeding limits
-                        </span>
-                      </label>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80">
+                        <div>
+                          <span className="block text-xs font-bold text-slate-800 dark:text-slate-100">
+                            Show limit alerts
+                          </span>
+                          <span className="block text-[10px] text-slate-400 mt-0.5">
+                            Show warning alert banners when exceeding limits
+                          </span>
+                        </div>
+                        <IosSwitch
+                          checked={budgetForm.notifyOnLimit}
+                          onChange={(checked) => setBudgetForm({ ...budgetForm, notifyOnLimit: checked })}
+                        />
+                      </div>
                     </div>
                   </div>
 
@@ -1375,18 +1398,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     </div>
                   </div>
 
-                  <label className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 cursor-pointer">
-                    <span>
+                  <div className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+                    <div>
                       <span className="block text-xs font-bold text-slate-800 dark:text-slate-100">Enable automatic alerts</span>
                       <span className="block text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Only new saved transactions send an alert.</span>
-                    </span>
-                    <input
-                      type="checkbox"
+                    </div>
+                    <IosSwitch
                       checked={telegramForm.enabled}
-                      onChange={(event) => setTelegramForm((current) => ({ ...current, enabled: event.target.checked }))}
-                      className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500"
+                      onChange={(checked) => setTelegramForm((current) => ({ ...current, enabled: checked }))}
                     />
-                  </label>
+                  </div>
 
                   <div>
                     <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">Telegram Chat ID</label>

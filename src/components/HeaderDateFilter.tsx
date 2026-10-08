@@ -13,6 +13,7 @@ interface HeaderDateFilterProps {
 const PRESETS: { id: DateFilterType; label: string }[] = [
   { id: 'all', label: 'All' },
   { id: 'today', label: 'Today' },
+  { id: 'yesterday', label: 'Yesterday' },
   { id: 'week', label: 'This Week' },
   { id: 'month', label: 'This Month' },
 ];
