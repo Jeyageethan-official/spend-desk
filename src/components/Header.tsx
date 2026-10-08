@@ -180,10 +180,10 @@ export const Header: React.FC<HeaderProps> = ({
             {/* 1. Reload / Quick Sync Button */}
             <button
               type="button"
-              onClick={onQuickSync || onOpenSyncModal}
+              onClick={onQuickSync}
               disabled={isSyncing}
               className="p-2 text-slate-600 hover:text-emerald-700 hover:bg-slate-100 rounded-xl border border-slate-200/80 transition-colors cursor-pointer disabled:opacity-50"
-              title="Quick Sync / Refresh"
+              title="Sync with Google Sheet"
             >
               <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin text-emerald-600' : ''}`} />
             </button>

@@ -1,5 +1,3 @@
-import { signInWithGoogleSupabase } from './supabase';
-
 export const GOOGLE_OAUTH_CLIENT_ID = '509348493041-ih637992a2lrmh6qdlvch1pkatpn70k0.apps.googleusercontent.com';
 
 export const GOOGLE_SCOPES = [
@@ -285,19 +283,12 @@ export const signInWithGoogleWorkspace = async (): Promise<{ user: WorkspaceUser
         return authResult;
       } catch (gisError: any) {
         const msg = String(gisError?.message || gisError);
-        if (msg.includes('cancelled') || msg.includes('closed')) {
-          throw gisError;
-        }
-        console.warn('GIS interactive token client attempt note:', gisError);
+        console.warn('GIS interactive token client notice:', msg);
+        throw gisError;
       }
     }
 
-    // 2. Only if GIS could not load at all, use Supabase OAuth fallback
-    await signInWithGoogleSupabase();
-    return {
-      user: { id: 'pending', email: '', name: 'Google User' },
-      accessToken: '',
-    };
+    throw new Error('Google Sign-In is still loading. Please try again in a moment.');
   })().finally(() => {
     interactiveAuthPromise = null;
   });

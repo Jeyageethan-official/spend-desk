@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { 
   initSupabaseAuth, 
-  signInWithGoogleSupabase, 
   signOutSupabase 
 } from './lib/supabase';
 import {
@@ -1075,7 +1074,20 @@ export default function App() {
     options: { silent?: boolean; interactive?: boolean } = { silent: true },
     snapshot?: { transactions: Transaction[]; lendItems: LendItem[] }
   ): Promise<boolean> => {
-    if (!activeSheet) return false;
+    let sheetToSync = activeSheet;
+    if (!sheetToSync) {
+      const stored = loadStoredSheetMeta(currentUserEmail) || loadStoredSheetMeta(null) || loadStoredSheetMeta('guest');
+      if (stored?.id) {
+        sheetToSync = stored;
+        setActiveSheet(stored);
+      }
+    }
+    if (!sheetToSync) {
+      if (!options.silent) {
+        showNotification('No Google Sheet connected. Go to Settings > Google Sheet to connect a sheet.', 'info');
+      }
+      return false;
+    }
     if (isPushingToSheetRef.current) return false;
     isPushingToSheetRef.current = true;
 
@@ -1121,11 +1133,11 @@ export default function App() {
       const currentLocalLends = snapshot?.lendItems ?? latestStateRef.current.lendItems;
 
       // 1. Write complete records to Transactions sheet (including Out of Wallet, Card Payment & Lend widget)
-      await overwriteTransactionsInSheet(sheetToken, activeSheet.id, currentLocalTxs, currentLocalLends);
+      await overwriteTransactionsInSheet(sheetToken, sheetToSync.id, currentLocalTxs, currentLocalLends);
       
       // 2. Drop unused Lend_Borrow tab if it still exists (lend data is on Transactions M–P)
       try {
-        await overwriteLendItemsInSheet(sheetToken, activeSheet.id, currentLocalLends);
+        await overwriteLendItemsInSheet(sheetToken, sheetToSync.id, currentLocalLends);
       } catch (lendErr) {
         console.warn('Lend_Borrow cleanup notice:', lendErr);
       }
@@ -1135,7 +1147,7 @@ export default function App() {
       const catSummary = calculateCategoryBreakdown(currentLocalTxs);
       const { dayTotals } = calculateWeeklyDailyTrend(currentLocalTxs);
       try {
-        await syncDashboardStats(sheetToken, activeSheet.id, allSummary, catSummary, dayTotals, currentLocalTxs, currentLocalLends);
+        await syncDashboardStats(sheetToken, sheetToSync.id, allSummary, catSummary, dayTotals, currentLocalTxs, currentLocalLends);
       } catch (dashErr: any) {
         console.error('Dashboard sync failed:', dashErr);
         const dashMsg = dashErr?.message || 'Dashboard rebuild failed';
@@ -1145,7 +1157,7 @@ export default function App() {
       }
 
       const updatedMeta: GoogleSheetMeta = {
-        ...activeSheet,
+        ...sheetToSync,
         lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
       saveStoredSheetMeta(updatedMeta, currentUserEmail);
@@ -1153,7 +1165,7 @@ export default function App() {
       setActiveSheet(updatedMeta);
 
       if (!options.silent) {
-        showNotification(`Synced ${currentLocalTxs.length} records with "${activeSheet.name}"!`, 'success');
+        showNotification(`Synced ${currentLocalTxs.length} records with "${sheetToSync.name}"!`, 'success');
       }
       return true;
     } catch (err: any) {
@@ -1611,7 +1623,7 @@ export default function App() {
             setIsTxModalOpen(true);
           }}
           onOpenSmsModal={() => setIsSmsModalOpen(true)}
-          onQuickSync={handleManualPullFromSheet}
+          onQuickSync={() => void handlePushToSheet({ silent: false, interactive: true })}
           onOpenAuthHelp={() => setIsAuthHelpOpen(true)}
           onOpenSettings={(tab) => {
             setSettingsSection((tab as any) || 'main');
