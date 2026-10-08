@@ -16,6 +16,35 @@ const USER_STORAGE_KEY = 'money_tracker_user_info';
 
 let cachedAccessToken: string | null = null;
 let silentRefreshPromise: Promise<string | null> | null = null;
+let interactiveAuthPromise: Promise<{ user: WorkspaceUser; accessToken: string }> | null = null;
+
+export const ensureGoogleGsiLoaded = async (): Promise<boolean> => {
+  if (typeof window === 'undefined') return false;
+  if ((window as any).google?.accounts?.oauth2?.initTokenClient) {
+    return true;
+  }
+
+  // Check if script tag is in DOM, if not append it
+  let script = document.querySelector('script[src*="accounts.google.com/gsi/client"]') as HTMLScriptElement | null;
+  if (!script) {
+    script = document.createElement('script');
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    document.head.appendChild(script);
+  }
+
+  // Wait up to 3000ms for window.google to be initialized
+  const start = Date.now();
+  while (Date.now() - start < 3000) {
+    if ((window as any).google?.accounts?.oauth2?.initTokenClient) {
+      return true;
+    }
+    await new Promise((r) => setTimeout(r, 50));
+  }
+
+  return Boolean((window as any).google?.accounts?.oauth2?.initTokenClient);
+};
 
 export interface WorkspaceUser {
   id: string;
@@ -161,80 +190,119 @@ export const fetchGoogleUserInfo = async (accessToken: string): Promise<{
  * The session, user info, Drive and Sheets access are immediately ready.
  */
 export const signInWithGoogleWorkspace = async (): Promise<{ user: WorkspaceUser; accessToken: string }> => {
-  // 1. Try Google Identity Services (GIS) token client popup directly
-  if (typeof window !== 'undefined' && (window as any).google?.accounts?.oauth2?.initTokenClient) {
-    try {
-      const authResult = await new Promise<{ user: WorkspaceUser; accessToken: string }>((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error('Sign-In timed out')), 60000);
-
-        try {
-          const client = (window as any).google.accounts.oauth2.initTokenClient({
-            client_id: GOOGLE_OAUTH_CLIENT_ID,
-            scope: GOOGLE_SCOPES,
-            prompt: 'select_account',
-            callback: async (res: any) => {
-              clearTimeout(timeout);
-              if (res?.access_token && !res.access_token.startsWith('eyJ')) {
-                const token = res.access_token;
-                const expiresIn = parseInt(res.expires_in, 10) || 3540;
-                setCachedWorkspaceToken(token, expiresIn);
-
-                try {
-                  const info = await fetchGoogleUserInfo(token);
-                  const user: WorkspaceUser = {
-                    id: info.sub,
-                    email: info.email || '',
-                    name: info.name || info.email?.split('@')[0] || 'Google User',
-                    picture: info.picture,
-                  };
-                  localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
-                  localStorage.setItem('money_tracker_user', JSON.stringify({
-                    displayName: user.name,
-                    email: user.email,
-                    photoURL: user.picture,
-                  }));
-                  window.dispatchEvent(new CustomEvent('spenddesk_google_auth', { detail: { user, token } }));
-                  resolve({ user, accessToken: token });
-                } catch {
-                  // Fallback user if userinfo failed
-                  const fallbackUser: WorkspaceUser = {
-                    id: 'google_user',
-                    email: '',
-                    name: 'Google User',
-                  };
-                  resolve({ user: fallbackUser, accessToken: token });
-                }
-              } else if (res?.error) {
-                reject(new Error(res.error_description || res.error));
-              } else {
-                reject(new Error('Sign in was cancelled or no token returned.'));
-              }
-            },
-            error_callback: (err: any) => {
-              clearTimeout(timeout);
-              reject(err);
-            },
-          });
-
-          client.requestAccessToken({ prompt: 'select_account' });
-        } catch (e) {
-          clearTimeout(timeout);
-          reject(e);
-        }
-      });
-
-      return authResult;
-    } catch (gisError: any) {
-      console.warn('GIS interactive token client attempt failed, falling back to Supabase OAuth redirect:', gisError);
-    }
+  if (interactiveAuthPromise) {
+    return interactiveAuthPromise;
   }
 
-  // 2. Fallback: Supabase OAuth redirect with full Google scopes
-  await signInWithGoogleSupabase();
-  return {
-    user: { id: 'pending', email: '', name: 'Google User' },
-    accessToken: '',
-  };
+  interactiveAuthPromise = (async () => {
+    // 1. Ensure Google Identity Services (GIS) client library is fully loaded
+    const isReady = await ensureGoogleGsiLoaded();
+
+    if (isReady && typeof window !== 'undefined' && (window as any).google?.accounts?.oauth2?.initTokenClient) {
+      try {
+        const authResult = await new Promise<{ user: WorkspaceUser; accessToken: string }>((resolve, reject) => {
+          let isSettled = false;
+          const timeout = setTimeout(() => {
+            if (!isSettled) {
+              isSettled = true;
+              reject(new Error('Sign-In timed out. Please try again.'));
+            }
+          }, 90000);
+
+          try {
+            const client = (window as any).google.accounts.oauth2.initTokenClient({
+              client_id: GOOGLE_OAUTH_CLIENT_ID,
+              scope: GOOGLE_SCOPES,
+              prompt: 'select_account',
+              callback: async (res: any) => {
+                if (isSettled) return;
+                isSettled = true;
+                clearTimeout(timeout);
+
+                if (res?.access_token && !res.access_token.startsWith('eyJ')) {
+                  const token = res.access_token;
+                  const expiresIn = parseInt(res.expires_in, 10) || 3540;
+                  setCachedWorkspaceToken(token, expiresIn);
+
+                  try {
+                    const info = await fetchGoogleUserInfo(token);
+                    const user: WorkspaceUser = {
+                      id: info.sub,
+                      email: (info.email || '').trim().toLowerCase(),
+                      name: info.name || info.email?.split('@')[0] || 'Google User',
+                      picture: info.picture,
+                    };
+                    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
+                    localStorage.setItem('money_tracker_user', JSON.stringify({
+                      displayName: user.name,
+                      email: user.email,
+                      photoURL: user.picture,
+                    }));
+                    window.dispatchEvent(new CustomEvent('spenddesk_google_auth', { detail: { user, token } }));
+                    resolve({ user, accessToken: token });
+                  } catch {
+                    const fallbackUser: WorkspaceUser = {
+                      id: 'google_user',
+                      email: '',
+                      name: 'Google User',
+                    };
+                    resolve({ user: fallbackUser, accessToken: token });
+                  }
+                } else if (res?.error) {
+                  if (res.error === 'access_denied' || res.error === 'popup_closed_by_user') {
+                    reject(new Error('Sign in was cancelled.'));
+                  } else {
+                    reject(new Error(res.error_description || res.error));
+                  }
+                } else {
+                  reject(new Error('Sign in was cancelled or no token returned.'));
+                }
+              },
+              error_callback: (err: any) => {
+                if (isSettled) return;
+                isSettled = true;
+                clearTimeout(timeout);
+                const msg = err?.message || String(err);
+                if (msg.includes('closed') || msg.includes('cancel')) {
+                  reject(new Error('Sign in was cancelled.'));
+                } else {
+                  reject(err);
+                }
+              },
+            });
+
+            // Directly open Google's native popup showing the user's Gmail accounts list
+            client.requestAccessToken({ prompt: 'select_account' });
+          } catch (e) {
+            if (!isSettled) {
+              isSettled = true;
+              clearTimeout(timeout);
+              reject(e);
+            }
+          }
+        });
+
+        return authResult;
+      } catch (gisError: any) {
+        const msg = String(gisError?.message || gisError);
+        if (msg.includes('cancelled') || msg.includes('closed')) {
+          throw gisError;
+        }
+        console.warn('GIS interactive token client attempt note:', gisError);
+      }
+    }
+
+    // 2. Only if GIS could not load at all, use Supabase OAuth fallback
+    await signInWithGoogleSupabase();
+    return {
+      user: { id: 'pending', email: '', name: 'Google User' },
+      accessToken: '',
+    };
+  })().finally(() => {
+    interactiveAuthPromise = null;
+  });
+
+  return interactiveAuthPromise;
 };
 
 /**

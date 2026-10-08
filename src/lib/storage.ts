@@ -4,6 +4,7 @@ const TX_STORAGE_KEY = 'money_tracker_transactions_v2';
 const DELETED_TX_IDS_KEY = 'spenddesk_deleted_tx_ids_v1';
 const LAST_USER_EMAIL_KEY = 'spenddesk_last_user_email_v1';
 const SHEET_META_KEY = 'money_tracker_active_sheet_v2';
+const GLOBAL_LAST_ACTIVE_SHEET_KEY = 'spenddesk_last_active_sheet_v1';
 const BUDGET_CONFIG_KEY = 'money_tracker_budget_config_v2';
 const WEBHOOK_URL_KEY = 'money_tracker_webhook_url_v2';
 const LEND_STORAGE_KEY = 'money_tracker_lend_items_v2';
@@ -383,9 +384,58 @@ export const saveStoredTelegramAlertConfig = (config: TelegramAlertConfig, email
 
 export const loadStoredSheetMeta = (email?: string | null): GoogleSheetMeta | null => {
   try {
-    const key = getScopedKey(SHEET_META_KEY, email);
-    const raw = localStorage.getItem(key);
-    if (raw) return JSON.parse(raw);
+    // 1. Check account-scoped key
+    if (email && email !== 'guest') {
+      const key = getScopedKey(SHEET_META_KEY, email);
+      const raw = localStorage.getItem(key);
+      if (raw) return JSON.parse(raw);
+    }
+
+    // 2. Check global last active sheet key (auto-connect last connected sheet across logins)
+    const globalRaw = localStorage.getItem(GLOBAL_LAST_ACTIVE_SHEET_KEY) || localStorage.getItem(SHEET_META_KEY);
+    if (globalRaw) {
+      const parsed = JSON.parse(globalRaw);
+      if (parsed?.id) {
+        if (email && email !== 'guest') {
+          try {
+            localStorage.setItem(getScopedKey(SHEET_META_KEY, email), globalRaw);
+          } catch {}
+        }
+        return parsed;
+      }
+    }
+
+    // 3. Check guest storage key
+    const guestKey = getScopedKey(SHEET_META_KEY, 'guest');
+    const guestRaw = localStorage.getItem(guestKey);
+    if (guestRaw) {
+      const parsed = JSON.parse(guestRaw);
+      if (parsed?.id) {
+        if (email && email !== 'guest') {
+          try {
+            localStorage.setItem(getScopedKey(SHEET_META_KEY, email), guestRaw);
+          } catch {}
+        }
+        return parsed;
+      }
+    }
+
+    // 4. Check known spreadsheets registry
+    const knownSheets = loadKnownSpreadsheets(email).concat(loadKnownSpreadsheets(null));
+    if (knownSheets.length > 0 && knownSheets[0]?.id) {
+      const fallback: GoogleSheetMeta = {
+        id: knownSheets[0].id,
+        name: knownSheets[0].name || 'SpendDesk Spreadsheet',
+        url: knownSheets[0].url || `https://docs.google.com/spreadsheets/d/${knownSheets[0].id}/edit`,
+        lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+      if (email && email !== 'guest') {
+        try {
+          localStorage.setItem(getScopedKey(SHEET_META_KEY, email), JSON.stringify(fallback));
+        } catch {}
+      }
+      return fallback;
+    }
   } catch (e) {
     console.error('Failed to parse sheet meta:', e);
   }
@@ -398,8 +448,15 @@ export const saveStoredSheetMeta = (meta: GoogleSheetMeta | null, email?: string
     if (meta) {
       const serialized = JSON.stringify(meta);
       localStorage.setItem(key, serialized);
+      // Persist globally so any newly signed-in Google account automatically inherits this last connected sheet
+      localStorage.setItem(GLOBAL_LAST_ACTIVE_SHEET_KEY, serialized);
+      localStorage.setItem(SHEET_META_KEY, serialized);
+      saveKnownSpreadsheet(meta, email);
+      saveKnownSpreadsheet(meta, null);
     } else {
       localStorage.removeItem(key);
+      localStorage.removeItem(GLOBAL_LAST_ACTIVE_SHEET_KEY);
+      localStorage.removeItem(SHEET_META_KEY);
     }
   } catch (e) {
     console.error('Failed to save sheet meta:', e);
@@ -411,6 +468,15 @@ export const mergeGuestDataIntoUser = (
 ): { txCount: number; lendCount: number; mergedTxs: Transaction[]; mergedLends: LendItem[] } => {
   if (!userEmail) return { txCount: 0, lendCount: 0, mergedTxs: [], mergedLends: [] };
   try {
+    // 1. Auto-connect guest sheet or device sheet to this user if not already set
+    const userSheet = loadStoredSheetMeta(userEmail);
+    if (!userSheet) {
+      const fallbackSheet = loadStoredSheetMeta('guest') || loadStoredSheetMeta(null);
+      if (fallbackSheet) {
+        saveStoredSheetMeta(fallbackSheet, userEmail);
+      }
+    }
+
     const guestTxs = loadStoredTransactions('guest');
     const guestLends = loadStoredLendItems('guest');
     const userTxs = loadStoredTransactions(userEmail);

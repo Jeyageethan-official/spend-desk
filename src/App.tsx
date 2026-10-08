@@ -277,6 +277,13 @@ export default function App() {
           saveLastUserEmail(email);
           mergeGuestDataIntoUser(email);
           setOfflineWorkspaceEmail(email);
+
+          // Auto-connect last connected Google Sheet if not currently set
+          const lastSheet = loadStoredSheetMeta(email) || loadStoredSheetMeta(null);
+          if (lastSheet) {
+            setActiveSheet(lastSheet);
+            saveStoredSheetMeta(lastSheet, email);
+          }
         }
       },
       () => {
@@ -907,8 +914,47 @@ export default function App() {
   }, [activeSheet, accessToken, currentUserEmail, isPendingSignedOutReplay]);
 
   const handleManualPullFromSheet = useCallback(
-    (sheetId?: string, token?: string) => handlePullFromSheet(sheetId, token, { interactive: true, silent: false }),
-    [handlePullFromSheet],
+    async (sheetId?: string, token?: string) => {
+      let sId = sheetId || activeSheet?.id;
+      let tok = token || accessToken;
+
+      // If activeSheet is not yet bound in state, auto-connect from storage or Google Drive
+      if (!sId) {
+        const stored = loadStoredSheetMeta(currentUserEmail) || loadStoredSheetMeta(null);
+        if (stored?.id) {
+          sId = stored.id;
+          setActiveSheet(stored);
+        } else if (tok && tok !== 'local_token' && !tok.startsWith('eyJ')) {
+          try {
+            const driveSheets = await listUserSpreadsheets(tok);
+            if (driveSheets.length > 0) {
+              const best = driveSheets.find((s) => /spenddesk|cash|wallet|money/i.test(s.name)) || driveSheets[0];
+              const meta: GoogleSheetMeta = {
+                id: best.id,
+                name: best.name,
+                url: best.webViewLink || `https://docs.google.com/spreadsheets/d/${best.id}/edit`,
+                lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              };
+              saveStoredSheetMeta(meta, currentUserEmail);
+              setActiveSheet(meta);
+              sId = meta.id;
+            }
+          } catch (e) {
+            console.warn('Auto-discovery on manual pull note:', e);
+          }
+        }
+      }
+
+      if (!sId) {
+        setSheetsSourceTab(activeTab);
+        setActiveTab('sheets');
+        showNotification('Choose or create a Google Sheet to sync.', 'info');
+        return;
+      }
+
+      await handlePullFromSheet(sId, tok, { interactive: true, silent: false });
+    },
+    [activeSheet, accessToken, currentUserEmail, activeTab, handlePullFromSheet],
   );
 
   const handleBulkDeleteTransactions = (txIds: string[]) => {
@@ -952,7 +998,36 @@ export default function App() {
           saveLastUserEmail(email);
           mergeGuestDataIntoUser(email);
           setOfflineWorkspaceEmail(email);
-          showNotification('Signed in with Google! Google Drive & Sheets access ready.', 'success');
+
+          // Auto-connect last connected Google Sheet or discover from Drive
+          let sheetToConnect = loadStoredSheetMeta(email) || loadStoredSheetMeta(null) || loadStoredSheetMeta('guest');
+
+          if (!sheetToConnect && res.accessToken) {
+            try {
+              const driveList = await listUserSpreadsheets(res.accessToken);
+              if (driveList.length > 0) {
+                const match = driveList.find((s) => /spenddesk|cash|wallet|money/i.test(s.name)) || driveList[0];
+                sheetToConnect = {
+                  id: match.id,
+                  name: match.name,
+                  url: match.webViewLink || `https://docs.google.com/spreadsheets/d/${match.id}/edit`,
+                  lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                };
+              }
+            } catch (driveErr) {
+              console.warn('Auto-discover Drive spreadsheets on sign-in note:', driveErr);
+            }
+          }
+
+          if (sheetToConnect) {
+            setActiveSheet(sheetToConnect);
+            saveStoredSheetMeta(sheetToConnect, email);
+            saveKnownSpreadsheet(sheetToConnect, email);
+            void handlePullFromSheet(sheetToConnect.id, res.accessToken, { interactive: false, silent: true }).catch(console.warn);
+            showNotification(`Signed in! Auto-connected to "${sheetToConnect.name}".`, 'success');
+          } else {
+            showNotification('Signed in with Google! Google Drive & Sheets access ready.', 'success');
+          }
         }
       }
     } catch (err: any) {

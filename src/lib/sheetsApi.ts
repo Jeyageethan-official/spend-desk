@@ -98,51 +98,12 @@ export const requestGoogleAccessToken = async (promptUser = true): Promise<strin
     if (silentlyRefreshed) return silentlyRefreshed;
   } catch {}
 
-  // In background or silent mode, never invoke GIS or OAuth redirects to avoid browser popup blocks
+  // In background or silent mode, never invoke interactive popup
   if (!promptUser) {
     return existing || '';
   }
 
-  // Attempt Google Identity Services (GIS) token request only when user initiated an action
-  if (typeof window !== 'undefined' && (window as any).google?.accounts?.oauth2?.initTokenClient) {
-    try {
-      const tokenPromise = new Promise<string>((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error('GIS timeout')), 15000);
-        try {
-          const client = (window as any).google.accounts.oauth2.initTokenClient({
-            client_id: GOOGLE_OAUTH_CLIENT_ID,
-            scope: GOOGLE_SCOPES,
-            prompt: 'select_account',
-            callback: (res: any) => {
-              clearTimeout(timeout);
-              if (res?.access_token && !res.access_token.startsWith('eyJ')) {
-                const expiresIn = parseInt(res.expires_in, 10) || 3540;
-                setCachedWorkspaceToken(res.access_token, expiresIn);
-                resolve(res.access_token);
-              } else if (res?.error) {
-                reject(new Error(res.error_description || res.error));
-              } else {
-                reject(new Error('No token returned from GIS'));
-              }
-            },
-            error_callback: (err: any) => {
-              clearTimeout(timeout);
-              reject(err);
-            },
-          });
-          client.requestAccessToken({ prompt: 'select_account' });
-        } catch (e) {
-          clearTimeout(timeout);
-          reject(e);
-        }
-      });
-      const resToken = await tokenPromise;
-      if (resToken) return resToken;
-    } catch (e) {
-      console.warn('GIS interactive token request note:', e);
-    }
-  }
-
+  // Unified single sign-in flow (opens exactly one Google account chooser popup)
   const { accessToken } = await signInWithGoogleWorkspace();
   return accessToken;
 };

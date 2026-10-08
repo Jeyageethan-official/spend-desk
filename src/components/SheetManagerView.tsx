@@ -117,6 +117,21 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
         const list = Array.from(uniqueDriveMap.values());
         setSpreadsheets(list);
 
+        // If no sheet is currently connected, auto-connect the best matching Drive sheet!
+        if (!activeSheet && list.length > 0) {
+          const autoMatch = list.find((s) => /spenddesk|cash|wallet|money/i.test(s.name)) || list[0];
+          if (autoMatch) {
+            const autoMeta: GoogleSheetMeta = {
+              id: autoMatch.id,
+              name: autoMatch.name,
+              url: autoMatch.webViewLink || `https://docs.google.com/spreadsheets/d/${autoMatch.id}/edit`,
+              lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            };
+            onSetActiveSheet(autoMeta);
+            saveKnownSpreadsheet(autoMeta, storageEmail);
+          }
+        }
+
         // Cache exclusively for this user email
         if (storageEmail) {
           list.forEach((item) => {
