@@ -59,7 +59,6 @@ export const FilterBar: React.FC<FilterBarProps> = ({
       type,
       startDate: dates.startDate,
       endDate: dates.endDate,
-      source: 'bar',
     });
   };
 
@@ -74,12 +73,12 @@ export const FilterBar: React.FC<FilterBarProps> = ({
     });
   };
 
+  // This bar owns its own filter slice (sections are isolated from each other
+  // and from the header calendar), so every active criterion counts here.
   const activeFilterCount = useMemo(() => {
     let count = 0;
-    // A date picked in the HEADER calendar must not light up badges out here.
-    const dateFromHeader = filter.type === 'custom' && filter.source === 'header';
-    if (!dateFromHeader && filter.type !== 'all') count++;
-    if (!dateFromHeader && (filter.startDate || filter.endDate)) count++;
+    if (filter.type !== 'all') count++;
+    if (filter.startDate || filter.endDate) count++;
     if (filter.category && filter.category !== 'All') count++;
     if (filter.paymentMethod && filter.paymentMethod !== 'All') count++;
     if (filter.searchQuery?.trim()) count++;
@@ -88,10 +87,8 @@ export const FilterBar: React.FC<FilterBarProps> = ({
 
   const hasAdvancedFilters = activeFilterCount > 0;
   const shouldShowExpanded = !collapsible || isExpanded;
-  // Presets (All/Today/Week/Month) filter internally WITHOUT changing this trigger's look;
-  // only an explicit calendar pick made IN THIS BAR (type === 'custom' + source === 'bar')
-  // shows the selected date here. Header-calendar picks stay inside the header badge.
-  const hasCustomDateRange = filter.type === 'custom' && filter.source !== 'header';
+  // Shows the custom date picked IN THIS BAR (header calendar has its own pill).
+  const hasCustomDateRange = filter.type === 'custom';
 
   return (
     <>
@@ -295,7 +292,6 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             type,
             startDate: start,
             endDate: end,
-            source: 'bar',
           });
         }}
       />

@@ -250,20 +250,43 @@ export default function App() {
     searchQuery: '',
   }), []);
 
-  // Filter State - resets to 'all' whenever tab changes or app opens
-  const [filter, setFilter] = useState<FilterState>(DEFAULT_FILTER);
+  type SectionTab = 'dashboard' | 'transactions' | 'analytics';
 
-  // Automatically reset filter to 'all' whenever navigating between pages/tabs
-  useEffect(() => {
-    setFilter({
-      type: 'all',
-      startDate: '',
-      endDate: '',
-      category: 'All',
-      paymentMethod: 'All',
-      searchQuery: '',
-    });
-  }, [activeTab]);
+  // Global HEADER date filter: picked in the header calendar pill, persists
+  // across pages (never reset on navigation) and drives the wallet balance and
+  // summary cards everywhere.
+  const [headerFilter, setHeaderFilter] = useState<FilterState>(DEFAULT_FILTER);
+
+  // Per-SECTION filters: each section's FilterBar edits only its own state, so
+  // changing e.g. the Transactions range never touches Dashboard/Analytics.
+  const [sectionFilters, setSectionFilters] = useState<Record<SectionTab, FilterState>>({
+    dashboard: DEFAULT_FILTER,
+    transactions: DEFAULT_FILTER,
+    analytics: DEFAULT_FILTER,
+  });
+  const setSectionFilter = useCallback((tab: SectionTab, next: FilterState) => {
+    setSectionFilters((prev) => ({ ...prev, [tab]: next }));
+  }, []);
+
+  // The header filter only ever carries dates; section filters may also carry
+  // category / payment-method / search refinements.
+  const headerDateFilter = useMemo<FilterState>(() => ({
+    ...DEFAULT_FILTER,
+    startDate: headerFilter.startDate,
+    endDate: headerFilter.endDate,
+  }), [headerFilter, DEFAULT_FILTER]);
+
+  // Transactions visible under the global header date - the base for the wallet
+  // balance, summary cards and every section (each section then narrows further).
+  const dateFilteredTransactions = useMemo(
+    () => filterTransactions(transactions, headerDateFilter),
+    [transactions, headerDateFilter]
+  );
+
+  const filterFor = useCallback(
+    (tab: SectionTab) => filterTransactions(dateFilteredTransactions, sectionFilters[tab]),
+    [dateFilteredTransactions, sectionFilters]
+  );
 
   // Modal & View States
   const [isTxModalOpen, setIsTxModalOpen] = useState(false);
@@ -1553,13 +1576,19 @@ export default function App() {
   };
 
   // Financial Calculations
+  // The list the active section renders (global header date AND that section's
+  // own filter, so a section's presets never leak into other sections).
   const filteredTransactions = useMemo(() => {
-    return filterTransactions(transactions, filter);
-  }, [transactions, filter]);
+    const tab: SectionTab = activeTab === 'transactions' || activeTab === 'analytics' ? activeTab : 'dashboard';
+    return filterFor(tab);
+  }, [activeTab, filterFor]);
 
+  // Summary for cards/badges follows the GLOBAL header date only, so the wallet
+  // balance always matches the header calendar (a future date with no
+  // transactions correctly shows Rs 0 instead of the all-time balance).
   const summary = useMemo(() => {
-    return calculateSummary(transactions, filteredTransactions);
-  }, [transactions, filteredTransactions]);
+    return calculateSummary(transactions, dateFilteredTransactions);
+  }, [transactions, dateFilteredTransactions]);
 
   // Daily refresh (controlled from Settings): refresh the date every 30s / on focus so each
   // new day starts fresh. When switched OFF the dashboard keeps showing the day it was opened on.
@@ -1569,7 +1598,7 @@ export default function App() {
       const freshDate = getLocalDateString();
       setCurrentDateStr((prev) => {
         if (prev !== freshDate) {
-          setFilter((f) => {
+          const rollPresetDates = (f: FilterState): FilterState => {
             if (f.type === 'today') {
               return { ...f, startDate: freshDate, endDate: freshDate };
             }
@@ -1580,7 +1609,13 @@ export default function App() {
               return { ...f, startDate: yStr, endDate: yStr };
             }
             return f;
-          });
+          };
+          setHeaderFilter((f) => rollPresetDates(f));
+          setSectionFilters((prev) => ({
+            dashboard: rollPresetDates(prev.dashboard),
+            transactions: rollPresetDates(prev.transactions),
+            analytics: rollPresetDates(prev.analytics),
+          }));
           if (activeSheet && user?.email && isOnline) {
             void handlePushToSheet({ silent: true });
           }
@@ -1717,16 +1752,16 @@ export default function App() {
           user={user}
           pageTitle={pageMeta.title}
           pageSubtitle={pageMeta.subtitle}
-          dateFilter={filter}
-          onDateFilterChange={setFilter}
+          dateFilter={headerFilter}
+          onDateFilterChange={setHeaderFilter}
           headerDate={currentDateStr}
           showCash={activeTab !== 'dashboard'}
           userProfile={userProfile}
           storageEmail={currentUserEmail}
           activeSheet={activeSheet}
           isSyncing={isSyncing}
-          totalCashBalance={overallSummary.currentCashBalance}
-          totalSpend={overallSummary.totalSpend}
+          totalCashBalance={summary.currentCashBalance}
+          totalSpend={summary.totalSpend}
           currency={currency}
           onGoHome={() => setActiveTab('dashboard')}
           onSignIn={handleSignIn}
@@ -2029,8 +2064,8 @@ export default function App() {
 
               {/* 3. Filter Bar (With expand/collapse down arrow) */}
               <FilterBar
-                filter={filter}
-                onFilterChange={setFilter}
+                filter={sectionFilters.dashboard}
+                onFilterChange={(next) => setSectionFilter('dashboard', next)}
                 onExportCSV={handleExportCSV}
                 totalFilteredCount={filteredTransactions.length}
                 transactions={transactions}
@@ -2081,8 +2116,8 @@ export default function App() {
           {activeTab === 'transactions' && (
             <main className="max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4 sm:space-y-6">
               <FilterBar
-                filter={filter}
-                onFilterChange={setFilter}
+                filter={sectionFilters.transactions}
+                onFilterChange={(next) => setSectionFilter('transactions', next)}
                 onExportCSV={handleExportCSV}
                 totalFilteredCount={filteredTransactions.length}
                 collapsible={false}
@@ -2120,8 +2155,8 @@ export default function App() {
                 summary={summary}
                 categories={categoryBreakdown}
                 trendItems={trendItems}
-                filter={filter}
-                onFilterChange={setFilter}
+                filter={sectionFilters.analytics}
+                onFilterChange={(next) => setSectionFilter('analytics', next)}
                 onExportCSV={handleExportCSV}
                 totalTransactionsCount={filteredTransactions.length}
                 currency={currency}

@@ -199,18 +199,30 @@ export const calculateSummary = (
   const isCashPayment = (method?: string) => !method || method.toLowerCase() === 'cash';
   const isCardOrBankPayment = (method?: string) => method && (method.toLowerCase() === 'card' || method.toLowerCase() === 'bank' || method.toLowerCase().includes('transfer'));
 
-  // Calculate chronological running balances across all transactions
+  // Chronological running balances across ALL transactions keep the out-of-wallet
+  // history accurate (an expense earlier in the month still counts even when the
+  // date filter only shows today).
   const runningBalances = calculateRunningBalances(allTxs);
   const sortedAll = sortTransactionsChronological(allTxs);
 
-  let finalCashBalance = 0;
   let totalOutOfWalletAll = 0;
   for (const tx of sortedAll) {
     const rb = runningBalances.get(tx.id);
     if (rb) {
-      finalCashBalance = rb.balance;
       totalOutOfWalletAll += rb.outOfWallet;
     }
+  }
+
+  // The cash balance must respect the active date filter: with no filter it is
+  // the real wallet balance; with a filter it is the balance of just the filtered
+  // period (e.g. a future date with no transactions correctly shows 0 instead of
+  // the all-time balance).
+  const isUnfiltered = filtTxs.length === allTxs.length;
+  const balanceRunning = isUnfiltered ? runningBalances : calculateRunningBalances(filtTxs);
+  let finalCashBalance = 0;
+  for (const tx of sortTransactionsChronological(filtTxs)) {
+    const rb = balanceRunning.get(tx.id);
+    if (rb) finalCashBalance = rb.balance;
   }
 
   const cashAdded = filtTxs
@@ -226,9 +238,8 @@ export const calculateSummary = (
     .reduce((sum, tx) => sum + (tx.amount || 0), 0);
 
   // Out of wallet for filtered range (or all-time if no specific filter)
-  const isAllFilter = filtTxs.length === allTxs.length;
   let outOfWallet = 0;
-  if (isAllFilter) {
+  if (isUnfiltered) {
     outOfWallet = totalOutOfWalletAll;
   } else {
     for (const tx of filtTxs) {

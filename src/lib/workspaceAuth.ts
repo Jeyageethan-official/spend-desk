@@ -18,8 +18,71 @@ let cachedAccessToken: string | null = null;
 let silentRefreshPromise: Promise<string | null> | null = null;
 let interactiveAuthPromise: Promise<{ user: WorkspaceUser; accessToken: string }> | null = null;
 
+const GSI_SCRIPT_URL = 'https://accounts.google.com/gsi/client';
+let gsiLoadPromise: Promise<boolean> | null = null;
+let gsiTokenClient: any = null;
+
+/** Loads the Google Identity Services script once (for silent token renewal). */
 export const ensureGoogleGsiLoaded = async (): Promise<boolean> => {
-  return false;
+  if (typeof window === 'undefined' || typeof document === 'undefined') return false;
+  if ((window as any).google?.accounts?.oauth2) return true;
+  if (gsiLoadPromise) return gsiLoadPromise;
+
+  gsiLoadPromise = new Promise<boolean>((resolve) => {
+    const existing = document.querySelector<HTMLScriptElement>(`script[src="${GSI_SCRIPT_URL}"]`);
+    const script = existing || document.createElement('script');
+    const finish = (ok: boolean) => resolve(ok && Boolean((window as any).google?.accounts?.oauth2));
+    script.addEventListener('load', () => finish(true));
+    script.addEventListener('error', () => finish(false));
+    if (!existing) {
+      script.src = GSI_SCRIPT_URL;
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
+    }
+  }).then((ok) => {
+    // Allow a retry later if the CDN load failed.
+    if (!ok) gsiLoadPromise = null;
+    return ok;
+  });
+
+  return gsiLoadPromise;
+};
+
+/**
+ * Requests a fresh Google access token WITHOUT any visible sign-in flow.
+ * With `prompt: ''` Google reuses the browser's existing Google session and the
+ * consent the user already gave, so no popup appears in the normal case.
+ */
+const requestGsiTokenSilently = async (): Promise<{ token: string; expiresInSeconds: number } | null> => {
+  const loaded = await ensureGoogleGsiLoaded();
+  const oauth2 = (window as any).google?.accounts?.oauth2;
+  if (!loaded || !oauth2) return null;
+
+  return new Promise((resolve) => {
+    try {
+      if (!gsiTokenClient) {
+        gsiTokenClient = oauth2.initTokenClient({
+          client_id: GOOGLE_OAUTH_CLIENT_ID,
+          scope: GOOGLE_SCOPES,
+          callback: () => {},
+          error_callback: () => {},
+        });
+      }
+      const timer = window.setTimeout(() => resolve(null), 10000);
+      gsiTokenClient.callback = (resp: any) => {
+        window.clearTimeout(timer);
+        if (resp?.access_token && !resp.error) {
+          resolve({ token: resp.access_token, expiresInSeconds: Number(resp.expires_in) || 3599 });
+        } else {
+          resolve(null);
+        }
+      };
+      gsiTokenClient.requestAccessToken({ prompt: '' });
+    } catch {
+      resolve(null);
+    }
+  });
 };
 
 export interface WorkspaceUser {
@@ -88,18 +151,42 @@ export const refreshGoogleTokenSilently = async (_userEmail?: string): Promise<s
   if (silentRefreshPromise) return silentRefreshPromise;
 
   silentRefreshPromise = (async () => {
+    // 1. A still-valid cached token is the best refresh - reuse it.
+    const cached = getCachedWorkspaceToken();
+    if (cached && !isGoogleTokenExpired()) return cached;
+
+    // 2. Supabase keeps the Google provider token from the sign-in exchange
+    //    (valid for roughly one hour).
     try {
       const supabase = getSupabase();
       const { data: { session } } = await supabase.auth.getSession();
-      if (session?.provider_token && !session.provider_token.startsWith('eyJ')) {
-        setCachedWorkspaceToken(session.provider_token);
-        return session.provider_token;
+      const providerToken = session?.provider_token;
+      if (
+        providerToken &&
+        !providerToken.startsWith('eyJ') &&
+        providerToken !== 'local_token' &&
+        providerToken.length > 20
+      ) {
+        setCachedWorkspaceToken(providerToken);
+        return providerToken;
       }
     } catch {}
 
-    const cached = getCachedWorkspaceToken();
-    if (cached) return cached;
-    return null;
+    // 3. The sign-in provider token eventually expires and Supabase does not
+    //    rotate it. Re-request a fresh Google access token silently through
+    //    Google Identity Services: with prompt:'' no popup appears while the
+    //    browser still has a Google session and the user's prior consent.
+    try {
+      const fresh = await requestGsiTokenSilently();
+      if (fresh) {
+        setCachedWorkspaceToken(fresh.token, fresh.expiresInSeconds);
+        return fresh.token;
+      }
+    } catch {}
+
+    // 4. Nothing better available - hand back whatever is cached so callers can
+    //    still decide between an interactive Connect Google and a clean error.
+    return getCachedWorkspaceToken();
   })().finally(() => {
     silentRefreshPromise = null;
   });
