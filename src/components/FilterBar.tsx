@@ -59,6 +59,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
       type,
       startDate: dates.startDate,
       endDate: dates.endDate,
+      source: 'bar',
     });
   };
 
@@ -75,8 +76,10 @@ export const FilterBar: React.FC<FilterBarProps> = ({
 
   const activeFilterCount = useMemo(() => {
     let count = 0;
-    if (filter.type !== 'all') count++;
-    if (filter.startDate || filter.endDate) count++;
+    // A date picked in the HEADER calendar must not light up badges out here.
+    const dateFromHeader = filter.type === 'custom' && filter.source === 'header';
+    if (!dateFromHeader && filter.type !== 'all') count++;
+    if (!dateFromHeader && (filter.startDate || filter.endDate)) count++;
     if (filter.category && filter.category !== 'All') count++;
     if (filter.paymentMethod && filter.paymentMethod !== 'All') count++;
     if (filter.searchQuery?.trim()) count++;
@@ -85,7 +88,10 @@ export const FilterBar: React.FC<FilterBarProps> = ({
 
   const hasAdvancedFilters = activeFilterCount > 0;
   const shouldShowExpanded = !collapsible || isExpanded;
-  const hasCustomDateRange = Boolean(filter.startDate || filter.endDate);
+  // Presets (All/Today/Week/Month) filter internally WITHOUT changing this trigger's look;
+  // only an explicit calendar pick made IN THIS BAR (type === 'custom' + source === 'bar')
+  // shows the selected date here. Header-calendar picks stay inside the header badge.
+  const hasCustomDateRange = filter.type === 'custom' && filter.source !== 'header';
 
   return (
     <>
@@ -100,7 +106,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
               placeholder="Search transactions, notes, merchant..."
               value={filter.searchQuery || ''}
               onChange={(e) => onFilterChange({ ...filter, searchQuery: e.target.value })}
-              className="w-full pl-10 pr-8 py-2 text-xs bg-slate-50/80 hover:bg-slate-50 border border-slate-200/90 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-hidden focus:bg-white focus:border-slate-400 focus:ring-2 focus:ring-slate-900/5 transition-all"
+              className="w-full pl-10 pr-8 py-2 text-xs bg-slate-50/80 hover:bg-slate-50 border border-slate-200/90 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-hidden focus:bg-white focus:border-slate-400 focus:ring-2 focus:ring-slate-900/5 transition-all md:text-sm"
             />
             {filter.searchQuery && (
               <button
@@ -116,8 +122,8 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           </div>
 
           {/* Date Scope Segmented Controls */}
-          <div className="flex items-center gap-1.5 justify-between sm:justify-start">
-            <div className="flex items-center p-1 bg-slate-100 rounded-xl overflow-x-auto scrollbar-none gap-0.5">
+          <div className="flex flex-wrap items-center gap-1.5 justify-between sm:justify-start min-w-0">
+            <div className="flex items-center p-1 bg-slate-100 rounded-xl overflow-x-auto scrollbar-none gap-0.5 shrink-0">
               {[
                 { id: 'all', label: 'All' },
                 { id: 'today', label: 'Today' },
@@ -134,7 +140,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                       active
                         ? 'bg-emerald-600 text-white font-bold shadow-xs'
                         : 'text-slate-600 hover:text-slate-900 font-medium hover:bg-slate-200/50'
-                    }`}
+                    } md:text-sm`}
                   >
                     {item.label}
                   </button>
@@ -150,7 +156,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                 hasCustomDateRange
                   ? 'bg-[#eaf5f0] text-[#116b4e] border-[#116b4e]/40 font-bold shadow-2xs'
                   : 'text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-50 border-slate-200/90'
-              }`}
+              } md:text-sm`}
               title="Pick Custom Calendar Date Range"
             >
               <Calendar className="w-3.5 h-3.5 text-[#116b4e]" />
@@ -168,7 +174,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                   isExpanded || hasAdvancedFilters
                     ? 'bg-slate-50 border-slate-300 text-slate-900 font-bold'
                     : 'bg-white hover:bg-slate-50 border-slate-200/90 text-slate-700'
-                }`}
+                } md:text-sm`}
                 title={isExpanded ? 'Collapse filters' : 'Expand more filters'}
               >
                 <SlidersHorizontal className="w-3.5 h-3.5 text-slate-500" />
@@ -186,7 +192,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
               <button
                 type="button"
                 onClick={() => setIsDownloadModalOpen(true)}
-                className="p-2 sm:px-3 sm:py-2 text-xs font-semibold rounded-xl transition-all cursor-pointer shrink-0 flex items-center gap-1.5 border text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-50 border-slate-200/90 shadow-2xs"
+                className="p-2 sm:px-3 sm:py-2 text-xs font-semibold rounded-xl transition-all cursor-pointer shrink-0 flex items-center gap-1.5 border text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-50 border-slate-200/90 shadow-2xs md:text-sm"
                 title="Download Records (CSV or PDF)"
               >
                 <Download className="w-3.5 h-3.5 text-slate-600" />
@@ -207,7 +213,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                   onChange={(e) =>
                     onFilterChange({ ...filter, category: e.target.value as Category | 'All' })
                   }
-                  className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200/90 rounded-xl text-slate-800 font-medium focus:outline-hidden focus:bg-white cursor-pointer"
+                  className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200/90 rounded-xl text-slate-800 font-medium focus:outline-hidden focus:bg-white cursor-pointer md:text-sm"
                 >
                   <option value="All">All Categories</option>
                   {STANDARD_CATEGORIES.map((c) => (
@@ -237,7 +243,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                           active
                             ? 'bg-white text-slate-900 shadow-2xs font-bold'
                             : 'text-slate-600 hover:text-slate-900'
-                        }`}
+                        } md:text-sm`}
                       >
                         {mode}
                       </button>
@@ -250,7 +256,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                   <button
                     type="button"
                     onClick={clearFilters}
-                    className="p-2 text-xs font-bold text-red-700 hover:bg-red-50 border border-red-200 rounded-xl transition-colors cursor-pointer flex items-center gap-1 shrink-0"
+                    className="p-2 text-xs font-bold text-red-700 hover:bg-red-50 border border-red-200 rounded-xl transition-colors cursor-pointer flex items-center gap-1 shrink-0 md:text-sm"
                     title="Reset all filters"
                   >
                     <RotateCcw className="w-3.5 h-3.5 text-red-700" />
@@ -289,6 +295,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             type,
             startDate: start,
             endDate: end,
+            source: 'bar',
           });
         }}
       />

@@ -289,10 +289,10 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
               <Layers className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 md:text-sm">
                 Transaction Log
               </h3>
-              <p className="text-[10px] text-slate-400">
+              <p className="text-[10px] text-slate-400 md:text-xs">
                 {transactions.length} entries recorded &bull; Long-press a row for bulk actions
               </p>
             </div>
@@ -303,7 +303,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
             <button
               type="button"
               onClick={() => setIsSortOpen(!isSortOpen)}
-              className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 flex items-center gap-1.5 cursor-pointer"
+              className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 flex items-center gap-1.5 cursor-pointer md:text-sm"
             >
               <ArrowUpDown className="w-3 h-3 text-slate-500" />
               <span>
@@ -317,7 +317,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
 
             {isSortOpen && (
               <div className="absolute right-0 mt-1.5 w-44 bg-white rounded-2xl shadow-xl border border-slate-200 py-1.5 z-20 animate-in fade-in duration-100 text-xs">
-                <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 md:text-xs">
                   Sort Records
                 </div>
                 <button
@@ -370,7 +370,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
       {/* Quick Filters directly above transaction list */}
       {onFilterChange && !isSelectionMode && (
         <div className="px-4 py-2.5 bg-slate-50/80 border-b border-slate-100 flex items-center gap-1.5 overflow-x-auto scrollbar-none text-xs">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-1 shrink-0">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-1 shrink-0 md:text-xs">
             Quick:
           </span>
 
@@ -381,7 +381,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
               isWeekActive
                 ? 'bg-slate-900 text-white font-bold shadow-2xs'
                 : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200/80 font-medium'
-            }`}
+            } md:text-sm`}
           >
             <Calendar className="w-3 h-3 text-emerald-500" />
             <span>This Week</span>
@@ -395,7 +395,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
               isMonthActive
                 ? 'bg-slate-900 text-white font-bold shadow-2xs'
                 : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200/80 font-medium'
-            }`}
+            } md:text-sm`}
           >
             <CalendarDays className="w-3 h-3 text-blue-500" />
             <span>This Month</span>
@@ -409,7 +409,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
               isCashOnlyActive
                 ? 'bg-slate-900 text-white font-bold shadow-2xs'
                 : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200/80 font-medium'
-            }`}
+            } md:text-sm`}
           >
             <Wallet className="w-3 h-3 text-emerald-600" />
             <span>Cash Only</span>
@@ -423,7 +423,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
               isCardOnlyActive
                 ? 'bg-slate-900 text-white font-bold shadow-2xs'
                 : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200/80 font-medium'
-            }`}
+            } md:text-sm`}
           >
             <CreditCard className="w-3 h-3 text-blue-600" />
             <span>Card Only</span>
@@ -439,14 +439,14 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
             <Wallet className="w-6 h-6" />
           </div>
           <p className="text-sm font-bold text-slate-800">No transactions yet</p>
-          <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">
+          <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto md:text-sm">
             Your tracker is clean and ready at Rs 0.00. Tap below to log your first spend!
           </p>
           {onAddNew && (
             <button
               type="button"
               onClick={onAddNew}
-              className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer"
+              className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer md:text-sm"
             >
               <Plus className="w-4 h-4" />
               <span>+ Record First Spend</span>
@@ -518,7 +518,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
                     </div>
 
                     <div className="truncate flex-1">
-                      <span className="font-bold text-xs text-slate-900 truncate block">
+                      <span className="font-bold text-xs text-slate-900 truncate block md:text-sm">
                         {tx.notes || tx.category}
                       </span>
                       <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
@@ -531,7 +531,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
                               setViewReceipt(tx.receiptImage!);
                             }}
                             onPointerDown={(e) => e.stopPropagation()}
-                            className="inline-flex items-center gap-1 text-[10px] font-bold text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200/80 px-1.5 py-0.5 rounded-md cursor-pointer transition-colors shadow-2xs"
+                            className="inline-flex items-center gap-1 text-[10px] font-bold text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200/80 px-1.5 py-0.5 rounded-md cursor-pointer transition-colors shadow-2xs md:text-xs"
                             title="View paper receipt"
                           >
                             <Paperclip className="w-2.5 h-2.5 text-teal-600" />
@@ -556,7 +556,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
                       </span>
                       <span className={`text-[10px] px-1.5 py-0.2 rounded-md font-bold ${
                         isCard ? 'bg-blue-50 text-blue-700 border border-blue-200/60' : 'bg-slate-100 text-slate-600'
-                      }`}>
+                      } md:text-xs`}>
                         {tx.paymentMethod}
                       </span>
                     </div>

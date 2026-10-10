@@ -37,6 +37,9 @@ export interface FilterState {
   category?: Category | 'All';
   paymentMethod?: PaymentMethod | 'All';
   searchQuery?: string;
+  /** Which UI set the date: 'header' = header calendar pill, 'bar' = FilterBar.
+   *  Keeps the two date badges from reacting to each other. */
+  source?: 'header' | 'bar';
 }
 
 export interface SpendingSummary {

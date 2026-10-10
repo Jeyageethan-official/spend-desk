@@ -77,7 +77,7 @@ export const BudgetAlerts: React.FC<BudgetAlertsProps> = ({
               <span className="text-amber-900 font-semibold tabular-nums">
                 {formatCurrency(summary.currentCashBalance, currency)}
               </span>
-              <span className="text-amber-700/80 text-[11px] ml-1">
+              <span className="text-amber-700/80 text-[11px] ml-1 md:text-xs">
                 (Min: {formatCurrency(budgetConfig.lowCashThreshold, currency)})
               </span>
             </div>
@@ -109,10 +109,10 @@ export const BudgetAlerts: React.FC<BudgetAlertsProps> = ({
               <Sparkles className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 md:text-sm">
                 End-Money &amp; Runway Tracker
               </h3>
-              <p className="text-[11px] text-slate-400">
+              <p className="text-[11px] text-slate-400 md:text-xs">
                 {daysRemaining} days left in {now.toLocaleString('default', { month: 'short' })}
               </p>
             </div>
@@ -121,7 +121,7 @@ export const BudgetAlerts: React.FC<BudgetAlertsProps> = ({
           <button
             type="button"
             onClick={() => setIsEditing(!isEditing)}
-            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer text-xs flex items-center gap-1"
+            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer text-xs flex items-center gap-1 md:text-sm"
             title="Configure monthly budget limits"
           >
             <Settings2 className="w-3.5 h-3.5" />
@@ -135,7 +135,7 @@ export const BudgetAlerts: React.FC<BudgetAlertsProps> = ({
             <p className="font-bold text-slate-800">Adjust Monthly Limits</p>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <div>
-                <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">
+                <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1 md:text-xs">
                   Monthly Budget (Rs)
                 </label>
                 <input
@@ -147,7 +147,7 @@ export const BudgetAlerts: React.FC<BudgetAlertsProps> = ({
               </div>
 
               <div>
-                <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">
+                <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1 md:text-xs">
                   Low Cash Alert At (Rs)
                 </label>
                 <input
@@ -159,7 +159,7 @@ export const BudgetAlerts: React.FC<BudgetAlertsProps> = ({
               </div>
 
               <div>
-                <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">
+                <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1 md:text-xs">
                   Daily Spend Target (Rs)
                 </label>
                 <input
@@ -215,10 +215,10 @@ export const BudgetAlerts: React.FC<BudgetAlertsProps> = ({
               <CalendarDays className="w-3.5 h-3.5" />
             </div>
             <div>
-              <span className="text-[10px] text-slate-400 font-semibold block uppercase">
+              <span className="text-[10px] text-slate-400 font-semibold block uppercase md:text-xs">
                 Safe Daily Runway
               </span>
-              <span className="text-xs font-bold text-slate-900">
+              <span className="text-xs font-bold text-slate-900 md:text-sm">
                 {formatCurrency(safeDailySpend, currency)} / day
               </span>
             </div>
@@ -229,10 +229,10 @@ export const BudgetAlerts: React.FC<BudgetAlertsProps> = ({
               <TrendingUp className="w-3.5 h-3.5" />
             </div>
             <div>
-              <span className="text-[10px] text-slate-400 font-semibold block uppercase">
+              <span className="text-[10px] text-slate-400 font-semibold block uppercase md:text-xs">
                 Remaining Budget
               </span>
-              <span className="text-xs font-bold text-emerald-700">
+              <span className="text-xs font-bold text-emerald-700 md:text-sm">
                 {formatCurrency(remainingBudget, currency)}
               </span>
             </div>

@@ -32,7 +32,7 @@ export const AuthHelpModal: React.FC<AuthHelpModalProps> = ({
               <h2 className="text-base font-bold text-slate-900">
                 Help &amp; Account Guide
               </h2>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-slate-500 md:text-sm">
                 How SpendDesk keeps your financial records safe
               </p>
             </div>
@@ -55,13 +55,13 @@ export const AuthHelpModal: React.FC<AuthHelpModalProps> = ({
               <ShieldCheck className="w-4 h-4 text-[#116b4e] shrink-0" />
               <span>100% Free &amp; Private — No Sign-In Required</span>
             </div>
-            <p className="text-xs text-slate-700 leading-relaxed">
+            <p className="text-xs text-slate-700 leading-relaxed md:text-sm">
               SpendDesk is designed to work completely offline on your device. Every transaction, cash balance, category, and lend/borrow record is saved directly to your private browser storage. You can use all features freely without signing in.
             </p>
           </div>
 
           {/* 2. Google Sheets Cloud Backup FAQ */}
-          <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3 text-xs text-slate-700">
+          <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3 text-xs text-slate-700 md:text-sm">
             <div className="flex items-center gap-2 text-slate-900 font-bold">
               <FileSpreadsheet className="w-4 h-4 text-emerald-600 shrink-0" />
               <span>How Google Sheets Sync Works</span>
@@ -75,7 +75,7 @@ export const AuthHelpModal: React.FC<AuthHelpModalProps> = ({
                 <span className="font-bold text-slate-900 block mb-0.5">
                   &bull; Why did Google show an authorization prompt or warning?
                 </span>
-                <span className="text-slate-600 text-[11px] block leading-normal">
+                <span className="text-slate-600 text-[11px] block leading-normal md:text-xs">
                   Because Google Sheets and Drive permissions allow creating and updating spreadsheets, Google requires authorization. If your account is not authorized or cloud sync is unavailable, you can use SpendDesk fully in offline mode with complete safety.
                 </span>
               </div>
@@ -84,7 +84,7 @@ export const AuthHelpModal: React.FC<AuthHelpModalProps> = ({
                 <span className="font-bold text-slate-900 block mb-0.5">
                   &bull; How can I backup or open my data in Excel / Sheets?
                 </span>
-                <span className="text-slate-600 text-[11px] block leading-normal">
+                <span className="text-slate-600 text-[11px] block leading-normal md:text-xs">
                   You can click &ldquo;Export CSV&rdquo; anytime on the Records page or Settings to download a standard spreadsheet file compatible with Google Sheets, Microsoft Excel, and Apple Numbers.
                 </span>
               </div>
@@ -93,7 +93,7 @@ export const AuthHelpModal: React.FC<AuthHelpModalProps> = ({
                 <span className="font-bold text-slate-900 block mb-0.5">
                   &bull; Will I lose my data if I close the app?
                 </span>
-                <span className="text-slate-600 text-[11px] block leading-normal">
+                <span className="text-slate-600 text-[11px] block leading-normal md:text-xs">
                   No. All data is automatically saved locally. You can also download a full JSON backup from Settings &rarr; Data &amp; Backups anytime.
                 </span>
               </div>
@@ -104,7 +104,7 @@ export const AuthHelpModal: React.FC<AuthHelpModalProps> = ({
           <div className="flex items-center justify-between p-3.5 bg-white border border-slate-200 rounded-2xl">
             <div className="flex items-center gap-2">
               <HardDrive className="w-4 h-4 text-slate-600" />
-              <span className="font-semibold text-xs text-slate-800">Export your data right now</span>
+              <span className="font-semibold text-xs text-slate-800 md:text-sm">Export your data right now</span>
             </div>
             <button
               type="button"
@@ -112,7 +112,7 @@ export const AuthHelpModal: React.FC<AuthHelpModalProps> = ({
                 onExportCSV();
                 onClose();
               }}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#116b4e] hover:bg-[#0d5940] text-white rounded-xl text-xs font-semibold shadow-xs cursor-pointer transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#116b4e] hover:bg-[#0d5940] text-white rounded-xl text-xs font-semibold shadow-xs cursor-pointer transition-colors md:text-sm"
             >
               <Download className="w-3.5 h-3.5" />
               <span>Export CSV</span>
@@ -125,7 +125,7 @@ export const AuthHelpModal: React.FC<AuthHelpModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="px-5 py-2 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-xl shadow-xs cursor-pointer transition-colors"
+            className="px-5 py-2 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-xl shadow-xs cursor-pointer transition-colors md:text-sm"
           >
             Got It, Continue
           </button>

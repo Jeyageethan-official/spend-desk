@@ -6,3 +6,9 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Local tooling & backups
+.deno/
+.tmp-verify/
+backups/
+deno.lock

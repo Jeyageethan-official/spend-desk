@@ -19,8 +19,10 @@ import {
   Unlink,
   Table2,
   HandCoins,
-  Trash2
+  Trash2,
+  Wallet
 } from 'lucide-react';
+import { formatCurrency } from '../lib/calculations';
 import { GoogleSheetMeta, LendItem, Transaction } from '../types/finance';
 import { 
   listUserSpreadsheets, 
@@ -56,12 +58,16 @@ interface SheetManagerViewProps {
   lendItems?: LendItem[];
   storageEmail?: string | null;
   onNotification?: (msg: string, type?: 'success' | 'info' | 'error') => void;
+  totalCashBalance?: number;
+  currency?: string;
 }
 
 type SheetMenuTab = 'sheets' | 'drive' | 'webhook';
 
 export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
   onBack,
+  totalCashBalance = 0,
+  currency = 'Rs',
   accessToken,
   activeSheet,
   onSetActiveSheet,
@@ -379,27 +385,39 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
     <div className="min-h-screen bg-slate-50/60 pb-24 animate-in fade-in duration-200">
       {/* Top Minimalist App Bar */}
       <div className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/90 shadow-2xs">
-        <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
+        <div className="max-w-2xl md:max-w-4xl lg:max-w-5xl mx-auto px-4 h-14 flex items-center justify-between gap-3">
           <button
             type="button"
             onClick={onBack}
-            className="p-2 -ml-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-all cursor-pointer flex items-center justify-center"
+            className="p-2 -ml-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-all cursor-pointer flex items-center justify-center md:hidden"
             title="Back"
             aria-label="Back"
           >
             <ArrowLeft className="w-5 h-5 stroke-[2.5]" />
           </button>
 
-          <h1 className="text-sm font-bold text-slate-900 tracking-tight flex items-center gap-2">
-            <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-            <span>Google Sheets Manager</span>
-          </h1>
+          <div className="min-w-0">
+            <h1 className="text-sm font-bold text-slate-900 tracking-tight flex items-center gap-2 md:text-[15px] md:font-black">
+              <FileSpreadsheet className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>Google Sheets Manager</span>
+            </h1>
+            <p className="hidden md:block text-[11px] md:text-xs text-slate-500 truncate leading-tight mt-0.5">
+              Connect &amp; sync your Google spreadsheets
+            </p>
+          </div>
 
-          <div className="w-9" />
+          {/* Desktop: cash chip (same as main header) */}
+          <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-50/90 border border-emerald-200/70 shrink-0" title="Current cash in hand">
+            <Wallet className="w-3.5 h-3.5 text-emerald-600" />
+            <span className="text-[10px] font-black uppercase tracking-wide text-emerald-600 md:text-xs">Cash</span>
+            <span className="text-xs font-black text-emerald-800 tabular-nums md:text-sm">{formatCurrency(totalCashBalance, currency)}</span>
+          </div>
+
+          <div className="w-9 lg:hidden" />
         </div>
       </div>
 
-      <div className="max-w-2xl md:max-w-4xl mx-auto px-4 pt-6 space-y-6">
+      <div className="max-w-2xl md:max-w-4xl lg:max-w-5xl mx-auto px-4 pt-6 space-y-6">
         {/* Main Card */}
         <div className="bg-white rounded-3xl border border-slate-200/90 shadow-xs flex flex-col min-h-[580px] overflow-hidden">
           {/* Connected spreadsheet header */}
@@ -412,7 +430,7 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                 <h3 className="text-sm font-bold text-slate-900">
                   {activeSheet ? activeSheet.name : 'No Spreadsheet Connected'}
                 </h3>
-                <p className="text-[11px] text-slate-500 mt-0.5">
+                <p className="text-[11px] text-slate-500 mt-0.5 md:text-xs">
                   {activeSheet ? (
                     <span className="text-emerald-700 font-semibold flex items-center gap-1.5">
                       <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -430,7 +448,7 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                 href={activeSheet.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="hidden sm:inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-slate-700 text-xs font-semibold hover:bg-slate-50 shadow-2xs transition-colors"
+                className="hidden sm:inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-slate-700 text-xs font-semibold hover:bg-slate-50 shadow-2xs transition-colors md:text-sm"
               >
                 <span>Open Sheet</span>
                 <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
@@ -492,14 +510,14 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
             <div>
               {/* Error Alert Banner */}
               {errorMsg && (
-                <div className="mb-4 p-4 bg-rose-50 border border-rose-200 rounded-2xl text-rose-800 text-xs space-y-2">
+                <div className="mb-4 p-4 bg-rose-50 border border-rose-200 rounded-2xl text-rose-800 text-xs space-y-2 md:text-sm">
                   <div className="flex items-start gap-2">
                     <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
                     <div className="flex-1">
                       <p className="font-bold text-rose-900">
                         Connection Update Required
                       </p>
-                      <p className="mt-1 text-[11px] text-rose-700 leading-relaxed">
+                      <p className="mt-1 text-[11px] text-rose-700 leading-relaxed md:text-xs">
                         {errorMsg}
                       </p>
                     </div>
@@ -511,7 +529,7 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                         href="https://console.cloud.google.com/apis/library/sheets.googleapis.com"
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="px-3 py-1.5 rounded-xl bg-rose-700 hover:bg-rose-800 text-white font-bold text-[11px] inline-flex items-center gap-1 shadow-2xs"
+                        className="px-3 py-1.5 rounded-xl bg-rose-700 hover:bg-rose-800 text-white font-bold text-[11px] inline-flex items-center gap-1 shadow-2xs md:text-xs"
                       >
                         <span>Enable Google Sheets API</span>
                         <ExternalLink className="w-3 h-3" />
@@ -520,7 +538,7 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                         href="https://console.cloud.google.com/apis/library/drive.googleapis.com"
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-[11px] inline-flex items-center gap-1 shadow-2xs"
+                        className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-[11px] inline-flex items-center gap-1 shadow-2xs md:text-xs"
                       >
                         <span>Enable Google Drive API</span>
                         <ExternalLink className="w-3 h-3" />
@@ -532,7 +550,7 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
 
               {/* Success Alert Banner */}
               {successMsg && (
-                <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-800 text-xs flex items-center gap-2">
+                <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-800 text-xs flex items-center gap-2 md:text-sm">
                   <Check className="w-4 h-4 text-emerald-600 shrink-0" />
                   <span>{successMsg}</span>
                 </div>
@@ -545,9 +563,9 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                   {activeSheet ? (
                     <div className="space-y-4">
                       <div className="grid grid-cols-2 sm:grid-cols-3 border border-slate-200 rounded-2xl overflow-hidden bg-white divide-x divide-slate-100">
-                        <div className="p-3.5"><span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Transactions</span><span className="mt-1 block text-lg font-black text-slate-900">{totalTransactionsCount}</span></div>
-                        <div className="p-3.5"><span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Lend / Borrow</span><span className="mt-1 block text-lg font-black text-slate-900">{totalLendCount}</span></div>
-                        <div className="hidden sm:block p-3.5"><span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Sync status</span><span className="mt-1 flex items-center gap-1 text-xs font-bold text-emerald-700"><CheckCircle2 className="w-3.5 h-3.5" /> Ready</span></div>
+                        <div className="p-3.5"><span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block md:text-xs">Transactions</span><span className="mt-1 block text-lg font-black text-slate-900">{totalTransactionsCount}</span></div>
+                        <div className="p-3.5"><span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block md:text-xs">Lend / Borrow</span><span className="mt-1 block text-lg font-black text-slate-900">{totalLendCount}</span></div>
+                        <div className="hidden sm:block p-3.5"><span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block md:text-xs">Sync status</span><span className="mt-1 flex items-center gap-1 text-xs font-bold text-emerald-700 md:text-sm"><CheckCircle2 className="w-3.5 h-3.5" /> Ready</span></div>
                       </div>
 
                       {/* Push / Two-Way Sync Action */}
@@ -556,12 +574,12 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                           type="button"
                           onClick={() => void onPushToSheet()}
                           disabled={isSyncing}
-                          className="w-full p-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm shadow-xs flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 transition-colors"
+                          className="w-full p-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm shadow-xs flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 transition-colors md:text-sm"
                         >
                           <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
                           <span>{isSyncing ? 'Syncing with Google Sheet...' : 'Sync with Google Sheet'}</span>
                         </button>
-                        <p className="text-[11px] text-center text-slate-400">
+                        <p className="text-[11px] text-center text-slate-400 md:text-xs">
                           Two-way live sync: imports records added in Google Sheet &amp; updates Dashboard
                         </p>
                       </div>
@@ -570,7 +588,7 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                         <button
                           type="button"
                           onClick={handleDisconnect}
-                          className="text-xs font-semibold text-rose-600 hover:text-rose-700 flex items-center gap-1.5 cursor-pointer py-1"
+                          className="text-xs font-semibold text-rose-600 hover:text-rose-700 flex items-center gap-1.5 cursor-pointer py-1 md:text-sm"
                         >
                           <Unlink className="w-3.5 h-3.5" />
                           <span>Disconnect Sheet</span>
@@ -579,7 +597,7 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                         <button
                           type="button"
                           onClick={onExportCSV}
-                          className="text-xs font-semibold text-slate-600 hover:text-slate-900 flex items-center gap-1.5 cursor-pointer py-1"
+                          className="text-xs font-semibold text-slate-600 hover:text-slate-900 flex items-center gap-1.5 cursor-pointer py-1 md:text-sm"
                         >
                           <Download className="w-3.5 h-3.5 text-slate-500" />
                           <span>Download CSV Backup</span>
@@ -595,7 +613,7 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                         <h4 className="font-bold text-slate-900 text-sm">
                           No Sheet Connected
                         </h4>
-                        <p className="text-xs text-slate-500 mt-1">
+                        <p className="text-xs text-slate-500 mt-1 md:text-sm">
                           Create a new dedicated SpendDesk sheet below or select an existing sheet from the Drive tab.
                         </p>
                       </div>
@@ -604,7 +622,7 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
 
                   {/* Create New Dedicated Sheet Block */}
                   <div className="p-4 rounded-2xl bg-emerald-50/60 border border-emerald-200/80 space-y-3">
-                    <h4 className="font-bold text-xs text-emerald-950 flex items-center gap-1.5">
+                    <h4 className="font-bold text-xs text-emerald-950 flex items-center gap-1.5 md:text-sm">
                       <Plus className="w-3.5 h-3.5 text-emerald-700" />
                       <span>Create New SpendDesk Spreadsheet</span>
                     </h4>
@@ -614,13 +632,13 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                         value={newTitle}
                         onChange={(e) => setNewTitle(e.target.value)}
                         placeholder="e.g. SpendDesk - My Wallet 2026"
-                        className="flex-1 px-3 py-2 rounded-xl border border-emerald-300/80 bg-white text-xs font-medium text-slate-900 focus:outline-hidden"
+                        className="flex-1 px-3 py-2 rounded-xl border border-emerald-300/80 bg-white text-xs font-medium text-slate-900 focus:outline-hidden md:text-sm"
                       />
                       <button
                         type="button"
                         onClick={handleCreateNewSheet}
                         disabled={isCreating}
-                        className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-2xs cursor-pointer disabled:opacity-50 whitespace-nowrap"
+                        className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-2xs cursor-pointer disabled:opacity-50 whitespace-nowrap md:text-sm"
                       >
                         {isCreating ? 'Creating...' : 'Create & Link'}
                       </button>
@@ -629,11 +647,11 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
 
                   {/* Link Existing Sheet by URL / ID Block */}
                   <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-3">
-                    <h4 className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
+                    <h4 className="font-bold text-xs text-slate-900 flex items-center gap-1.5 md:text-sm">
                       <Link className="w-3.5 h-3.5 text-slate-600" />
                       <span>Link Existing Google Sheet via URL or ID</span>
                     </h4>
-                    <p className="text-[11px] text-slate-500">
+                    <p className="text-[11px] text-slate-500 md:text-xs">
                       Already have a spreadsheet? Paste its link or Spreadsheet ID below to connect it directly.
                     </p>
                     <div className="flex flex-col sm:flex-row gap-2">
@@ -642,13 +660,13 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                         value={linkUrlInput}
                         onChange={(e) => setLinkUrlInput(e.target.value)}
                         placeholder="Paste https://docs.google.com/spreadsheets/d/.../edit"
-                        className="flex-1 px-3 py-2 rounded-xl border border-slate-300 bg-white text-xs font-medium text-slate-900 focus:outline-hidden"
+                        className="flex-1 px-3 py-2 rounded-xl border border-slate-300 bg-white text-xs font-medium text-slate-900 focus:outline-hidden md:text-sm"
                       />
                       <button
                         type="button"
                         onClick={handleLinkSheetByUrl}
                         disabled={isLinkingUrl || !linkUrlInput.trim()}
-                        className="px-4 py-2 bg-slate-900 hover:bg-black text-white font-bold text-xs rounded-xl shadow-2xs cursor-pointer disabled:opacity-40 whitespace-nowrap"
+                        className="px-4 py-2 bg-slate-900 hover:bg-black text-white font-bold text-xs rounded-xl shadow-2xs cursor-pointer disabled:opacity-40 whitespace-nowrap md:text-sm"
                       >
                         {isLinkingUrl ? 'Connecting...' : 'Connect Sheet'}
                       </button>
@@ -662,14 +680,14 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                 <div className="space-y-4 animate-in fade-in duration-150">
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <h4 className="font-bold text-xs text-slate-700">
+                      <h4 className="font-bold text-xs text-slate-700 md:text-sm">
                         Connect Existing Google Drive Sheet
                       </h4>
                       <button
                         type="button"
                         onClick={loadDriveSheets}
                         disabled={loadingList}
-                        className="text-[11px] font-semibold text-emerald-700 hover:underline flex items-center gap-1 cursor-pointer"
+                        className="text-[11px] font-semibold text-emerald-700 hover:underline flex items-center gap-1 cursor-pointer md:text-xs"
                       >
                         <RefreshCw className={`w-3 h-3 ${loadingList ? 'animate-spin' : ''}`} />
                         <span>Refresh List</span>
@@ -681,14 +699,14 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                       <div className="p-3.5 bg-emerald-50/80 border border-emerald-200/90 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
                         <div className="flex items-center gap-2">
                           <FileSpreadsheet className="w-4 h-4 text-emerald-700 shrink-0" />
-                          <p className="text-xs text-emerald-950 font-medium">
+                          <p className="text-xs text-emerald-950 font-medium md:text-sm">
                             Sign in with your Google account to auto-load all your Drive spreadsheets.
                           </p>
                         </div>
                         <button
                           type="button"
                           onClick={onSignInDirect}
-                          className="px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold shadow-2xs cursor-pointer shrink-0 transition-colors"
+                          className="px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold shadow-2xs cursor-pointer shrink-0 transition-colors md:text-sm"
                         >
                           Sign in with Google
                         </button>
@@ -702,19 +720,19 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                         value={driveSearch}
                         onChange={(e) => setDriveSearch(e.target.value)}
                         placeholder="Search your created &amp; Drive spreadsheets..."
-                        className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-hidden"
+                        className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-hidden md:text-sm"
                       />
                     </div>
 
                     <div className="max-h-72 overflow-y-auto space-y-1.5 pr-1 divide-y divide-slate-100">
                       {loadingList ? (
-                        <div className="p-6 text-center text-xs text-slate-400">
+                        <div className="p-6 text-center text-xs text-slate-400 md:text-sm">
                           Loading spreadsheets from Google Drive...
                         </div>
                       ) : filteredDriveSheets.length === 0 ? (
-                        <div className="p-6 text-center text-xs text-slate-400 space-y-1.5">
+                        <div className="p-6 text-center text-xs text-slate-400 space-y-1.5 md:text-sm">
                           <p className="font-semibold text-slate-600">No spreadsheets found.</p>
-                          <p className="text-[11px] text-slate-400">
+                          <p className="text-[11px] text-slate-400 md:text-xs">
                             Create a new dedicated SpendDesk sheet in the Sheets tab or link via URL.
                           </p>
                         </div>
@@ -732,28 +750,28 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                             >
                               <div className="min-w-0 pr-2">
                                 <div className="flex items-center gap-2">
-                                  <span className="font-bold text-xs text-slate-800 block truncate">
+                                  <span className="font-bold text-xs text-slate-800 block truncate md:text-sm">
                                     {item.name}
                                   </span>
                                   {isConnected && (
-                                    <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold inline-flex items-center gap-1 shrink-0">
+                                    <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold inline-flex items-center gap-1 shrink-0 md:text-xs">
                                       <CheckCircle2 className="w-3 h-3 text-emerald-600" />
                                       Connected
                                     </span>
                                   )}
                                 </div>
-                                <span className="text-[10px] text-slate-400 block mt-0.5">
+                                <span className="text-[10px] text-slate-400 block mt-0.5 md:text-xs">
                                   Modified: {item.modifiedTime ? new Date(item.modifiedTime).toLocaleDateString() : 'N/A'}
                                 </span>
                               </div>
 
                               <div className="flex items-center gap-1.5 shrink-0">
                                 {isConnected ? (
-                                  <span className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold inline-flex items-center gap-1">
+                                  <span className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold inline-flex items-center gap-1 md:text-sm">
                                     <CheckCircle2 className="w-3.5 h-3.5" /> Active
                                   </span>
                                 ) : (
-                                  <button type="button" onClick={() => handleSelectExisting(item)} className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-emerald-600 hover:text-white text-slate-700 text-xs font-bold cursor-pointer transition-colors">
+                                  <button type="button" onClick={() => handleSelectExisting(item)} className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-emerald-600 hover:text-white text-slate-700 text-xs font-bold cursor-pointer transition-colors md:text-sm">
                                     Connect
                                   </button>
                                 )}
@@ -781,17 +799,17 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
               {activeTab === 'webhook' && (
                 <div className="space-y-4 animate-in fade-in duration-150">
                   <div className="p-4 rounded-2xl bg-indigo-50/60 border border-indigo-200/80 space-y-2">
-                    <h4 className="font-bold text-xs text-indigo-950 flex items-center gap-1.5">
+                    <h4 className="font-bold text-xs text-indigo-950 flex items-center gap-1.5 md:text-sm">
                       <Link className="w-3.5 h-3.5 text-indigo-700" />
                       <span>Google Apps Script Webhook (Zero OAuth Setup)</span>
                     </h4>
-                    <p className="text-[11px] text-indigo-900/80 leading-relaxed">
+                    <p className="text-[11px] text-indigo-900/80 leading-relaxed md:text-xs">
                       If you prefer automatic background syncing without popup logins, deploy a free Google Apps Script web app and paste its URL below.
                     </p>
                   </div>
 
                   <div className="space-y-2">
-                    <label className="block text-xs font-bold text-slate-700">
+                    <label className="block text-xs font-bold text-slate-700 md:text-sm">
                       Webhook URL
                     </label>
                     <div className="flex gap-2">
@@ -800,12 +818,12 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                         value={webhookInput}
                         onChange={(e) => setWebhookInput(e.target.value)}
                         placeholder="https://script.google.com/macros/s/.../exec"
-                        className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:outline-hidden"
+                        className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:outline-hidden md:text-sm"
                       />
                       <button
                         type="button"
                         onClick={handleSaveWebhook}
-                        className="px-4 py-2 bg-slate-900 hover:bg-black text-white font-bold text-xs rounded-xl cursor-pointer"
+                        className="px-4 py-2 bg-slate-900 hover:bg-black text-white font-bold text-xs rounded-xl cursor-pointer md:text-sm"
                       >
                         Save
                       </button>
@@ -813,13 +831,13 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                   </div>
 
                   <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-                    <span className="text-xs text-slate-500 font-medium">
+                    <span className="text-xs text-slate-500 font-medium md:text-sm">
                       Apps Script Code Template
                     </span>
                     <button
                       type="button"
                       onClick={handleCopyScript}
-                      className="px-3 py-1.5 rounded-xl border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-1.5 cursor-pointer"
+                      className="px-3 py-1.5 rounded-xl border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-1.5 cursor-pointer md:text-sm"
                     >
                       {copiedScript ? (
                         <>
@@ -839,7 +857,7 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
             </div>
 
             {/* Bottom info footer */}
-            <div className="pt-4 border-t border-slate-100 text-[11px] text-slate-400 flex items-center justify-between">
+            <div className="pt-4 border-t border-slate-100 text-[11px] text-slate-400 flex items-center justify-between md:text-xs">
               <span className="flex items-center gap-1">
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
                 <span>Encrypted Local & Cloud Sync</span>

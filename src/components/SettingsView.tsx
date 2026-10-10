@@ -12,6 +12,8 @@ import {
   FileSpreadsheet, 
   Phone, 
   BellRing,
+  Send,
+  Loader2,
   Info, 
   Sliders, 
   Database,
@@ -29,7 +31,8 @@ import {
   User as UserIcon,
   Sparkles,
   FileText,
-  Pencil
+  Pencil,
+  Wallet
 } from 'lucide-react';
 import { ICON_CATALOG, getCategoryIcon } from '../lib/icons';
 import { 
@@ -45,6 +48,14 @@ import { formatCurrency } from '../lib/calculations';
 import { ConfirmModal } from './ConfirmModal';
 import { UserProfile } from '../lib/storage';
 import { TelegramAlertConfig } from '../lib/storage';
+import {
+  TelegramLinkStatus,
+  createTelegramLink,
+  getTelegramLinkStatus,
+  setTelegramAlertsEnabled,
+  sendTelegramTestAlert,
+  disconnectTelegram,
+} from '../lib/telegramConnect';
 import { generateBankStatementPdf } from '../lib/statementPdf';
 import { triggerFeedback } from '../lib/haptics';
 
@@ -93,6 +104,8 @@ interface SettingsViewProps {
   telegramAlertConfig: TelegramAlertConfig;
   onUpdateTelegramAlertConfig: (config: TelegramAlertConfig) => void;
   onSendTelegramTest: (chatId: string) => Promise<void>;
+  telegramLinkStatus?: TelegramLinkStatus | null;
+  onRefreshTelegramLink?: () => Promise<unknown> | void;
   onCloudSyncRequested?: () => void;
   cloudWorkspaceRevision?: number;
   activeSheet: GoogleSheetMeta | null;
@@ -108,6 +121,7 @@ interface SettingsViewProps {
   onRestoreTransactions?: (txs: Transaction[], lends?: LendItem[]) => void;
   initialSection?: 'main' | 'categories' | 'preferences' | 'budget' | 'cloud' | 'data' | 'about' | 'profile';
   onNotification?: (msg: string, type?: 'success' | 'info' | 'error') => void;
+  totalCashBalance?: number;
 }
 
 const COMMON_CURRENCIES = [
@@ -139,6 +153,7 @@ const COMMON_CURRENCIES = [
 export const SettingsView: React.FC<SettingsViewProps> = ({
   onBack,
   currency,
+  totalCashBalance = 0,
   onUpdateCurrency,
   dailyRefresh = true,
   onUpdateDailyRefresh,
@@ -150,6 +165,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   telegramAlertConfig,
   onUpdateTelegramAlertConfig,
   onSendTelegramTest,
+  telegramLinkStatus,
+  onRefreshTelegramLink,
   onCloudSyncRequested,
   cloudWorkspaceRevision = 0,
   activeSheet,
@@ -326,12 +343,119 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   // Alert Phone State
   const [phoneInput, setPhoneInput] = useState(alertPhone);
-  const [telegramForm, setTelegramForm] = useState<TelegramAlertConfig>(telegramAlertConfig);
+  // Telegram deep-link connection state (chat IDs and tokens stay on the server)
+  const [isConnectingTelegram, setIsConnectingTelegram] = useState(false);
+  const [isWaitingForTelegram, setIsWaitingForTelegram] = useState(false);
   const [isTestingTelegram, setIsTestingTelegram] = useState(false);
+  const [isTogglingTelegram, setIsTogglingTelegram] = useState(false);
+  const [isDisconnectingTelegram, setIsDisconnectingTelegram] = useState(false);
+  const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
 
+  const telegramConnected = Boolean(telegramLinkStatus?.connected);
+  const telegramPending =
+    isWaitingForTelegram || Boolean(telegramLinkStatus?.pending && !telegramConnected);
+
+  // Mirror a pending server-side link request (e.g. page reopened mid-flow).
   useEffect(() => {
-    setTelegramForm(telegramAlertConfig);
-  }, [telegramAlertConfig]);
+    if (telegramLinkStatus?.pending && !telegramConnected) setIsWaitingForTelegram(true);
+    if (telegramConnected) setIsWaitingForTelegram(false);
+  }, [telegramLinkStatus?.pending, telegramConnected]);
+
+  // While waiting for the user to press Start in Telegram, poll the backend (no
+  // page reloads) and flip to Connected automatically.
+  useEffect(() => {
+    if (!isWaitingForTelegram) return;
+    let cancelled = false;
+    let timeoutId: number | undefined;
+    const startedAt = Date.now();
+    const poll = async () => {
+      try {
+        const status = await getTelegramLinkStatus();
+        if (cancelled) return;
+        if (status.connected) {
+          setIsWaitingForTelegram(false);
+          onNotification?.('Telegram connected successfully.', 'success');
+          void onRefreshTelegramLink?.();
+          return;
+        }
+      } catch {
+        /* keep polling until the deadline */
+      }
+      if (Date.now() - startedAt < 210000) {
+        timeoutId = window.setTimeout(poll, 3500);
+      } else if (!cancelled) {
+        setIsWaitingForTelegram(false);
+        onNotification?.('Still waiting — tap Connect Telegram to try again.', 'info');
+      }
+    };
+    timeoutId = window.setTimeout(poll, 2500);
+    return () => {
+      cancelled = true;
+      if (timeoutId) window.clearTimeout(timeoutId);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isWaitingForTelegram]);
+
+  const handleConnectTelegram = async () => {
+    if (isConnectingTelegram || telegramPending) return; // never mint duplicate tokens
+    setIsConnectingTelegram(true);
+    try {
+      const ticket = await createTelegramLink();
+      const opened = window.open(ticket.deepLink, '_blank', 'noopener,noreferrer');
+      if (!opened) {
+        onNotification?.('Pop-up blocked — allow pop-ups for this site, then tap Connect Telegram again.', 'error');
+        return;
+      }
+      setIsWaitingForTelegram(true);
+      onNotification?.('Waiting for you to press Start in Telegram…', 'info');
+    } catch (error: any) {
+      onNotification?.(error?.message || 'Could not start the Telegram connection. Try again.', 'error');
+    } finally {
+      setIsConnectingTelegram(false);
+    }
+  };
+
+  const handleToggleTelegramAlerts = async (checked: boolean) => {
+    if (!telegramConnected || isTogglingTelegram) return;
+    setIsTogglingTelegram(true);
+    try {
+      await setTelegramAlertsEnabled(checked);
+      await onRefreshTelegramLink?.();
+      onNotification?.(checked ? 'Transaction alerts enabled.' : 'Transaction alerts paused.', 'success');
+    } catch (error: any) {
+      onNotification?.(error?.message || 'Could not save your alert preference.', 'error');
+    } finally {
+      setIsTogglingTelegram(false);
+    }
+  };
+
+  const handleTestTelegramAlert = async () => {
+    if (isTestingTelegram) return;
+    setIsTestingTelegram(true);
+    try {
+      await sendTelegramTestAlert();
+      onNotification?.('Test alert delivered to Telegram.', 'success');
+    } catch (error: any) {
+      onNotification?.(error?.message || 'Telegram test failed. Try reconnecting.', 'error');
+    } finally {
+      setIsTestingTelegram(false);
+    }
+  };
+
+  const handleDisconnectTelegram = async () => {
+    setShowDisconnectConfirm(false);
+    setIsDisconnectingTelegram(true);
+    try {
+      await disconnectTelegram();
+      setIsWaitingForTelegram(false);
+      await onRefreshTelegramLink?.();
+      onNotification?.('Telegram disconnected. Your records and settings are untouched.', 'success');
+    } catch (error: any) {
+      onNotification?.(error?.message || 'Could not disconnect Telegram. Try again.', 'error');
+    } finally {
+      setIsDisconnectingTelegram(false);
+    }
+  };
 
   // When another signed-in device changes settings, refresh this page's local
   // form state too instead of waiting for the user to close and reopen it.
@@ -340,32 +464,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     setBudgetForm(budgetConfig);
     setPhoneInput(alertPhone);
   }, [cloudWorkspaceRevision, workspaceEmail, budgetConfig, currency, alertPhone]);
-
-  const handleSaveTelegramAlerts = () => {
-    const chatId = telegramForm.chatId.trim();
-    if (telegramForm.enabled && !chatId) {
-      onNotification?.('Enter your Telegram chat ID before enabling alerts.', 'error');
-      return;
-    }
-    onUpdateTelegramAlertConfig({ enabled: telegramForm.enabled, chatId });
-  };
-
-  const handleTestTelegramAlert = async () => {
-    const chatId = telegramForm.chatId.trim();
-    if (!chatId) {
-      onNotification?.('Enter your Telegram chat ID first.', 'error');
-      return;
-    }
-    setIsTestingTelegram(true);
-    try {
-      await onSendTelegramTest(chatId);
-      onNotification?.('Test alert delivered to Telegram.', 'success');
-    } catch (error: any) {
-      onNotification?.(error?.message || 'Telegram test failed. Check bot setup and chat ID.', 'error');
-    } finally {
-      setIsTestingTelegram(false);
-    }
-  };
 
   // File Input Ref for JSON Restore
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -667,18 +765,31 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       {/* 1. TOP MINIMALIST APP BAR (WhatsApp / iOS Style)               */}
       {/* ============================================================== */}
       <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 sticky top-0 z-30 shadow-xs">
-        <div className="max-w-2xl md:max-w-4xl lg:max-w-5xl mx-auto px-4 h-14 flex items-center justify-between">
+        <div className="max-w-2xl md:max-w-4xl lg:max-w-5xl mx-auto px-4 h-14 flex items-center justify-between gap-3">
           <button
             type="button"
             onClick={() => safeNavigateBack(currentSubPage === 'main' ? onBack : handleBackToMain)}
-            className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 transition-all cursor-pointer border border-slate-200/90 dark:border-slate-700 shadow-2xs"
+            className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 transition-all cursor-pointer border border-slate-200/90 dark:border-slate-700 shadow-2xs md:hidden"
             title="Back"
             aria-label="Back"
           >
             <ArrowLeft className="w-5 h-5 stroke-[2.2]" />
           </button>
 
-          <h1 className="text-sm font-bold text-slate-900 dark:text-white capitalize">
+          <div className="flex items-center gap-2.5 min-w-0">
+          {currentSubPage !== 'main' && (
+            <button
+              type="button"
+              onClick={() => safeNavigateBack(handleBackToMain)}
+              className="hidden md:flex items-center justify-center w-9 h-9 rounded-xl bg-white/60 dark:bg-slate-800/50 backdrop-blur-xl border border-slate-200/70 dark:border-slate-700 shadow-xs text-slate-600 dark:text-slate-300 hover:text-emerald-700 hover:border-emerald-300 hover:bg-white/90 transition-all cursor-pointer active:scale-95 shrink-0"
+              title="Back to Settings"
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </button>
+          )}
+
+          <div className="min-w-0">
+            <h1 className="text-sm font-bold text-slate-900 dark:text-white capitalize md:text-[15px] md:font-black md:tracking-tight">
             {currentSubPage === 'main' && 'Settings'}
             {currentSubPage === 'profile' && 'Edit Profile'}
             {currentSubPage === 'categories' && 'Manage Categories'}
@@ -687,9 +798,25 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             {currentSubPage === 'cloud' && 'Google Sheets Manager'}
             {currentSubPage === 'data' && 'Data & Backups'}
             {currentSubPage === 'about' && 'About & Privacy'}
-          </h1>
+            </h1>
+            {currentSubPage === 'main' && (
+              <p className="hidden md:block text-[11px] md:text-xs text-slate-500 dark:text-slate-400 truncate leading-tight mt-0.5">
+                Account, preferences &amp; workspace data
+              </p>
+            )}
+          </div>
+          </div>
 
-          <div className="w-9" />
+          {/* Desktop actions: glass backup button (sub-pages) + cash chip */}
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-50/90 border border-emerald-200/70" title="Current cash in hand">
+              <Wallet className="w-3.5 h-3.5 text-emerald-600" />
+              <span className="text-[10px] font-black uppercase tracking-wide text-emerald-600 md:text-xs">Cash</span>
+              <span className="text-xs font-black text-emerald-800 tabular-nums md:text-sm">{formatCurrency(totalCashBalance, currency)}</span>
+            </div>
+
+            <div className="w-9 lg:hidden" />
+          </div>
         </div>
       </div>
 
@@ -707,9 +834,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             {/* VIEW 0: MAIN SETTINGS PAGE (WhatsApp-style Hero Profile Card)  */}
             {/* ============================================================== */}
             {currentSubPage === 'main' && (
-              <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+              <div className="grid grid-cols-1 gap-6">
                 {/* Left Column on Desktop: Profile Card & Quick Info */}
-                <div className="md:col-span-5 space-y-4">
+                <div className="space-y-4">
                   {/* Profile overview */}
                   <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/90 dark:border-slate-800 p-4 sm:p-5 shadow-xs relative group">
                     <button
@@ -751,13 +878,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           {activeUserName}
                         </h2>
                         {activeUserEmail && (
-                          <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5 font-medium">
+                          <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5 font-medium md:text-sm">
                             {activeUserEmail}
                           </p>
                         )}
 
                         {/* Status indicator */}
-                        <div className="mt-2 inline-flex items-center gap-1.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/70 dark:border-emerald-800 px-2 py-0.5 rounded-full">
+                        <div className="mt-2 inline-flex items-center gap-1.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/70 dark:border-emerald-800 px-2 py-0.5 rounded-full md:text-xs">
                           <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
                           <span className="truncate">{activeSheet ? 'Google Sheets Synced' : 'Offline Storage'}</span>
                         </div>
@@ -765,33 +892,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     </div>
                   </div>
 
-                  {/* Desktop Quick Workspace Info Card */}
-                  <div className="hidden md:block bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-3xl p-5 shadow-xs space-y-3">
-                    <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                      Workspace Summary
-                    </h4>
-                    <div className="space-y-2 text-xs">
-                      <div className="flex items-center justify-between py-1 border-b border-slate-700/60">
-                        <span className="text-slate-300">Local Database</span>
-                        <span className="font-mono font-bold text-emerald-400">{storageUsageKb} KB</span>
-                      </div>
-                      <div className="flex items-center justify-between py-1 border-b border-slate-700/60">
-                        <span className="text-slate-300">Total Transactions</span>
-                        <span className="font-mono font-bold text-white">{transactions.length} items</span>
-                      </div>
-                      <div className="flex items-center justify-between py-1">
-                        <span className="text-slate-300">Active Currency</span>
-                        <span className="font-mono font-bold text-amber-400">{currency}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Right Column on Desktop: Grouped Settings Menu List */}
-                <div className="md:col-span-7 space-y-4">
                   {/* Group 1: Financial Preferences */}
                   <div className="space-y-1.5">
-                    <div className="px-3 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                    <div className="px-3 text-[11px] font-bold uppercase tracking-wider text-slate-400 md:text-xs">
                       Financial Configuration
                     </div>
 
@@ -807,8 +910,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                             <Tag className="w-4 h-4" />
                           </div>
                           <div>
-                            <h4 className="font-bold text-xs text-slate-900 dark:text-white">Manage Categories</h4>
-                            <p className="text-[11px] text-slate-400">
+                            <h4 className="font-bold text-xs text-slate-900 dark:text-white md:text-sm">Manage Categories</h4>
+                            <p className="text-[11px] text-slate-400 md:text-xs">
                               {categories.length} categories · All editable &amp; removable
                             </p>
                           </div>
@@ -827,8 +930,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                             <Sliders className="w-4 h-4" />
                           </div>
                           <div>
-                            <h4 className="font-bold text-xs text-slate-900 dark:text-white">Financial Targets &amp; Currency</h4>
-                            <p className="text-[11px] text-slate-400">
+                            <h4 className="font-bold text-xs text-slate-900 dark:text-white md:text-sm">Financial Targets &amp; Currency</h4>
+                            <p className="text-[11px] text-slate-400 md:text-xs">
                               Currency ({currency}), monthly budget &amp; cash alerts
                             </p>
                           </div>
@@ -839,9 +942,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     </div>
                   </div>
 
+                </div>
+
+                {/* Right Column on Desktop: Grouped Settings Menu List */}
+                <div className="space-y-4">
                   {/* Group 2: Cloud & Connectivity */}
                   <div className="space-y-1.5">
-                    <div className="px-3 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                    <div className="px-3 text-[11px] font-bold uppercase tracking-wider text-slate-400 md:text-xs">
                       Cloud &amp; Sync
                     </div>
 
@@ -856,9 +963,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                             <BellRing className="w-4 h-4" />
                           </div>
                           <div>
-                            <h4 className="font-bold text-xs text-slate-900 dark:text-white">Automatic Alerts</h4>
-                            <p className="text-[11px] text-slate-400">
-                              {telegramAlertConfig.enabled ? 'Telegram transaction alerts enabled' : 'Connect Telegram for free alerts'}
+                            <h4 className="font-bold text-xs text-slate-900 dark:text-white md:text-sm">Automatic Alerts</h4>
+                            <p className="text-[11px] text-slate-400 md:text-xs">
+                              {telegramConnected ? 'Telegram connected — alerts on' : 'Connect Telegram for free alerts'}
                             </p>
                           </div>
                         </div>
@@ -875,8 +982,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                             <FileSpreadsheet className="w-4 h-4" />
                           </div>
                           <div>
-                            <h4 className="font-bold text-xs text-slate-900 dark:text-white">Google Sheets Sync</h4>
-                            <p className="text-[11px] text-slate-400">
+                            <h4 className="font-bold text-xs text-slate-900 dark:text-white md:text-sm">Google Sheets Sync</h4>
+                            <p className="text-[11px] text-slate-400 md:text-xs">
                               {activeSheet ? `Connected: ${activeSheet.name}` : 'Connect spreadsheet'}
                             </p>
                           </div>
@@ -888,7 +995,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
                   {/* Group 3: Data & Privacy */}
                   <div className="space-y-1.5">
-                    <div className="px-3 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                    <div className="px-3 text-[11px] font-bold uppercase tracking-wider text-slate-400 md:text-xs">
                       Data Vault &amp; System
                     </div>
 
@@ -904,8 +1011,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                             <Database className="w-4 h-4" />
                           </div>
                           <div>
-                            <h4 className="font-bold text-xs text-slate-900 dark:text-white">Backup, PDF Statement &amp; Data</h4>
-                            <p className="text-[11px] text-slate-400">
+                            <h4 className="font-bold text-xs text-slate-900 dark:text-white md:text-sm">Backup, PDF Statement &amp; Data</h4>
+                            <p className="text-[11px] text-slate-400 md:text-xs">
                               PDF bank statement, CSV export, JSON backup &amp; restore
                             </p>
                           </div>
@@ -924,14 +1031,35 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                             <Info className="w-4 h-4" />
                           </div>
                           <div>
-                            <h4 className="font-bold text-xs text-slate-900 dark:text-white">App Info &amp; Privacy</h4>
-                            <p className="text-[11px] text-slate-400">
+                            <h4 className="font-bold text-xs text-slate-900 dark:text-white md:text-sm">App Info &amp; Privacy</h4>
+                            <p className="text-[11px] text-slate-400 md:text-xs">
                               Storage: {storageUsageKb} KB · Private offline vault
                             </p>
                           </div>
                         </div>
                         <ChevronRight className="w-4 h-4 text-slate-400" />
                       </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Desktop Quick Workspace Info Card */}
+                <div className="hidden md:block bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/90 dark:border-slate-800 p-5 shadow-xs space-y-3">
+                  <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-400 md:text-xs">
+                    Workspace Summary
+                  </h4>
+                  <div className="space-y-2 text-xs md:text-sm">
+                    <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-slate-800">
+                      <span className="text-slate-500 dark:text-slate-400">Local Database</span>
+                      <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">{storageUsageKb} KB</span>
+                    </div>
+                    <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-slate-800">
+                      <span className="text-slate-500 dark:text-slate-400">Total Transactions</span>
+                      <span className="font-mono font-bold text-slate-900 dark:text-white">{transactions.length} items</span>
+                    </div>
+                    <div className="flex items-center justify-between py-1">
+                      <span className="text-slate-500 dark:text-slate-400">Active Currency</span>
+                      <span className="font-mono font-bold text-amber-600 dark:text-amber-400">{currency}</span>
                     </div>
                   </div>
                 </div>
@@ -986,7 +1114,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         {editModalName || 'Your Name'}
                       </h3>
                       {editModalEmail && (
-                        <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                        <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5 md:text-sm">
                           {editModalEmail}
                         </p>
                       )}
@@ -994,7 +1122,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         <button
                           type="button"
                           onClick={() => setEditModalAvatar(null)}
-                          className="text-[11px] text-rose-600 dark:text-rose-400 hover:underline font-semibold mt-1 inline-block cursor-pointer"
+                          className="text-[11px] text-rose-600 dark:text-rose-400 hover:underline font-semibold mt-1 inline-block cursor-pointer md:text-xs"
                         >
                           Remove photo
                         </button>
@@ -1005,7 +1133,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   {/* Form to update Name & Email */}
                   <form onSubmit={handleSaveFullProfile} className="space-y-4">
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                      <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 md:text-sm">
                         Display Name
                       </label>
                       <div className="relative">
@@ -1016,13 +1144,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           value={editModalName}
                           onChange={(e) => setEditModalName(e.target.value)}
                           placeholder="e.g. My Wallet"
-                          className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-900 dark:text-white focus:outline-hidden focus:border-emerald-600 bg-slate-50 dark:bg-slate-800 transition-all"
+                          className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-900 dark:text-white focus:outline-hidden focus:border-emerald-600 bg-slate-50 dark:bg-slate-800 transition-all md:text-sm"
                         />
                       </div>
                     </div>
 
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                      <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 md:text-sm">
                         Gmail / Email Address (Optional)
                       </label>
                       <input
@@ -1030,7 +1158,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         value={editModalEmail}
                         onChange={(e) => setEditModalEmail(e.target.value)}
                         placeholder="e.g. your.email@gmail.com"
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-900 dark:text-white focus:outline-hidden focus:border-emerald-600 bg-slate-50 dark:bg-slate-800 transition-all"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-900 dark:text-white focus:outline-hidden focus:border-emerald-600 bg-slate-50 dark:bg-slate-800 transition-all md:text-sm"
                       />
                     </div>
 
@@ -1038,13 +1166,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       <button
                         type="button"
                         onClick={() => safeNavigateBack(handleBackToMain)}
-                        className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-colors"
+                        className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-colors md:text-sm"
                       >
                         Cancel
                       </button>
                       <button
                         type="submit"
-                        className="px-5 py-2.5 rounded-xl bg-slate-900 dark:bg-emerald-600 hover:bg-slate-800 dark:hover:bg-emerald-700 active:scale-95 text-white text-xs font-bold cursor-pointer shadow-xs transition-all flex items-center gap-2"
+                        className="px-5 py-2.5 rounded-xl bg-slate-900 dark:bg-emerald-600 hover:bg-slate-800 dark:hover:bg-emerald-700 active:scale-95 text-white text-xs font-bold cursor-pointer shadow-xs transition-all flex items-center gap-2 md:text-sm"
                       >
                         <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                         <span>Save Changes</span>
@@ -1063,14 +1191,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <div className="flex items-center justify-between gap-2">
                   <div>
                     <h3 className="text-sm font-bold text-slate-900 dark:text-white">Expense &amp; Income Categories</h3>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400">Every category is editable and removable.</p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 md:text-xs">Every category is editable and removable.</p>
                   </div>
 
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
                       onClick={() => setShowResetCatConfirm(true)}
-                      className="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                      className="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-semibold flex items-center gap-1 cursor-pointer md:text-sm"
                       title="Restore Defaults"
                     >
                       <RotateCcw className="w-3 h-3" />
@@ -1085,7 +1213,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         setFormCatName('');
                         setFormCatIcon('Tag');
                       }}
-                      className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 cursor-pointer shadow-xs"
+                      className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 cursor-pointer shadow-xs md:text-sm"
                     >
                       <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
                       <span>Add</span>
@@ -1103,7 +1231,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         <div className="p-1.5 rounded-lg bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300">
                           {React.createElement(getCategoryIcon(formCatIcon), { className: 'w-4 h-4' })}
                         </div>
-                        <span className="font-bold text-xs text-slate-900 dark:text-white">
+                        <span className="font-bold text-xs text-slate-900 dark:text-white md:text-sm">
                           {editingCategory ? `Edit: ${editingCategory.name}` : 'New Category'}
                         </span>
                       </div>
@@ -1122,7 +1250,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
                     <div className="space-y-3">
                       <div>
-                        <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                        <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1 md:text-xs">
                           Category Name *
                         </label>
                         <input
@@ -1131,13 +1259,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           value={formCatName}
                           onChange={(e) => setFormCatName(e.target.value)}
                           placeholder="e.g. Dining Out, Gym, Freelance..."
-                          className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-900 dark:text-white focus:outline-hidden focus:border-emerald-600 bg-slate-50 dark:bg-slate-800"
+                          className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-900 dark:text-white focus:outline-hidden focus:border-emerald-600 bg-slate-50 dark:bg-slate-800 md:text-sm"
                           autoFocus
                         />
                       </div>
 
                       <div>
-                        <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                        <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1 md:text-xs">
                           Pick Icon: <span className="font-mono text-emerald-700 dark:text-emerald-400">{formCatIcon}</span>
                         </label>
                         <div className="relative mb-2">
@@ -1147,11 +1275,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                             value={iconPickerSearch}
                             onChange={(e) => setIconPickerSearch(e.target.value)}
                             placeholder="Search 80+ icons (food, fuel, gym)..."
-                            className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-slate-200 focus:outline-hidden bg-white dark:bg-slate-800"
+                            className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-slate-200 focus:outline-hidden bg-white dark:bg-slate-800 md:text-sm"
                           />
                         </div>
 
-                        <div className="flex items-center gap-1 overflow-x-auto pb-1 text-[10px] scrollbar-none mb-2">
+                        <div className="flex items-center gap-1 overflow-x-auto pb-1 text-[10px] scrollbar-none mb-2 md:text-xs">
                           {['all', 'food', 'transport', 'shopping', 'bills', 'health', 'home', 'leisure', 'finance', 'work'].map((f) => (
                             <button
                               key={f}
@@ -1199,13 +1327,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           setIsAddingCategory(false);
                           setEditingCategory(null);
                         }}
-                        className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs cursor-pointer"
+                        className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs cursor-pointer md:text-sm"
                       >
                         Cancel
                       </button>
                       <button
                         type="submit"
-                        className="px-4 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-bold cursor-pointer shadow-xs"
+                        className="px-4 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-bold cursor-pointer shadow-xs md:text-sm"
                       >
                         {editingCategory ? 'Update' : 'Save'}
                       </button>
@@ -1220,7 +1348,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     value={categorySearch}
                     onChange={(e) => setCategorySearch(e.target.value)}
                     placeholder="Search category list..."
-                    className="w-full pl-8 pr-3 py-2 rounded-2xl border border-slate-200 dark:border-slate-700 text-xs bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-hidden"
+                    className="w-full pl-8 pr-3 py-2 rounded-2xl border border-slate-200 dark:border-slate-700 text-xs bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-hidden md:text-sm"
                   />
                 </div>
 
@@ -1238,10 +1366,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                             <IconComp className="w-4 h-4" />
                           </div>
                           <div className="min-w-0">
-                            <h4 className="font-bold text-xs text-slate-900 dark:text-white truncate">
+                            <h4 className="font-bold text-xs text-slate-900 dark:text-white truncate md:text-sm">
                               {cat.name}
                             </h4>
-                            <span className="text-[11px] text-slate-400">
+                            <span className="text-[11px] text-slate-400 md:text-xs">
                               {stats.count} {stats.count === 1 ? 'tx' : 'txs'} · {formatCurrency(stats.total, currency)}
                             </span>
                           </div>
@@ -1287,14 +1415,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
                   {/* Currency Selection Dropdown */}
                   <div className="space-y-2 pb-4 border-b border-slate-100 dark:border-slate-800">
-                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 md:text-sm">
                       Primary Currency
                     </label>
                     <div className="relative max-w-md">
                       <select
                         value={currency}
                         onChange={(e) => handleSaveCurrency(e.target.value)}
-                        className="w-full px-3.5 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-900 dark:text-white bg-slate-50 dark:bg-slate-800 focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all cursor-pointer appearance-none pr-9"
+                        className="w-full px-3.5 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-900 dark:text-white bg-slate-50 dark:bg-slate-800 focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all cursor-pointer appearance-none pr-9 md:text-sm"
                       >
                         {COMMON_CURRENCIES.map((c) => (
                           <option key={c.code} value={c.symbol}>
@@ -1312,7 +1440,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   {/* Budget Limits Inputs */}
                   <div className="space-y-4">
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 md:text-sm">
                         Monthly Expense Budget ({currency})
                       </label>
                       <input
@@ -1322,13 +1450,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         value={budgetForm.monthlyBudget || ''}
                         onChange={(e) => setBudgetForm({ ...budgetForm, monthlyBudget: parseFloat(e.target.value) || 0 })}
                         placeholder="e.g. 50000"
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-900 dark:text-white focus:outline-hidden bg-slate-50 dark:bg-slate-800"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-900 dark:text-white focus:outline-hidden bg-slate-50 dark:bg-slate-800 md:text-sm"
                       />
-                      <span className="text-[10px] text-slate-400 mt-1 block">Set 0 to clear or disable monthly budget tracking.</span>
+                      <span className="text-[10px] text-slate-400 mt-1 block md:text-xs">Set 0 to clear or disable monthly budget tracking.</span>
                     </div>
 
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 md:text-sm">
                         Low Cash Wallet Warning ({currency})
                       </label>
                       <input
@@ -1338,18 +1466,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         value={budgetForm.lowCashThreshold || ''}
                         onChange={(e) => setBudgetForm({ ...budgetForm, lowCashThreshold: parseFloat(e.target.value) || 0 })}
                         placeholder="e.g. 1000"
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-900 dark:text-white focus:outline-hidden bg-slate-50 dark:bg-slate-800"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-900 dark:text-white focus:outline-hidden bg-slate-50 dark:bg-slate-800 md:text-sm"
                       />
-                      <span className="text-[10px] text-slate-400 mt-1 block">Warns when cash balance drops below this amount.</span>
+                      <span className="text-[10px] text-slate-400 mt-1 block md:text-xs">Warns when cash balance drops below this amount.</span>
                     </div>
 
                     <div className="pt-2 space-y-3">
                       <div className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80">
                         <div className="pr-2">
-                          <span className="block text-xs font-bold text-slate-800 dark:text-slate-100">
+                          <span className="block text-xs font-bold text-slate-800 dark:text-slate-100 md:text-sm">
                             Daily refresh
                           </span>
-                          <span className="block text-[10px] text-slate-400 mt-0.5 leading-relaxed">
+                          <span className="block text-[10px] text-slate-400 mt-0.5 leading-relaxed md:text-xs">
                             {dailyRefresh
                               ? 'ON: Every new day, dashboard automatically refreshes and today’s figures start fresh at 0.00.'
                               : 'OFF: Refresh is disabled. Date is locked and will NOT refresh or roll over to new days.'}
@@ -1363,10 +1491,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
                       <div className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80">
                         <div>
-                          <span className="block text-xs font-bold text-slate-800 dark:text-slate-100">
+                          <span className="block text-xs font-bold text-slate-800 dark:text-slate-100 md:text-sm">
                             Show limit alerts
                           </span>
-                          <span className="block text-[10px] text-slate-400 mt-0.5">
+                          <span className="block text-[10px] text-slate-400 mt-0.5 md:text-xs">
                             Show warning alert banners when exceeding limits
                           </span>
                         </div>
@@ -1381,7 +1509,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-end">
                     <button
                       type="submit"
-                      className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer shadow-xs transition-colors"
+                      className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer shadow-xs transition-colors md:text-sm"
                     >
                       Save Configuration
                     </button>
@@ -1398,50 +1526,176 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       <BellRing className="w-5 h-5" />
                     </div>
                     <div>
-                      <h3 className="text-sm font-bold text-slate-900 dark:text-white">Telegram transaction alerts</h3>
-                      <p className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-400 mt-1">
-                        Free automatic alerts after every new transaction. Telegram must be installed and you must start your SpendDesk bot once.
+                      <h3 className="text-sm font-bold text-slate-900 dark:text-white">Automatic Alerts</h3>
+                      <p className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-400 mt-1 md:text-xs">
+                        Get instant Telegram notifications whenever you save a transaction.
                       </p>
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
-                    <div>
-                      <span className="block text-xs font-bold text-slate-800 dark:text-slate-100">Enable automatic alerts</span>
-                      <span className="block text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Only new saved transactions send an alert.</span>
+                  {/* Connection status */}
+                  <div
+                    className={`rounded-2xl border p-4 flex items-start gap-3 ${
+                      telegramConnected
+                        ? 'border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/70 dark:bg-emerald-950/30'
+                        : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60'
+                    }`}
+                  >
+                    <div
+                      className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${
+                        telegramConnected
+                          ? 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300'
+                          : 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-300'
+                      }`}
+                      aria-hidden="true"
+                    >
+                      {telegramPending ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : telegramConnected ? (
+                        <CheckCircle2 className="w-5 h-5" />
+                      ) : (
+                        <Send className="w-4 h-4" />
+                      )}
                     </div>
-                    <IosSwitch
-                      checked={telegramForm.enabled}
-                      onChange={(checked) => setTelegramForm((current) => ({ ...current, enabled: checked }))}
-                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-bold text-slate-900 dark:text-white md:text-sm">
+                          {telegramConnected
+                            ? 'Telegram connected successfully'
+                            : telegramPending
+                            ? 'Waiting for Telegram connection'
+                            : 'Not connected'}
+                        </span>
+                        <span
+                          className={`text-[10px] font-black px-2 py-0.5 rounded-full md:text-xs ${
+                            telegramConnected
+                              ? 'bg-emerald-600/10 text-emerald-700 dark:text-emerald-300'
+                              : telegramPending
+                              ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300'
+                              : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
+                          }`}
+                        >
+                          {telegramConnected ? 'Connected' : telegramPending ? 'Connecting…' : 'Not connected'}
+                        </span>
+                      </div>
+                      <p className="text-[10px] leading-relaxed text-slate-500 dark:text-slate-400 mt-1 md:text-xs">
+                        {telegramConnected
+                          ? 'Your chat is linked only to your account. No chat IDs to manage.'
+                          : telegramPending
+                          ? 'Press Start in the Telegram chat we just opened — this page updates automatically.'
+                          : 'One tap connects the bot to your account securely — nothing to copy or paste.'}
+                      </p>
+                    </div>
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">Telegram Chat ID</label>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      value={telegramForm.chatId}
-                      onChange={(event) => setTelegramForm((current) => ({ ...current, chatId: event.target.value.replace(/\s/g, '') }))}
-                      placeholder="Example: 123456789"
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-mono text-slate-900 dark:text-white focus:outline-hidden bg-slate-50 dark:bg-slate-800"
-                    />
-                    <p className="text-[10px] leading-relaxed text-slate-500 dark:text-slate-400 mt-1.5">Open the bot, send <span className="font-mono">/start</span>, then paste its numeric chat ID here. This is not your phone number.</p>
-                  </div>
-
-                  <div className="rounded-2xl border border-amber-200 dark:border-amber-900/60 bg-amber-50/70 dark:bg-amber-950/30 p-3 text-[11px] leading-relaxed text-amber-900 dark:text-amber-200">
-                    The bot token stays on the secure server and is never saved in this device. Test Alert requires a signed-in Google account.
-                  </div>
-
-                  <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end pt-1">
-                    <button type="button" onClick={handleTestTelegramAlert} disabled={isTestingTelegram} className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold cursor-pointer disabled:opacity-60 disabled:cursor-wait hover:bg-slate-50 dark:hover:bg-slate-800">
-                      {isTestingTelegram ? 'Sending test…' : 'Send Test Alert'}
+                  {/* Primary action: not connected */}
+                  {!telegramConnected && !telegramPending && (
+                    <button
+                      type="button"
+                      onClick={handleConnectTelegram}
+                      disabled={isConnectingTelegram}
+                      className="w-full px-4 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer shadow-xs transition-colors flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-wait md:text-sm"
+                    >
+                      {isConnectingTelegram ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Preparing secure link…</span>
+                        </>
+                      ) : (
+                        <>
+                          <Send className="w-4 h-4" />
+                          <span>Connect Telegram</span>
+                        </>
+                      )}
                     </button>
-                    <button type="button" onClick={handleSaveTelegramAlerts} className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer shadow-xs transition-colors">
-                      Save Telegram Settings
-                    </button>
+                  )}
+
+                  {/* Waiting state: retry / cancel */}
+                  {telegramPending && (
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <button
+                        type="button"
+                        onClick={handleConnectTelegram}
+                        disabled={isConnectingTelegram}
+                        className="flex-1 px-4 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold cursor-pointer disabled:opacity-60 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center justify-center gap-2 md:text-sm"
+                      >
+                        {isConnectingTelegram ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span>Sending…</span>
+                          </>
+                        ) : (
+                          <span>Resend link</span>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsWaitingForTelegram(false)}
+                        disabled={isConnectingTelegram}
+                        className="px-4 py-2.5 rounded-2xl text-slate-500 dark:text-slate-400 text-xs font-bold cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors md:text-sm"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Connected state: toggle + test + disconnect */}
+                  {telegramConnected && (
+                    <>
+                      <div className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+                        <div>
+                          <span className="block text-xs font-bold text-slate-800 dark:text-slate-100 md:text-sm">
+                            Enable transaction alerts
+                          </span>
+                          <span className="block text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 md:text-xs">
+                            Only new saved transactions send an alert.
+                          </span>
+                        </div>
+                        <IosSwitch
+                          checked={telegramLinkStatus?.alertsEnabled ?? false}
+                          disabled={isTogglingTelegram}
+                          onChange={handleToggleTelegramAlerts}
+                        />
+                      </div>
+
+                      <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end pt-1">
+                        <button
+                          type="button"
+                          onClick={() => setShowDisconnectConfirm(true)}
+                          disabled={isDisconnectingTelegram}
+                          className="px-4 py-2.5 rounded-xl border border-rose-200 dark:border-rose-900/70 text-rose-600 dark:text-rose-400 text-xs font-bold cursor-pointer disabled:opacity-60 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors md:text-sm"
+                        >
+                          {isDisconnectingTelegram ? 'Disconnecting…' : 'Disconnect Telegram'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleTestTelegramAlert}
+                          disabled={isTestingTelegram}
+                          className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold cursor-pointer disabled:opacity-60 disabled:cursor-wait hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors md:text-sm"
+                        >
+                          {isTestingTelegram ? 'Sending test…' : 'Send Test Alert'}
+                        </button>
+                      </div>
+                    </>
+                  )}
+
+                  <div className="rounded-2xl border border-amber-200 dark:border-amber-900/60 bg-amber-50/70 dark:bg-amber-950/30 p-3 text-[11px] leading-relaxed text-amber-900 dark:text-amber-200 md:text-xs">
+                    The bot token stays on the secure server and is never saved on this device.
+                    Alerts and preferences apply only to your signed-in account.
                   </div>
                 </div>
+
+                <ConfirmModal
+                  isOpen={showDisconnectConfirm}
+                  title="Disconnect Telegram?"
+                  message="Future transaction alerts will stop immediately. Your records, sheets and other settings stay untouched."
+                  confirmLabel="Disconnect"
+                  cancelLabel="Keep Connected"
+                  isDestructive
+                  icon="warning"
+                  onConfirm={handleDisconnectTelegram}
+                  onCancel={() => setShowDisconnectConfirm(false)}
+                />
               </div>
             )}
 
@@ -1463,8 +1717,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       className="p-4 rounded-2xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50/50 dark:bg-emerald-950/40 text-left hover:bg-emerald-100/60 dark:hover:bg-emerald-900/40 transition-colors cursor-pointer space-y-1 group"
                     >
                       <FileText className="w-5 h-5 text-emerald-700 dark:text-emerald-400 group-hover:scale-110 transition-transform" />
-                      <span className="font-bold text-xs text-slate-900 dark:text-white block">Official Bank Statement (PDF)</span>
-                      <span className="text-[11px] text-slate-500 dark:text-slate-400 block">Printable detailed audit report</span>
+                      <span className="font-bold text-xs text-slate-900 dark:text-white block md:text-sm">Official Bank Statement (PDF)</span>
+                      <span className="text-[11px] text-slate-500 dark:text-slate-400 block md:text-xs">Printable detailed audit report</span>
                     </button>
 
                     {/* CSV Export */}
@@ -1474,8 +1728,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 text-left hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer space-y-1"
                     >
                       <Download className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-                      <span className="font-bold text-xs text-slate-900 dark:text-white block">Export CSV File</span>
-                      <span className="text-[11px] text-slate-500 dark:text-slate-400 block">Spreadsheet for Excel &amp; Numbers</span>
+                      <span className="font-bold text-xs text-slate-900 dark:text-white block md:text-sm">Export CSV File</span>
+                      <span className="text-[11px] text-slate-500 dark:text-slate-400 block md:text-xs">Spreadsheet for Excel &amp; Numbers</span>
                     </button>
 
                     {/* JSON Full Backup */}
@@ -1485,8 +1739,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 text-left hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer space-y-1"
                     >
                       <HardDrive className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-                      <span className="font-bold text-xs text-slate-900 dark:text-white block">Download Full JSON</span>
-                      <span className="text-[11px] text-slate-500 dark:text-slate-400 block">Backup of all data &amp; settings</span>
+                      <span className="font-bold text-xs text-slate-900 dark:text-white block md:text-sm">Download Full JSON</span>
+                      <span className="text-[11px] text-slate-500 dark:text-slate-400 block md:text-xs">Backup of all data &amp; settings</span>
                     </button>
                   </div>
 
@@ -1502,7 +1756,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     <button
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
-                      className="w-full py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer flex items-center justify-center gap-2"
+                      className="w-full py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer flex items-center justify-center gap-2 md:text-sm"
                     >
                       <Upload className="w-4 h-4" />
                       <span>Restore from JSON Backup File</span>
@@ -1514,7 +1768,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     <button
                       type="button"
                       onClick={() => setShowResetDataConfirm(true)}
-                      className="w-full py-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 text-xs font-bold cursor-pointer"
+                      className="w-full py-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 text-xs font-bold cursor-pointer md:text-sm"
                     >
                       Clear All Transaction Records
                     </button>
@@ -1533,17 +1787,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     <Lock className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                     <span>100% Local-First Privacy</span>
                   </div>
-                  <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                  <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed md:text-sm">
                     SpendDesk operates offline-first. Your financial data, debts, and categories never leave your browser storage unless you choose to sync with your personal Google Sheets account.
                   </p>
 
                   <div className="grid grid-cols-2 gap-3 pt-2">
                     <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-center">
-                      <span className="text-[10px] text-slate-400 block uppercase font-bold">Storage Used</span>
+                      <span className="text-[10px] text-slate-400 block uppercase font-bold md:text-xs">Storage Used</span>
                       <span className="text-sm font-bold text-slate-900 dark:text-white font-mono">{storageUsageKb} KB</span>
                     </div>
                     <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-center">
-                      <span className="text-[10px] text-slate-400 block uppercase font-bold">App Version</span>
+                      <span className="text-[10px] text-slate-400 block uppercase font-bold md:text-xs">App Version</span>
                       <span className="text-sm font-bold text-slate-900 dark:text-white font-mono">v3.2 PRO</span>
                     </div>
                   </div>
@@ -1588,7 +1842,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <AlertTriangle className="w-5 h-5" />
               <h3 className="font-bold text-sm text-rose-900 dark:text-rose-200">Wipe All Records?</h3>
             </div>
-            <p className="text-xs text-slate-600 dark:text-slate-300">
+            <p className="text-xs text-slate-600 dark:text-slate-300 md:text-sm">
               Type <strong className="font-mono text-rose-700 dark:text-rose-400">RESET</strong> to permanently delete all {transactions.length} transactions.
             </p>
             <input
@@ -1596,7 +1850,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               value={resetConfirmInput}
               onChange={(e) => setResetConfirmInput(e.target.value)}
               placeholder="Type RESET"
-              className="w-full px-3 py-2 rounded-xl border border-rose-300 dark:border-rose-800 font-mono text-xs focus:outline-hidden bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
+              className="w-full px-3 py-2 rounded-xl border border-rose-300 dark:border-rose-800 font-mono text-xs focus:outline-hidden bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white md:text-sm"
             />
             <div className="flex justify-end gap-2 pt-2">
               <button
@@ -1605,7 +1859,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   setShowResetDataConfirm(false);
                   setResetConfirmInput('');
                 }}
-                className="px-3.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold cursor-pointer text-slate-700 dark:text-slate-300"
+                className="px-3.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold cursor-pointer text-slate-700 dark:text-slate-300 md:text-sm"
               >
                 Cancel
               </button>
@@ -1613,7 +1867,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 type="button"
                 disabled={resetConfirmInput.trim().toUpperCase() !== 'RESET'}
                 onClick={handleResetData}
-                className="px-4 py-1.5 rounded-xl bg-rose-600 disabled:opacity-50 text-white text-xs font-bold cursor-pointer"
+                className="px-4 py-1.5 rounded-xl bg-rose-600 disabled:opacity-50 text-white text-xs font-bold cursor-pointer md:text-sm"
               >
                 Delete All
               </button>
@@ -1630,28 +1884,28 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <AlertTriangle className="w-5 h-5 text-amber-500" />
               <h3 className="font-bold text-sm text-slate-900 dark:text-white">Unsaved Changes</h3>
             </div>
-            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed md:text-sm">
               You have unsaved changes. Do you want to discard your edits and leave, or save them before leaving?
             </p>
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2 pt-2">
               <button
                 type="button"
                 onClick={() => setShowUnsavedConfirm(false)}
-                className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer text-center"
+                className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer text-center md:text-sm"
               >
                 Keep Editing
               </button>
               <button
                 type="button"
                 onClick={handleDiscardAndLeave}
-                className="px-3 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 text-rose-700 dark:text-rose-300 text-xs font-bold cursor-pointer transition-colors text-center"
+                className="px-3 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 text-rose-700 dark:text-rose-300 text-xs font-bold cursor-pointer transition-colors text-center md:text-sm"
               >
                 Discard &amp; Leave
               </button>
               <button
                 type="button"
                 onClick={(e) => handleSaveAndLeave(e)}
-                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer transition-colors shadow-xs text-center"
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer transition-colors shadow-xs text-center md:text-sm"
               >
                 Save Changes
               </button>

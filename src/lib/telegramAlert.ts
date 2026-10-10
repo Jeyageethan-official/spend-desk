@@ -180,9 +180,9 @@ export const flushPendingTelegramAlerts = async (): Promise<number> => {
 export const sendTelegramAlert = async (
   payload: TelegramAlertPayload
 ): Promise<{ delivered: boolean; queued: boolean }> => {
-  if (!payload.chatId.trim()) {
-    throw new Error('Telegram Chat ID is empty.');
-  }
+  // chatId may be empty in the deep-link flow: the backend resolves the
+  // authenticated user's own linked chat server-side (and enforces the
+  // per-user alerts toggle there).
 
   let cleanMessage = payload.message.trim();
   cleanMessage = cleanMessage.replace(/^(\*?\[?SpendDesk Alert\]?\*?\s*\n*)+/i, '').trim();

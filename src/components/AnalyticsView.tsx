@@ -69,46 +69,46 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
       {/* 2. Top Analytics Metrics Strip */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
         <div className="bg-white rounded-2xl p-3.5 border border-slate-200/80 shadow-xs">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block md:text-xs">
             Total Expenditure
           </span>
           <p className="text-lg sm:text-xl font-black text-slate-900 mt-0.5 truncate">
             {formatCurrency(totalSpend, currency)}
           </p>
-          <span className="text-[10px] text-slate-400">In selected period</span>
+          <span className="text-[10px] text-slate-400 md:text-xs">In selected period</span>
         </div>
 
         <div className="bg-white rounded-2xl p-3.5 border border-slate-200/80 shadow-xs">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block md:text-xs">
             Top Spending Area
           </span>
           <p className="text-base sm:text-lg font-bold text-slate-900 mt-0.5 truncate flex items-center gap-1">
             <Flame className="w-3.5 h-3.5 text-rose-500 shrink-0" />
             <span>{topCategory ? topCategory.category : 'None yet'}</span>
           </p>
-          <span className="text-[10px] text-slate-400">
+          <span className="text-[10px] text-slate-400 md:text-xs">
             {topCategory ? formatCurrency(topCategory.amount, currency) : 'Rs 0.00'}
           </span>
         </div>
 
         <div className="bg-white rounded-2xl p-3.5 border border-slate-200/80 shadow-xs">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block md:text-xs">
             Cash Outflow
           </span>
           <p className="text-base sm:text-lg font-bold text-emerald-700 mt-0.5 truncate">
             {formatCurrency(summary.cashSpent, currency)}
           </p>
-          <span className="text-[10px] text-slate-400">{cashSpendPercent.toFixed(0)}% of expenses</span>
+          <span className="text-[10px] text-slate-400 md:text-xs">{cashSpendPercent.toFixed(0)}% of expenses</span>
         </div>
 
         <div className="bg-white rounded-2xl p-3.5 border border-slate-200/80 shadow-xs">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block md:text-xs">
             Card Outflow
           </span>
           <p className="text-base sm:text-lg font-bold text-blue-700 mt-0.5 truncate">
             {formatCurrency(summary.cardSpend, currency)}
           </p>
-          <span className="text-[10px] text-slate-400">{cardSpendPercent.toFixed(0)}% of expenses</span>
+          <span className="text-[10px] text-slate-400 md:text-xs">{cardSpendPercent.toFixed(0)}% of expenses</span>
         </div>
       </div>
 
@@ -119,7 +119,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
             <CreditCard className="w-4 h-4 text-slate-600" />
             <span>Payment Method Split</span>
           </h3>
-          <span className="text-xs font-semibold text-slate-500">
+          <span className="text-xs font-semibold text-slate-500 md:text-sm">
             Cash vs Card
           </span>
         </div>
@@ -148,14 +148,14 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
               <span className="font-semibold text-slate-700">Cash:</span>
               <span className="font-bold text-slate-900">{formatCurrency(summary.cashSpent, currency)}</span>
-              <span className="text-[11px] text-slate-400">({cashSpendPercent.toFixed(0)}%)</span>
+              <span className="text-[11px] text-slate-400 md:text-xs">({cashSpendPercent.toFixed(0)}%)</span>
             </div>
 
             <div className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-blue-500" />
               <span className="font-semibold text-slate-700">Card:</span>
               <span className="font-bold text-slate-900">{formatCurrency(summary.cardSpend, currency)}</span>
-              <span className="text-[11px] text-slate-400">({cardSpendPercent.toFixed(0)}%)</span>
+              <span className="text-[11px] text-slate-400 md:text-xs">({cardSpendPercent.toFixed(0)}%)</span>
             </div>
           </div>
         </div>
@@ -172,7 +172,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
               <h3 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-slate-900">
                 SPENDING TREND (DAILY)
               </h3>
-              <p className="text-[11px] text-slate-400">Daily Cash vs Card outflow</p>
+              <p className="text-[11px] text-slate-400 md:text-xs">Daily Cash vs Card outflow</p>
             </div>
           </div>
 
@@ -226,7 +226,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                 </div>
 
                 {/* Day Name */}
-                <span className="text-[11px] font-bold text-slate-700 mt-1">
+                <span className="text-[11px] font-bold text-slate-700 mt-1 md:text-xs">
                   {item.dayLabel}
                 </span>
               </div>
@@ -246,10 +246,10 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
               <h3 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-slate-900">
                 SPENDING BY CATEGORY
               </h3>
-              <p className="text-[11px] text-slate-400">Expense distribution across categories</p>
+              <p className="text-[11px] text-slate-400 md:text-xs">Expense distribution across categories</p>
             </div>
           </div>
-          <span className="text-xs font-bold px-2 py-0.5 bg-slate-100 text-slate-800 rounded-lg">
+          <span className="text-xs font-bold px-2 py-0.5 bg-slate-100 text-slate-800 rounded-lg md:text-sm">
             {categories.filter((c) => c.amount > 0).length} active
           </span>
         </div>
@@ -277,7 +277,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                         {cat.category}
                       </span>
                       {cat.count > 0 && (
-                        <span className="text-[10px] text-slate-400">
+                        <span className="text-[10px] text-slate-400 md:text-xs">
                           {cat.count} {cat.count === 1 ? 'transaction' : 'transactions'}
                         </span>
                       )}
@@ -288,7 +288,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                     <span className="font-black text-xs sm:text-sm text-slate-900 block">
                       {formatCurrency(cat.amount, currency)}
                     </span>
-                    <span className="text-[11px] text-slate-400 font-semibold">
+                    <span className="text-[11px] text-slate-400 font-semibold md:text-xs">
                       {percent.toFixed(1)}%
                     </span>
                   </div>

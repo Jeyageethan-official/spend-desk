@@ -53,7 +53,7 @@ export const HeaderDateFilter: React.FC<HeaderDateFilterProps> = ({ filter, onFi
                 active
                   ? 'bg-emerald-600 text-white font-bold shadow-xs'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 font-medium'
-              }`}
+              } md:text-sm`}
             >
               {item.label}
             </button>
@@ -72,7 +72,7 @@ export const HeaderDateFilter: React.FC<HeaderDateFilterProps> = ({ filter, onFi
             isCustom
               ? 'bg-emerald-600 text-white font-bold shadow-xs'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 font-medium'
-          }`}
+          } md:text-sm`}
         >
           <Calendar className="w-3 h-3" />
           Custom
@@ -81,24 +81,24 @@ export const HeaderDateFilter: React.FC<HeaderDateFilterProps> = ({ filter, onFi
 
       {/* From / To date pickers */}
       <div className="flex items-center gap-2 flex-wrap">
-        <label className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-500">
+        <label className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-500 md:text-xs">
           From
           <input
             type="date"
             value={filter.startDate || ''}
             max={filter.endDate || undefined}
             onChange={(e) => changeDate('startDate', e.target.value)}
-            className="px-2.5 py-1.5 text-xs font-medium normal-case tracking-normal text-slate-800 bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 cursor-pointer"
+            className="px-2.5 py-1.5 text-xs font-medium normal-case tracking-normal text-slate-800 bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 cursor-pointer md:text-sm"
           />
         </label>
-        <label className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-500">
+        <label className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-500 md:text-xs">
           To
           <input
             type="date"
             value={filter.endDate || ''}
             min={filter.startDate || undefined}
             onChange={(e) => changeDate('endDate', e.target.value)}
-            className="px-2.5 py-1.5 text-xs font-medium normal-case tracking-normal text-slate-800 bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 cursor-pointer"
+            className="px-2.5 py-1.5 text-xs font-medium normal-case tracking-normal text-slate-800 bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 cursor-pointer md:text-sm"
           />
         </label>
       </div>

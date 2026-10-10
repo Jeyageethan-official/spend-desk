@@ -168,11 +168,11 @@ export const LendBorrowView: React.FC<LendBorrowViewProps> = ({
             <span className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600">
               <ArrowUpRight className="w-4 h-4 stroke-[2.5]" />
             </span>
-            <span className="text-[10px] font-bold uppercase text-emerald-800 bg-emerald-100/60 px-2 py-0.5 rounded-full">
+            <span className="text-[10px] font-bold uppercase text-emerald-800 bg-emerald-100/60 px-2 py-0.5 rounded-full md:text-xs">
               To Receive
             </span>
           </div>
-          <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+          <span className="text-xs font-bold text-slate-700 uppercase tracking-wider md:text-sm">
             I Lent
           </span>
           <p className="text-lg sm:text-2xl font-black text-emerald-700 mt-0.5 truncate">
@@ -186,11 +186,11 @@ export const LendBorrowView: React.FC<LendBorrowViewProps> = ({
             <span className="p-1.5 rounded-lg bg-red-50 text-red-700">
               <ArrowDownLeft className="w-4 h-4 stroke-[2.5]" />
             </span>
-            <span className="text-[10px] font-bold uppercase text-red-800 bg-red-100/60 px-2 py-0.5 rounded-full">
+            <span className="text-[10px] font-bold uppercase text-red-800 bg-red-100/60 px-2 py-0.5 rounded-full md:text-xs">
               To Return
             </span>
           </div>
-          <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+          <span className="text-xs font-bold text-slate-700 uppercase tracking-wider md:text-sm">
             I Borrowed
           </span>
           <p className="text-lg sm:text-2xl font-black text-red-700 mt-0.5 truncate">
@@ -204,11 +204,11 @@ export const LendBorrowView: React.FC<LendBorrowViewProps> = ({
             <span className="p-1.5 rounded-lg bg-slate-800 text-emerald-400">
               <HandCoins className="w-4 h-4" />
             </span>
-            <span className="text-[10px] font-bold uppercase text-slate-400">
+            <span className="text-[10px] font-bold uppercase text-slate-400 md:text-xs">
               Balance
             </span>
           </div>
-          <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+          <span className="text-xs font-bold text-slate-300 uppercase tracking-wider md:text-sm">
             Net Position
           </span>
           <p className={`text-lg sm:text-2xl font-black mt-0.5 truncate ${netBalance >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
@@ -222,7 +222,7 @@ export const LendBorrowView: React.FC<LendBorrowViewProps> = ({
         <button
           type="button"
           onClick={() => handleOpenModal('lent')}
-          className="py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-2xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs cursor-pointer transition-all"
+          className="py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-2xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs cursor-pointer transition-all md:text-sm"
         >
           <Plus className="w-4 h-4 stroke-[2.5]" />
           <span>I Lent</span>
@@ -231,7 +231,7 @@ export const LendBorrowView: React.FC<LendBorrowViewProps> = ({
         <button
           type="button"
           onClick={() => handleOpenModal('borrowed')}
-          className="py-2.5 px-4 bg-red-700 hover:bg-red-800 active:bg-red-900 text-white rounded-2xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm cursor-pointer transition-all border border-red-800/40"
+          className="py-2.5 px-4 bg-red-700 hover:bg-red-800 active:bg-red-900 text-white rounded-2xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm cursor-pointer transition-all border border-red-800/40 md:text-sm"
         >
           <Plus className="w-4 h-4 stroke-[2.5]" />
           <span>I Borrowed</span>
@@ -245,7 +245,7 @@ export const LendBorrowView: React.FC<LendBorrowViewProps> = ({
           <div className="flex-1 flex items-center gap-2">
             {filterMode === 'status' ? (
               /* All | Pending | Settled */
-              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-semibold text-slate-600 flex-1">
+              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-semibold text-slate-600 flex-1 md:text-sm">
                 {[
                   { id: 'all', label: 'All' },
                   { id: 'pending', label: 'Pending' },
@@ -265,7 +265,7 @@ export const LendBorrowView: React.FC<LendBorrowViewProps> = ({
               </div>
             ) : (
               /* All | Lent | Borrowed */
-              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-semibold text-slate-600 flex-1">
+              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-semibold text-slate-600 flex-1 md:text-sm">
                 {[
                   { id: 'all', label: 'All' },
                   { id: 'lent', label: 'Lent' },
@@ -289,11 +289,11 @@ export const LendBorrowView: React.FC<LendBorrowViewProps> = ({
             <button
               type="button"
               onClick={handleToggleMenu}
-              className="p-2 sm:px-2.5 sm:py-1.5 bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors shrink-0"
+              className="p-2 sm:px-2.5 sm:py-1.5 bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors shrink-0 md:text-sm"
               title={filterMode === 'status' ? 'Switch to Lent / Borrowed filter' : 'Switch to All / Pending / Settled filter'}
             >
               <ArrowLeftRight className="w-4 h-4 text-slate-700" />
-              <span className="hidden sm:inline text-[11px] text-slate-600 font-semibold">
+              <span className="hidden sm:inline text-[11px] text-slate-600 font-semibold md:text-xs">
                 {filterMode === 'status' ? 'Type' : 'Status'}
               </span>
             </button>
@@ -308,7 +308,7 @@ export const LendBorrowView: React.FC<LendBorrowViewProps> = ({
             placeholder="Search person name, reason, amount, phone..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-hidden focus:bg-white"
+            className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-hidden focus:bg-white md:text-sm"
           />
         </div>
       </div>
@@ -320,7 +320,7 @@ export const LendBorrowView: React.FC<LendBorrowViewProps> = ({
             <HandCoins className="w-6 h-6" />
           </div>
           <p className="text-sm font-bold text-slate-800">No records found</p>
-          <p className="text-xs text-slate-400 mt-1">
+          <p className="text-xs text-slate-400 mt-1 md:text-sm">
             Tap I Lent or I Borrowed above to record a transaction.
           </p>
         </div>
@@ -355,14 +355,14 @@ export const LendBorrowView: React.FC<LendBorrowViewProps> = ({
                             : isLent
                             ? 'bg-emerald-100 text-emerald-800'
                             : 'bg-red-100 text-red-800'
-                        }`}
+                        } md:text-xs`}
                       >
                         {isSettled ? 'Settled' : isLent ? 'Lent' : 'Borrowed'}
                       </span>
                     </div>
 
                     {/* Reason */}
-                    <p className="text-xs text-slate-600 font-medium truncate flex items-center gap-1">
+                    <p className="text-xs text-slate-600 font-medium truncate flex items-center gap-1 md:text-sm">
                       <Tag className="w-3 h-3 text-slate-400 shrink-0" />
                       <span>{item.thingsOrReason}</span>
                     </p>
@@ -414,7 +414,7 @@ export const LendBorrowView: React.FC<LendBorrowViewProps> = ({
                       isSettled
                         ? 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                         : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200'
-                    }`}
+                    } md:text-sm`}
                   >
                     <CheckCircle2 className="w-3.5 h-3.5" />
                     <span>{isSettled ? 'Re-open' : 'Mark Settled'}</span>
@@ -425,7 +425,7 @@ export const LendBorrowView: React.FC<LendBorrowViewProps> = ({
                       <button
                         type="button"
                         onClick={() => handleSendSmsReminder(item)}
-                        className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                        className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors md:text-sm"
                         title="Send SMS Reminder"
                       >
                         <MessageSquare className="w-3.5 h-3.5" />
@@ -454,7 +454,7 @@ export const LendBorrowView: React.FC<LendBorrowViewProps> = ({
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-150">
           <div className="w-full sm:max-w-md bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh]">
             <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50/60">
-              <h3 className="font-bold text-xs uppercase tracking-wider text-slate-700">
+              <h3 className="font-bold text-xs uppercase tracking-wider text-slate-700 md:text-sm">
                 {type === 'lent' ? 'Record Money Lent' : 'Record Money Borrowed'}
               </h3>
               <button
@@ -474,7 +474,7 @@ export const LendBorrowView: React.FC<LendBorrowViewProps> = ({
                   onClick={() => setType('lent')}
                   className={`py-2 px-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                     type === 'lent' ? 'bg-white text-emerald-700 shadow-xs' : 'text-slate-600'
-                  }`}
+                  } md:text-sm`}
                 >
                   I Lent
                 </button>
@@ -483,7 +483,7 @@ export const LendBorrowView: React.FC<LendBorrowViewProps> = ({
                   onClick={() => setType('borrowed')}
                   className={`py-2 px-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                     type === 'borrowed' ? 'bg-white text-red-700 shadow-xs' : 'text-slate-600'
-                  }`}
+                  } md:text-sm`}
                 >
                   I Borrowed
                 </button>
@@ -491,7 +491,7 @@ export const LendBorrowView: React.FC<LendBorrowViewProps> = ({
 
               {/* Amount */}
               <div>
-                <label className="text-[11px] font-bold uppercase text-slate-400 block mb-1">
+                <label className="text-[11px] font-bold uppercase text-slate-400 block mb-1 md:text-xs">
                   Amount
                 </label>
                 <div className="relative">
@@ -511,7 +511,7 @@ export const LendBorrowView: React.FC<LendBorrowViewProps> = ({
 
               {/* Person Name */}
               <div>
-                <label className="text-[11px] font-bold uppercase text-slate-400 block mb-1">
+                <label className="text-[11px] font-bold uppercase text-slate-400 block mb-1 md:text-xs">
                   Person Name
                 </label>
                 <div className="relative">
@@ -522,14 +522,14 @@ export const LendBorrowView: React.FC<LendBorrowViewProps> = ({
                     placeholder="e.g. Kumar, Ravi, Keells..."
                     value={personName}
                     onChange={(e) => setPersonName(e.target.value)}
-                    className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:outline-hidden"
+                    className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:outline-hidden md:text-sm"
                   />
                 </div>
               </div>
 
               {/* Reason / Item */}
               <div>
-                <label className="text-[11px] font-bold uppercase text-slate-400 block mb-1">
+                <label className="text-[11px] font-bold uppercase text-slate-400 block mb-1 md:text-xs">
                   Reason / Item
                 </label>
                 <div className="relative">
@@ -539,14 +539,14 @@ export const LendBorrowView: React.FC<LendBorrowViewProps> = ({
                     placeholder="e.g. Dinner bill, Grocery, Cash loan..."
                     value={thingsOrReason}
                     onChange={(e) => setThingsOrReason(e.target.value)}
-                    className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:outline-hidden"
+                    className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:outline-hidden md:text-sm"
                   />
                 </div>
               </div>
 
               {/* Phone Number */}
               <div>
-                <label className="text-[11px] font-bold uppercase text-slate-400 block mb-1">
+                <label className="text-[11px] font-bold uppercase text-slate-400 block mb-1 md:text-xs">
                   Phone Number (for SMS Reminder)
                 </label>
                 <div className="relative">
@@ -556,7 +556,7 @@ export const LendBorrowView: React.FC<LendBorrowViewProps> = ({
                     placeholder="0771234567"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
-                    className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:outline-hidden"
+                    className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:outline-hidden md:text-sm"
                   />
                 </div>
               </div>
@@ -564,7 +564,7 @@ export const LendBorrowView: React.FC<LendBorrowViewProps> = ({
               {/* Date & Due Date */}
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="text-[10px] font-bold uppercase text-slate-400 block mb-1">
+                  <label className="text-[10px] font-bold uppercase text-slate-400 block mb-1 md:text-xs">
                     Date
                   </label>
                   <input
@@ -576,7 +576,7 @@ export const LendBorrowView: React.FC<LendBorrowViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="text-[10px] font-bold uppercase text-slate-400 block mb-1">
+                  <label className="text-[10px] font-bold uppercase text-slate-400 block mb-1 md:text-xs">
                     Due Date (Optional)
                   </label>
                   <input
@@ -589,20 +589,20 @@ export const LendBorrowView: React.FC<LendBorrowViewProps> = ({
               </div>
 
               {formError && (
-                <p className="text-xs text-red-700 font-semibold">{formError}</p>
+                <p className="text-xs text-red-700 font-semibold md:text-sm">{formError}</p>
               )}
 
               <div className="pt-2 flex justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl font-bold text-xs cursor-pointer"
+                  className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl font-bold text-xs cursor-pointer md:text-sm"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold text-xs shadow-xs cursor-pointer"
+                  className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold text-xs shadow-xs cursor-pointer md:text-sm"
                 >
                   Save Record
                 </button>

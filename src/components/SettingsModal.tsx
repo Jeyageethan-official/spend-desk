@@ -193,7 +193,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <h3 className="text-sm font-bold text-slate-900 leading-tight">
                 Settings &amp; Management
               </h3>
-              <p className="text-[11px] text-slate-500">
+              <p className="text-[11px] text-slate-500 md:text-xs">
                 Manage categories, preferences, and backups
               </p>
             </div>
@@ -217,7 +217,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 activeTab === 'categories'
                   ? 'bg-white text-emerald-800 shadow-2xs'
                   : 'text-slate-600 hover:text-slate-900'
-              }`}
+              } md:text-sm`}
             >
               <Tag className="w-3.5 h-3.5 shrink-0 text-emerald-600" />
               <span className="truncate">Categories</span>
@@ -230,7 +230,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 activeTab === 'preferences'
                   ? 'bg-white text-slate-900 shadow-2xs'
                   : 'text-slate-600 hover:text-slate-900'
-              }`}
+              } md:text-sm`}
             >
               <Sliders className="w-3.5 h-3.5 shrink-0 text-blue-600" />
               <span className="truncate">Preferences</span>
@@ -243,7 +243,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 activeTab === 'data'
                   ? 'bg-white text-slate-900 shadow-2xs'
                   : 'text-slate-600 hover:text-slate-900'
-              }`}
+              } md:text-sm`}
             >
               <Database className="w-3.5 h-3.5 shrink-0 text-purple-600" />
               <span className="truncate">Data &amp; Sync</span>
@@ -256,7 +256,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 activeTab === 'about'
                   ? 'bg-white text-slate-900 shadow-2xs'
                   : 'text-slate-600 hover:text-slate-900'
-              }`}
+              } md:text-sm`}
             >
               <Info className="w-3.5 h-3.5 shrink-0 text-slate-500" />
               <span className="truncate">About</span>
@@ -267,7 +267,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         {/* Modal Scrollable Body */}
         <div className="p-5 overflow-y-auto space-y-4 text-xs sm:text-sm flex-1">
           {savedSuccessMsg && (
-            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-800 text-xs font-semibold flex items-center gap-2">
+            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-800 text-xs font-semibold flex items-center gap-2 md:text-sm">
               <Check className="w-4 h-4 text-emerald-600 shrink-0" />
               <span>{savedSuccessMsg}</span>
             </div>
@@ -284,7 +284,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <h4 className="font-bold text-sm text-slate-900">
                     Expense &amp; Income Categories
                   </h4>
-                  <p className="text-[11px] text-slate-500">
+                  <p className="text-[11px] text-slate-500 md:text-xs">
                     {DEFAULT_CATEGORIES.length} default &bull; {customDefs.length} custom categories
                   </p>
                 </div>
@@ -297,7 +297,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       setNewCatName('');
                       setSelectedIconName('Tag');
                     }}
-                    className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                    className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors md:text-sm"
                   >
                     <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
                     <span>+ Add New Category</span>
@@ -316,7 +316,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       <div className="p-1.5 rounded-lg bg-emerald-600 text-white shadow-2xs">
                         <SelectedPreviewIcon className="w-4 h-4" />
                       </div>
-                      <span className="font-bold text-xs text-slate-900">
+                      <span className="font-bold text-xs text-slate-900 md:text-sm">
                         Create New Category
                       </span>
                     </div>
@@ -331,7 +331,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                   {/* Name Input */}
                   <div>
-                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block mb-1">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block mb-1 md:text-xs">
                       Category Name
                     </label>
                     <input
@@ -340,7 +340,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       placeholder="e.g. Gym, Medicine, Pet Food, Coffee, Flight..."
                       value={newCatName}
                       onChange={(e) => setNewCatName(e.target.value)}
-                      className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl text-slate-900 focus:outline-hidden focus:border-emerald-600"
+                      className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl text-slate-900 focus:outline-hidden focus:border-emerald-600 md:text-sm"
                       autoFocus
                     />
                   </div>
@@ -348,7 +348,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   {/* Huge Icon Library Picker */}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between gap-2 flex-wrap">
-                      <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                      <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 md:text-xs">
                         Choose Icon ({filteredCatalog.length} available):
                       </label>
 
@@ -360,13 +360,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           placeholder="Search icon..."
                           value={iconSearchQuery}
                           onChange={(e) => setIconSearchQuery(e.target.value)}
-                          className="w-full pl-8 pr-2.5 py-1 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden"
+                          className="w-full pl-8 pr-2.5 py-1 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden md:text-sm"
                         />
                       </div>
                     </div>
 
                     {/* Category Filter Chips for Icons */}
-                    <div className="flex items-center gap-1 overflow-x-auto pb-1 text-[10px] font-semibold text-slate-600">
+                    <div className="flex items-center gap-1 overflow-x-auto pb-1 text-[10px] font-semibold text-slate-600 md:text-xs">
                       {[
                         { id: 'all', label: 'All' },
                         { id: 'food', label: 'Food' },
@@ -423,14 +423,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <button
                       type="button"
                       onClick={() => setIsAddingCategory(false)}
-                      className="px-3.5 py-1.5 bg-white border border-slate-300 text-slate-700 rounded-xl text-xs font-semibold cursor-pointer"
+                      className="px-3.5 py-1.5 bg-white border border-slate-300 text-slate-700 rounded-xl text-xs font-semibold cursor-pointer md:text-sm"
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
                       disabled={!newCatName.trim()}
-                      className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold cursor-pointer shadow-2xs transition-colors"
+                      className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold cursor-pointer shadow-2xs transition-colors md:text-sm"
                     >
                       Create Category
                     </button>
@@ -449,7 +449,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       <div className="p-1.5 rounded-lg bg-blue-600 text-white shadow-2xs">
                         <EditPreviewIcon className="w-4 h-4" />
                       </div>
-                      <span className="font-bold text-xs text-slate-900">
+                      <span className="font-bold text-xs text-slate-900 md:text-sm">
                         Edit Category: {editingCat.name}
                       </span>
                     </div>
@@ -464,7 +464,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                   {/* Name Input */}
                   <div>
-                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block mb-1">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block mb-1 md:text-xs">
                       Category Name
                     </label>
                     <input
@@ -472,13 +472,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       required
                       value={editName}
                       onChange={(e) => setEditName(e.target.value)}
-                      className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl text-slate-900 focus:outline-hidden focus:border-blue-600"
+                      className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl text-slate-900 focus:outline-hidden focus:border-blue-600 md:text-sm"
                     />
                   </div>
 
                   {/* Icon Selector for Edit */}
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block md:text-xs">
                       Choose Icon:
                     </label>
                     <div className="grid grid-cols-6 sm:grid-cols-8 gap-1.5 p-2 bg-white border border-blue-200/80 rounded-xl max-h-36 overflow-y-auto">
@@ -509,14 +509,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <button
                       type="button"
                       onClick={() => setEditingCat(null)}
-                      className="px-3.5 py-1.5 bg-white border border-slate-300 text-slate-700 rounded-xl text-xs font-semibold cursor-pointer"
+                      className="px-3.5 py-1.5 bg-white border border-slate-300 text-slate-700 rounded-xl text-xs font-semibold cursor-pointer md:text-sm"
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
                       disabled={!editName.trim()}
-                      className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold cursor-pointer shadow-2xs transition-colors"
+                      className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold cursor-pointer shadow-2xs transition-colors md:text-sm"
                     >
                       Save Changes
                     </button>
@@ -532,7 +532,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   placeholder="Search categories..."
                   value={catSearch}
                   onChange={(e) => setCatSearch(e.target.value)}
-                  className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-hidden focus:bg-white"
+                  className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-hidden focus:bg-white md:text-sm"
                 />
               </div>
 
@@ -541,7 +541,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 {/* Custom Categories Section */}
                 {customDefs.length > 0 && (
                   <div>
-                    <h5 className="text-[10px] font-bold uppercase tracking-wider text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg inline-block mb-2">
+                    <h5 className="text-[10px] font-bold uppercase tracking-wider text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg inline-block mb-2 md:text-xs">
                       Custom Categories ({customDefs.length})
                     </h5>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -559,10 +559,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                   <IconComp className="w-4 h-4" />
                                 </div>
                                 <div className="min-w-0">
-                                  <h6 className="font-bold text-xs text-slate-900 truncate">
+                                  <h6 className="font-bold text-xs text-slate-900 truncate md:text-sm">
                                     {cat.name}
                                   </h6>
-                                  <span className="text-[10px] text-slate-400">
+                                  <span className="text-[10px] text-slate-400 md:text-xs">
                                     Custom Category
                                   </span>
                                 </div>
@@ -600,7 +600,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                 {/* Default Categories Section */}
                 <div className="pt-2">
-                  <h5 className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">
+                  <h5 className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2 md:text-xs">
                     Default Standard Categories ({DEFAULT_CATEGORIES.length})
                   </h5>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -617,11 +617,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               <div className="p-1.5 rounded-lg bg-white text-slate-600 shrink-0">
                                 <IconComp className="w-3.5 h-3.5" />
                               </div>
-                              <span className="font-semibold text-xs text-slate-800 truncate">
+                              <span className="font-semibold text-xs text-slate-800 truncate md:text-sm">
                                 {cat.name}
                               </span>
                             </div>
-                            <span className="text-[9px] font-bold uppercase text-slate-400 px-1.5 py-0.5 bg-white rounded-md shrink-0">
+                            <span className="text-[9px] font-bold uppercase text-slate-400 px-1.5 py-0.5 bg-white rounded-md shrink-0 md:text-[10px]">
                               Default
                             </span>
                           </div>
@@ -646,7 +646,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     Currency Symbol
                   </h4>
                 </div>
-                <p className="text-[11px] text-slate-500">
+                <p className="text-[11px] text-slate-500 md:text-xs">
                   Select your default currency symbol to display across all cards, ledgers, and modals.
                 </p>
 
@@ -660,7 +660,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         currencyInput === sym
                           ? 'bg-emerald-600 text-white shadow-2xs'
                           : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
-                      }`}
+                      } md:text-sm`}
                     >
                       {sym}
                     </button>
@@ -668,12 +668,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
 
                 <div className="flex items-center gap-2 pt-1">
-                  <span className="text-xs text-slate-500">Custom Symbol:</span>
+                  <span className="text-xs text-slate-500 md:text-sm">Custom Symbol:</span>
                   <input
                     type="text"
                     value={currencyInput}
                     onChange={(e) => setCurrencyInput(e.target.value)}
-                    className="w-24 px-2.5 py-1 text-xs bg-white border border-slate-200 rounded-xl font-bold text-center"
+                    className="w-24 px-2.5 py-1 text-xs bg-white border border-slate-200 rounded-xl font-bold text-center md:text-sm"
                     placeholder="e.g. LKR"
                   />
                 </div>
@@ -687,7 +687,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     Default SMS Alert Phone
                   </h4>
                 </div>
-                <p className="text-[11px] text-slate-500">
+                <p className="text-[11px] text-slate-500 md:text-xs">
                   Auto-fill this phone number when sending 1-tap reminders for debts or expense notifications.
                 </p>
 
@@ -698,7 +698,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     placeholder="0771234567"
                     value={phoneInput}
                     onChange={(e) => setPhoneInput(e.target.value)}
-                    className="w-full pl-8 pr-3 py-2 text-xs bg-white border border-slate-200 rounded-xl text-slate-800 focus:outline-hidden"
+                    className="w-full pl-8 pr-3 py-2 text-xs bg-white border border-slate-200 rounded-xl text-slate-800 focus:outline-hidden md:text-sm"
                   />
                 </div>
               </div>
@@ -707,7 +707,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <button
                 type="button"
                 onClick={handleSavePreferences}
-                className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold text-xs cursor-pointer shadow-xs transition-colors"
+                className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold text-xs cursor-pointer shadow-xs transition-colors md:text-sm"
               >
                 Save Preferences
               </button>
@@ -729,12 +729,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </h4>
                   </div>
                   {activeSheet && (
-                    <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full">
+                    <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full md:text-xs">
                       Connected
                     </span>
                   )}
                 </div>
-                <p className="text-[11px] text-slate-600">
+                <p className="text-[11px] text-slate-600 md:text-xs">
                   {activeSheet
                     ? `Currently linked to "${activeSheet.name}". Sync push and pull data anytime.`
                     : 'Not currently linked to a Google Sheet.'}
@@ -745,7 +745,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     onClose();
                     onOpenSyncModal();
                   }}
-                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold cursor-pointer transition-colors flex items-center gap-1.5 shadow-2xs"
+                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold cursor-pointer transition-colors flex items-center gap-1.5 shadow-2xs md:text-sm"
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
                   <span>Open Google Sheets Manager</span>
@@ -758,14 +758,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <h4 className="font-bold text-xs sm:text-sm text-slate-900">
                     Offline CSV Export
                   </h4>
-                  <p className="text-[11px] text-slate-500 mt-0.5">
+                  <p className="text-[11px] text-slate-500 mt-0.5 md:text-xs">
                     Download an Excel-compatible spreadsheet of all your records right now.
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={onExportCSV}
-                  className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold cursor-pointer shrink-0 transition-colors flex items-center gap-1.5 shadow-2xs"
+                  className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold cursor-pointer shrink-0 transition-colors flex items-center gap-1.5 shadow-2xs md:text-sm"
                 >
                   <Download className="w-3.5 h-3.5" />
                   <span>Export CSV</span>
@@ -781,7 +781,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       Danger Zone: Reset Data
                     </h4>
                   </div>
-                  <p className="text-[11px] text-rose-700">
+                  <p className="text-[11px] text-rose-700 md:text-xs">
                     Clear transactions and reset the ledger. Make sure to download a CSV backup first.
                   </p>
                   <button
@@ -792,7 +792,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         onClose();
                       }
                     }}
-                    className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold cursor-pointer transition-colors"
+                    className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold cursor-pointer transition-colors md:text-sm"
                   >
                     Clear All Transactions
                   </button>
@@ -813,7 +813,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     SpendDesk (Cash &amp; Card)
                   </h4>
                 </div>
-                <p className="text-xs text-slate-600 leading-relaxed">
+                <p className="text-xs text-slate-600 leading-relaxed md:text-sm">
                   A high-speed, offline-first personal finance tracker built for real cash wallet balances, card accounts, debt ledgers, and instant Google Drive synchronization.
                 </p>
               </div>
@@ -842,21 +842,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-100">
           <div className="w-full max-w-xs bg-white rounded-3xl shadow-2xl border border-slate-200 p-5 space-y-3">
             <h4 className="font-bold text-sm text-slate-900">Delete Category</h4>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-slate-500 md:text-sm">
               Are you sure you want to delete <b>{deleteCandidate}</b>? Existing transactions with this category will remain unchanged.
             </p>
             <div className="flex justify-end gap-2 pt-2">
               <button
                 type="button"
                 onClick={() => setDeleteCandidate(null)}
-                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold cursor-pointer"
+                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold cursor-pointer md:text-sm"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={() => handleDeleteCategory(deleteCandidate)}
-                className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold cursor-pointer shadow-2xs"
+                className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold cursor-pointer shadow-2xs md:text-sm"
               >
                 Delete
               </button>

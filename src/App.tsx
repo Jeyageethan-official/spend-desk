@@ -84,6 +84,7 @@ import {
   sendTelegramAlert, 
   flushPendingTelegramAlerts 
 } from './lib/telegramAlert';
+import { getTelegramLinkStatus, TelegramLinkStatus } from './lib/telegramConnect';
 import { CloudWorkspace, fetchCloudWorkspace, saveCloudWorkspace, subscribeToCloudWorkspace, unsubscribeFromCloudWorkspace } from './lib/cloudWorkspace';
 import { clearPendingSync, hasPendingSync, loadPendingSync, markLendDelete, markLendUpsert, markSettingsDirty, markTransactionDelete, markTransactionUpsert, mergePendingWorkspace, stageWorkspaceForReplay } from './lib/pendingSync';
 import { clearSignedOutWorkspace, loadSignedOutWorkspace, saveSignedOutWorkspace } from './lib/signedOutWorkspace';
@@ -99,6 +100,7 @@ import { SmsParserModal } from './components/SmsParserModal';
 import { AuthHelpModal } from './components/AuthHelpModal';
 import { AdjustBalanceModal } from './components/AdjustBalanceModal';
 import { BottomNav } from './components/BottomNav';
+import { Sidebar } from './components/Sidebar';
 import { AnalyticsView } from './components/AnalyticsView';
 import { SettingsView } from './components/SettingsView';
 import { LendBorrowView } from './components/LendBorrowView';
@@ -109,7 +111,12 @@ import {
   Download,
   Sparkles,
   HandCoins,
-  WifiOff
+  WifiOff,
+  Home,
+  Receipt,
+  BarChart2,
+  FileSpreadsheet,
+  Plus
 } from 'lucide-react';
 
 const LAST_OFFLINE_WORKSPACE_KEY = 'money_tracker_last_offline_workspace_v1';
@@ -172,6 +179,31 @@ export default function App() {
   });
   const [alertPhone, setAlertPhone] = useState<string>(() => loadStoredAlertPhone(initialScope));
   const [telegramAlertConfig, setTelegramAlertConfig] = useState<TelegramAlertConfig>(() => loadStoredTelegramAlertConfig(initialScope));
+
+  // Server-side Telegram link (deep-link flow): chat IDs never live in the browser.
+  const [telegramLinkStatus, setTelegramLinkStatus] = useState<TelegramLinkStatus | null>(null);
+  const refreshTelegramLinkStatus = async () => {
+    try {
+      const status = await getTelegramLinkStatus();
+      setTelegramLinkStatus(status);
+      return status;
+    } catch {
+      // Offline / signed out / not configured: fall back to the legacy local config.
+      setTelegramLinkStatus(null);
+      return null;
+    }
+  };
+
+  useEffect(() => {
+    void refreshTelegramLinkStatus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
+  // Automatic alerts are sent when the server-side link is active and its toggle is
+  // on; accounts that connected before the deep-link flow keep using the local config.
+  const telegramSendActive = telegramLinkStatus?.connected
+    ? telegramLinkStatus.alertsEnabled
+    : (telegramAlertConfig.enabled && Boolean(telegramAlertConfig.chatId));
   const [budgetConfig, setBudgetConfig] = useState<BudgetConfig>(() => loadStoredBudgetConfig(initialScope));
   const [categories, setCategories] = useState<CategoryDef[]>(() => loadStoredCategoryDefs(initialScope));
   const [currency, setCurrency] = useState<string>('Rs');
@@ -1289,7 +1321,7 @@ export default function App() {
         triggerDeviceSms(sendSmsTo, smsBody);
       }
 
-      if (isNewTransaction && telegramAlertConfig.enabled && telegramAlertConfig.chatId) {
+      if (isNewTransaction && telegramSendActive) {
         const currentSum = calculateSummary(updatedTxs, updatedTxs);
         const telegramAlert = generateTransactionTelegramAlert(recordedTx, currency, currentSum.currentCashBalance);
         void sendTelegramAlert({ ...telegramAlert, chatId: telegramAlertConfig.chatId })
@@ -1407,7 +1439,7 @@ export default function App() {
       queueSheetPush({ transactions, lendItems: updated });
     }
 
-    if (telegramAlertConfig.enabled && telegramAlertConfig.chatId) {
+    if (telegramSendActive) {
       const currentSum = calculateSummary(transactions, transactions);
       const lendAlert = generateLendTelegramAlert(newItem, currency, currentSum.currentCashBalance);
       void sendTelegramAlert({ ...lendAlert, chatId: telegramAlertConfig.chatId })
@@ -1445,7 +1477,7 @@ export default function App() {
     const changedItem = updated.find((item) => item.id === id);
     if (changedItem) {
       markLendUpsert(changedItem, currentUserEmail);
-      if (telegramAlertConfig.enabled && telegramAlertConfig.chatId) {
+      if (telegramSendActive) {
         const currentSum = calculateSummary(transactions, transactions);
         const lendAlert = generateLendTelegramAlert(changedItem, currency, currentSum.currentCashBalance);
         void sendTelegramAlert({ ...lendAlert, chatId: telegramAlertConfig.chatId })
@@ -1614,12 +1646,81 @@ export default function App() {
     setSelectedTransactionIds([]);
   };
 
+  // Desktop header context: page title + subtitle for the active tab
+  const pageMeta = useMemo(() => {
+    switch (activeTab) {
+      case 'transactions':
+        return { title: 'All Records', subtitle: 'Search, filter & manage all your records' };
+      case 'lend':
+        return { title: 'Lend & Borrow', subtitle: 'Money lent & borrowed, settled simply' };
+      case 'analytics':
+        return { title: 'Analytics', subtitle: 'Spending trends & category insights' };
+      default:
+        return { title: 'Dashboard', subtitle: 'Track every rupee across cash & cards' };
+    }
+  }, [activeTab]);
+
+  // Desktop collapsible sidebar (md+ shell) - persisted locally
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('sd-sidebar-collapsed') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const handleToggleSidebar = () => {
+    setSidebarCollapsed((v) => {
+      const next = !v;
+      try {
+        localStorage.setItem('sd-sidebar-collapsed', next ? '1' : '0');
+      } catch {
+        // storage unavailable - keep in-memory state only
+      }
+      return next;
+    });
+  };
+
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans flex flex-col antialiased pb-20 md:pb-8">
+    <div
+      className="min-h-screen bg-slate-50 text-slate-900 font-sans flex flex-col antialiased pb-20 md:pb-8"
+      style={{ '--sidebar-w': sidebarCollapsed ? '5rem' : '15rem' } as import('react').CSSProperties}
+    >
+      {/* Desktop application shell (md+ only) - mobile keeps Header + BottomNav unchanged */}
+      <Sidebar
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={handleToggleSidebar}
+        activeTab={activeTab}
+        onNavigate={(tab) => {
+          if (tab === 'sheets') setSheetsSourceTab(activeTab);
+          if (tab === 'settings') setSettingsSection('main');
+          setActiveTab(tab);
+        }}
+        pendingLendCount={pendingLendCount}
+        activeSheet={activeSheet}
+        user={user}
+        userProfile={userProfile}
+        storageEmail={currentUserEmail}
+        isOnline={isOnline}
+        isSyncing={isSyncing}
+        onQuickSync={() => void handlePushToSheet({ silent: false, interactive: true })}
+        onSignIn={handleSignIn}
+        onSignOut={() => setIsSignOutConfirmOpen(true)}
+        onOpenProfile={() => {
+          setSettingsSection('profile');
+          setActiveTab('settings');
+        }}
+        onOpenAuthHelp={() => setIsAuthHelpOpen(true)}
+      />
       {/* App Header - Hidden when on Settings page or Google Sheets manager page */}
       {activeTab !== 'settings' && activeTab !== 'sheets' && (
         <Header
           user={user}
+          pageTitle={pageMeta.title}
+          pageSubtitle={pageMeta.subtitle}
+          dateFilter={filter}
+          onDateFilterChange={setFilter}
+          headerDate={currentDateStr}
+          showCash={activeTab !== 'dashboard'}
           userProfile={userProfile}
           storageEmail={currentUserEmail}
           activeSheet={activeSheet}
@@ -1659,7 +1760,7 @@ export default function App() {
 
       {/* Offline Status Warning Banner */}
       {!isOnline && (
-        <div className="bg-amber-500/10 border-b border-amber-500/20 text-amber-700 px-4 py-2 flex items-center justify-center gap-2 text-xs sm:text-sm font-medium">
+        <div className="bg-amber-500/10 border-b border-amber-500/20 text-amber-700 px-4 py-2 flex items-center justify-center gap-2 text-xs sm:text-sm font-medium md:pl-[var(--sidebar-w)]">
           <WifiOff className="w-4 h-4 text-amber-600 animate-pulse" />
           <span>You are offline. Operating seamlessly in Local Storage mode. Data will auto-sync when online.</span>
         </div>
@@ -1668,7 +1769,7 @@ export default function App() {
       {/* Dynamic Island Floating Pill Toast (Matching user reference screenshot) */}
       <AnimatePresence>
         {notification && (
-          <div className="fixed bottom-20 sm:bottom-8 left-0 right-0 z-50 flex justify-center pointer-events-none px-4">
+          <div className="fixed bottom-20 sm:bottom-8 left-0 right-0 z-50 flex justify-center pointer-events-none px-4 md:pl-[var(--sidebar-w)]">
             <motion.div
               key="toast-pill-notification"
               initial={{ opacity: 0, y: 24, scale: 0.9 }}
@@ -1765,39 +1866,6 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Desktop Navigation Bar (Centered, clean workspace tabs) */}
-      <div className="hidden md:block max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 pt-4 sm:pt-6">
-        <div className="flex items-center justify-center bg-white p-1.5 rounded-2xl border border-slate-200/90 shadow-xs">
-          <div className="flex items-center gap-1.5 flex-wrap justify-center">
-            {[
-              { id: 'dashboard', label: 'Dashboard' },
-              { id: 'transactions', label: 'Transactions' },
-              { id: 'lend', label: 'Lend & Borrow' },
-              { id: 'analytics', label: 'Analytics' },
-              { id: 'sheets', label: 'Google Sheets' },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => {
-                  if (tab.id === 'sheets') {
-                    setSheetsSourceTab(activeTab);
-                  }
-                  setActiveTab(tab.id as AppTab);
-                }}
-                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  activeTab === tab.id
-                    ? 'bg-slate-900 text-white shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
       {/* Main Content with Smooth Page Fade & Slide Transition Animation */}
       <AnimatePresence mode="wait">
         <motion.div
@@ -1806,11 +1874,13 @@ export default function App() {
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -6 }}
           transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-          className="flex-1 w-full"
+          className="flex-1 w-full md:pl-[var(--sidebar-w)] transition-[padding] duration-300 ease-in-out"
         >
           {activeTab === 'sheets' && (
             <SheetManagerView
               onBack={() => setActiveTab(sheetsSourceTab || 'settings')}
+              totalCashBalance={overallSummary.currentCashBalance}
+              currency={currency}
               accessToken={accessToken}
               activeSheet={activeSheet}
               onSetActiveSheet={handleSetActiveSheet}
@@ -1831,6 +1901,7 @@ export default function App() {
           {activeTab === 'settings' && (
             <SettingsView
               user={user}
+              totalCashBalance={overallSummary.currentCashBalance}
               storageEmail={currentUserEmail}
               onBack={() => setActiveTab('dashboard')}
               currency={currency}
@@ -1858,6 +1929,8 @@ export default function App() {
               telegramAlertConfig={telegramAlertConfig}
               onUpdateTelegramAlertConfig={handleUpdateTelegramAlertConfig}
               onSendTelegramTest={handleSendTelegramTest}
+              telegramLinkStatus={telegramLinkStatus}
+              onRefreshTelegramLink={refreshTelegramLinkStatus}
               onCloudSyncRequested={() => {
                 markSettingsDirty(currentUserEmail);
                 queueCloudSync();
@@ -1969,13 +2042,13 @@ export default function App() {
               {/* 4. Recent Transactions Preview (Top 8 on Dashboard) */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between px-1">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 md:text-sm">
                     Recent Activity
                   </h3>
                   <button
                     type="button"
                     onClick={() => setActiveTab('transactions')}
-                    className="text-xs font-bold text-emerald-700 hover:underline cursor-pointer"
+                    className="text-xs font-bold text-emerald-700 hover:underline cursor-pointer md:text-sm"
                   >
                     View All ({filteredTransactions.length}) &rarr;
                   </button>

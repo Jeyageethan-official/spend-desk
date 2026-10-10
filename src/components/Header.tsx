@@ -15,15 +15,24 @@ import {
   Tag,
   Sliders,
   X,
-  Trash2
+  Trash2,
+  Calendar
 } from 'lucide-react';
-import { GoogleSheetMeta } from '../types/finance';
+import { GoogleSheetMeta, FilterState } from '../types/finance';
 import { UserProfile } from '../lib/storage';
-import { formatCurrency } from '../lib/calculations';
+import { formatCurrency, getLocalDateString } from '../lib/calculations';
+import { CalendarDateModal } from './CalendarDateModal';
+
 import { triggerFeedback } from '../lib/haptics';
 import { SpendDeskLogo } from './SpendDeskLogo';
 
 interface HeaderProps {
+  pageTitle?: string;
+  pageSubtitle?: string;
+  showCash?: boolean;
+  dateFilter: FilterState;
+  onDateFilterChange: (next: FilterState) => void;
+  headerDate: string;
   user: any;
   userProfile?: UserProfile;
   storageEmail?: string | null;
@@ -64,6 +73,9 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenSmsModal: _onOpenSmsModal,
   onQuickSync,
   onOpenAuthHelp,
+  dateFilter,
+  onDateFilterChange,
+  headerDate,
   onOpenSettings,
   onOpenProfileEdit,
   onGoHome,
@@ -71,9 +83,28 @@ export const Header: React.FC<HeaderProps> = ({
   onCancelSelection,
   onEditSelection,
   onDeleteSelection,
+  pageTitle,
+  pageSubtitle,
+  showCash = true,
 }) => {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // The pill reacts ONLY to a date picked inside the header calendar (source === 'header'),
+  // so that pick is visible right here in the badge. FilterBar preset/range changes never
+  // re-render this chrome, and a header pick never leaks into other date badges.
+  const pickedInHeader =
+    dateFilter.type === 'custom' && dateFilter.source === 'header' && Boolean(dateFilter.startDate);
+  const pillDate = pickedInHeader ? dateFilter.startDate : headerDate;
+  const formattedHeaderDate = (() => {
+    if (!pillDate) return '';
+    const d = new Date(`${pillDate}T00:00:00`);
+    return Number.isNaN(d.getTime())
+      ? pillDate
+      : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+  })();
+  const headerDateLabel = pillDate && pillDate === getLocalDateString() ? 'Today' : '';
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -119,7 +150,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   if (selectionCount > 0) {
     return (
-      <header className="bg-white/95 backdrop-blur-md border-b border-slate-200 sticky top-0 z-30 shadow-xs">
+      <header className="bg-white/95 backdrop-blur-md border-b border-slate-200 sticky top-0 z-30 shadow-xs md:pl-[var(--sidebar-w)]">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-14 sm:h-16 gap-3">
             <div className="flex items-center gap-3 min-w-0">
@@ -132,17 +163,17 @@ export const Header: React.FC<HeaderProps> = ({
               >
                 <X className="w-5 h-5" />
               </button>
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-800 whitespace-nowrap">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-800 whitespace-nowrap md:text-sm">
                 {selectionCount} selected
               </span>
             </div>
             <div className="flex items-center gap-2">
               {selectionCount === 1 && (
-                <button type="button" onClick={onEditSelection} className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold active:scale-95 transition-all cursor-pointer">
+                <button type="button" onClick={onEditSelection} className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold active:scale-95 transition-all cursor-pointer md:text-sm">
                   Edit
                 </button>
               )}
-              <button type="button" onClick={onDeleteSelection} className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center gap-1.5 active:scale-95 transition-all cursor-pointer">
+              <button type="button" onClick={onDeleteSelection} className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center gap-1.5 active:scale-95 transition-all cursor-pointer md:text-sm">
                 <Trash2 className="w-3.5 h-3.5" />
                 Delete
               </button>
@@ -154,50 +185,86 @@ export const Header: React.FC<HeaderProps> = ({
   }
 
   return (
-    <header className="bg-white/95 backdrop-blur-md border-b border-slate-200 sticky top-0 z-30 shadow-xs">
+    <>
+    <header className="bg-white/95 backdrop-blur-md border-b border-slate-200 sticky top-0 z-30 shadow-xs md:pl-[var(--sidebar-w)]">
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-14 sm:h-16">
           {/* Logo & App Title */}
           <div 
             onClick={onGoHome}
-            className="flex items-center gap-2.5 sm:gap-3 cursor-pointer select-none"
+            className="flex items-center gap-2.5 sm:gap-3 cursor-pointer select-none md:hidden"
             role="button"
             tabIndex={0}
             title="Go to Home"
           >
             <SpendDeskLogo size="md" />
-            <div className="hidden sm:block">
-              <span className="inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold bg-[#e8f8f3] text-[#10B77F] border border-[#10B77F]/30">
-                Cash &amp; Card Spending
-              </span>
-            </div>
+          </div>
+
+          {/* Desktop (md+): contextual page title where the brand row is hidden */}
+          <div className="hidden md:block min-w-0">
+            <h1 className="text-[15px] font-black text-slate-900 leading-tight truncate">
+              {pageTitle || 'SpendDesk'}
+            </h1>
+            {pageSubtitle && (
+              <p className="text-[11px] text-slate-500 truncate leading-tight mt-0.5 md:text-xs">
+                {pageSubtitle}
+              </p>
+            )}
           </div>
 
           {/* Right Action Controls: ONLY 3 ITEMS (Reload/Sync, Settings, Profile Dropdown) */}
           <div className="flex items-center gap-2">
+            {/* Date pill (screenshot style): static label; click opens a CALENDAR PICKER */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => {
+                  triggerFeedback('tap');
+                  setIsCalendarOpen(true);
+                }}
+                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-white/70 backdrop-blur-xl border border-slate-200/90 hover:border-emerald-300 hover:bg-white transition-all cursor-pointer shadow-xs"
+                title="Pick a date range"
+              >
+                <Calendar className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <span className="hidden lg:flex items-center gap-1.5 min-w-0">
+                  {headerDateLabel && (
+                    <span className="text-[11px] font-black text-emerald-700 whitespace-nowrap md:text-xs">{headerDateLabel}</span>
+                  )}
+                  {headerDateLabel && formattedHeaderDate && (
+                    <span className="w-1 h-1 rounded-full bg-slate-300 shrink-0" />
+                  )}
+                  {formattedHeaderDate && (
+                    <span className="text-[11px] font-bold text-slate-700 tabular-nums whitespace-nowrap md:text-xs">{formattedHeaderDate}</span>
+                  )}
+                </span>
+              </button>
+            </div>
+
+            {/* Desktop (lg+): live cash balance chip */}
+            {showCash && (
+              <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-50/90 border border-emerald-200/70 mr-0.5" title="Current cash in hand">
+                <Wallet className="w-3.5 h-3.5 text-emerald-600" />
+                <span className="text-[10px] font-black uppercase tracking-wide text-emerald-600 md:text-xs">Cash</span>
+                <span className="text-xs font-black text-emerald-800 tabular-nums md:text-sm">
+                  {formatCurrency(totalCashBalance, currency)}
+                </span>
+              </div>
+            )}
+
             {/* 1. Reload / Quick Sync Button */}
             <button
               type="button"
               onClick={onQuickSync}
               disabled={isSyncing}
-              className="p-2 text-slate-600 hover:text-emerald-700 hover:bg-slate-100 rounded-xl border border-slate-200/80 transition-colors cursor-pointer disabled:opacity-50"
+              className="p-2 text-slate-600 hover:text-emerald-700 hover:bg-slate-100 rounded-xl border border-slate-200/80 transition-colors cursor-pointer disabled:opacity-50 md:hidden"
               title="Sync with Google Sheet"
             >
               <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin text-emerald-600' : ''}`} />
             </button>
 
-            {/* 2. Settings Icon */}
-            <button
-              type="button"
-              onClick={() => onOpenSettings('main')}
-              className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl border border-slate-200/80 transition-colors cursor-pointer"
-              title="Settings"
-            >
-              <SettingsIcon className="w-4 h-4" />
-            </button>
 
             {/* 3. Profile Avatar Dropdown */}
-            <div className="relative" ref={dropdownRef}>
+            <div className="relative md:hidden" ref={dropdownRef}>
               <button
                 type="button"
                 onClick={() => {
@@ -215,11 +282,11 @@ export const Header: React.FC<HeaderProps> = ({
                     className="w-7 h-7 sm:w-8 sm:h-8 rounded-full object-cover border border-emerald-500/50"
                   />
                 ) : (
-                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-tr from-emerald-600 to-teal-500 text-white font-bold text-xs flex items-center justify-center shadow-2xs">
+                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-tr from-emerald-600 to-teal-500 text-white font-bold text-xs flex items-center justify-center shadow-2xs md:text-sm">
                     {effectiveInitial}
                   </div>
                 )}
-                <span className="hidden sm:inline-block text-xs font-bold text-slate-800 max-w-[110px] truncate">
+                <span className="hidden sm:inline-block text-xs font-bold text-slate-800 max-w-[110px] truncate md:text-sm">
                   {effectiveName}
                 </span>
                 <ChevronDown className={`w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600 transition-transform ${isProfileOpen ? 'rotate-180' : ''}`} />
@@ -258,18 +325,18 @@ export const Header: React.FC<HeaderProps> = ({
                             {effectiveName}
                           </h4>
                         </div>
-                        <p className="text-[11px] text-slate-500 truncate mt-0.5">
+                        <p className="text-[11px] text-slate-500 truncate mt-0.5 md:text-xs">
                           {effectiveEmail}
                         </p>
                         
                         <div className="mt-2">
                           {user ? (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200/80 px-2 py-0.5 rounded-full">
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200/80 px-2 py-0.5 rounded-full md:text-xs">
                               <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
                               <span>Google Synced</span>
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200/80 px-2 py-0.5 rounded-full">
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200/80 px-2 py-0.5 rounded-full md:text-xs">
                               <ShieldCheck className="w-3 h-3 text-blue-600 shrink-0" />
                               <span>Local Offline Safe</span>
                             </span>
@@ -295,8 +362,8 @@ export const Header: React.FC<HeaderProps> = ({
                           <UserIcon className="w-3.5 h-3.5" />
                         </div>
                         <div>
-                          <span className="font-bold text-xs block text-slate-900">Profile</span>
-                          <span className="text-[10px] text-slate-400 block">Edit photo, name &amp; Gmail</span>
+                          <span className="font-bold text-xs block text-slate-900 md:text-sm">Profile</span>
+                          <span className="text-[10px] text-slate-400 block md:text-xs">Edit photo, name &amp; Gmail</span>
                         </div>
                       </div>
                     </button>
@@ -316,12 +383,28 @@ export const Header: React.FC<HeaderProps> = ({
                           <FileSpreadsheet className="w-3.5 h-3.5" />
                         </div>
                         <div>
-                          <span className="font-bold text-xs block text-slate-900">Google Sheets Manager</span>
-                          <span className="text-[10px] text-slate-400 block">
+                          <span className="font-bold text-xs block text-slate-900 md:text-sm">Google Sheets Manager</span>
+                          <span className="text-[10px] text-slate-400 block md:text-xs">
                             {activeSheet ? activeSheet.name : 'Connect spreadsheet'}
                           </span>
                         </div>
                       </div>
+                    </button>
+
+                    {/* Settings */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerFeedback('tap');
+                        setIsProfileOpen(false);
+                        onOpenSettings('main');
+                      }}
+                      className="w-full text-left px-3 py-2.5 hover:bg-slate-50 rounded-xl flex items-center gap-2.5 text-slate-700 hover:text-slate-900 cursor-pointer transition-colors font-medium"
+                    >
+                      <div className="w-7 h-7 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center shrink-0">
+                        <SettingsIcon className="w-3.5 h-3.5" />
+                      </div>
+                      <span>Settings</span>
                     </button>
 
                     {/* Help & FAQs */}
@@ -383,5 +466,19 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
     </header>
+
+    {/* Calendar picker lives OUTSIDE <header> (backdrop-filter would trap fixed positioning) */}
+    <CalendarDateModal
+      isOpen={isCalendarOpen}
+      onClose={() => setIsCalendarOpen(false)}
+      startDate={dateFilter.startDate || ''}
+      endDate={dateFilter.endDate || ''}
+      activeType={dateFilter.type}
+      mode="single"
+      onApply={(type, start, end) => {
+        onDateFilterChange({ ...dateFilter, type, startDate: start, endDate: end, source: 'header' });
+      }}
+    />
+    </>
   );
 };

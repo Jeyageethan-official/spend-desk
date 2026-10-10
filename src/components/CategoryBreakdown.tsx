@@ -30,10 +30,10 @@ export const CategoryBreakdown: React.FC<CategoryBreakdownProps> = ({
             <h2 className="text-sm font-bold uppercase tracking-wider text-slate-900">
               SPENDING BY CATEGORY
             </h2>
-            <p className="text-xs text-slate-500">Distribution of expenses</p>
+            <p className="text-xs text-slate-500 md:text-sm">Distribution of expenses</p>
           </div>
         </div>
-        <span className="text-xs font-semibold px-2 py-1 bg-slate-100 text-slate-700 rounded-lg">
+        <span className="text-xs font-semibold px-2 py-1 bg-slate-100 text-slate-700 rounded-lg md:text-sm">
           Total: {formatCurrency(totalSpend, currency)}
         </span>
       </div>
@@ -58,7 +58,7 @@ export const CategoryBreakdown: React.FC<CategoryBreakdownProps> = ({
                     {cat.category}
                   </span>
                   {cat.count > 0 && (
-                    <span className="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-md">
+                    <span className="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-md md:text-xs">
                       {cat.count} {cat.count === 1 ? 'tx' : 'txs'}
                     </span>
                   )}
@@ -68,7 +68,7 @@ export const CategoryBreakdown: React.FC<CategoryBreakdownProps> = ({
                   <span className="text-slate-900 font-bold">
                     {formatCurrency(cat.amount, currency)}
                   </span>
-                  <span className="text-slate-400 text-xs ml-2 font-normal">
+                  <span className="text-slate-400 text-xs ml-2 font-normal md:text-sm">
                     {percent.toFixed(1)}%
                   </span>
                 </div>

@@ -14,6 +14,8 @@ interface CalendarDateModalProps {
   endDate: string;
   activeType: DateFilterType;
   onApply: (type: DateFilterType, start: string, end: string) => void;
+  /** single = compact mobile-style day picker (no From/To cards, closes on pick). */
+  mode?: 'range' | 'single';
 }
 
 /** Parse YYYY-MM-DD as a LOCAL date (new Date('YYYY-MM-DD') is UTC and can shift the day). */
@@ -28,6 +30,7 @@ export const CalendarDateModal: React.FC<CalendarDateModalProps> = ({
   startDate,
   endDate,
   onApply,
+  mode = 'range',
 }) => {
   const [tempStart, setTempStart] = useState<string>(startDate || '');
   const [tempEnd, setTempEnd] = useState<string>(endDate || '');
@@ -57,6 +60,12 @@ export const CalendarDateModal: React.FC<CalendarDateModalProps> = ({
     'July', 'August', 'September', 'October', 'November', 'December'
   ];
 
+  // Local today (YYYY-MM-DD) for the iOS-style subtle "today" emphasis
+  const todayStr = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  })();
+
   const handlePrevMonth = () => {
     setViewDate(new Date(year, month - 1, 1));
   };
@@ -73,6 +82,7 @@ export const CalendarDateModal: React.FC<CalendarDateModalProps> = ({
     setTempStart(dayStr);
     setTempEnd(dayStr);
     onApply('custom', dayStr, dayStr);
+    if (mode === 'single') onClose();
   };
 
   const handleManualStartChange = (val: string) => {
@@ -99,6 +109,108 @@ export const CalendarDateModal: React.FC<CalendarDateModalProps> = ({
       className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/50 backdrop-blur-xs animate-in fade-in duration-150"
       onClick={onClose}
     >
+      {mode === 'single' ? (
+      /* iOS-style date sheet: large title, weekday initials, filled-circle
+         selection and text-only footer actions (header calendar uses this). */
+      <div
+        className="w-full max-w-[20rem] bg-white rounded-[28px] shadow-2xl border border-slate-200/70 overflow-hidden px-4 pt-4 pb-3"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Choose a date"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Large title + subtle month steppers */}
+        <div className="flex items-center justify-between px-1 pb-2.5">
+          <span className="text-lg font-bold text-slate-900 tracking-tight">
+            {monthNames[month]} {year}
+          </span>
+          <div className="flex items-center gap-1 text-slate-500">
+            <button
+              type="button"
+              onClick={handlePrevMonth}
+              className="p-1.5 rounded-full hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
+              aria-label="Previous month"
+            >
+              <ChevronLeft className="w-5 h-5 stroke-[2.4]" />
+            </button>
+            <button
+              type="button"
+              onClick={handleNextMonth}
+              className="p-1.5 rounded-full hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
+              aria-label="Next month"
+            >
+              <ChevronRight className="w-5 h-5 stroke-[2.4]" />
+            </button>
+          </div>
+        </div>
+
+        {/* Weekday initials */}
+        <div className="grid grid-cols-7">
+          {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
+            <span
+              key={`${d}-${i}`}
+              className="h-8 flex items-center justify-center text-[11px] font-semibold uppercase tracking-wide text-slate-400"
+            >
+              {d}
+            </span>
+          ))}
+        </div>
+
+        {/* Day grid with iOS filled-circle selection */}
+        <div className="grid grid-cols-7 gap-y-1 justify-items-center">
+          {Array.from({ length: firstDayIndex }).map((_, i) => (
+            <div key={`empty-${i}`} className="h-9" />
+          ))}
+          {Array.from({ length: daysInMonth }).map((_, i) => {
+            const day = i + 1;
+            const dayStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            const isSelected = tempStart === dayStr && tempEnd === dayStr;
+            const isToday = !isSelected && dayStr === todayStr;
+            return (
+              <button
+                key={day}
+                type="button"
+                onClick={() => handleDayClick(day)}
+                aria-pressed={isSelected}
+                aria-label={`${monthNames[month]} ${day}, ${year}`}
+                className={`h-9 w-9 rounded-full text-[13px] flex items-center justify-center transition-all duration-150 cursor-pointer active:scale-90 ${
+                  isSelected
+                    ? 'bg-[#008952] text-white font-semibold shadow-xs'
+                    : isToday
+                    ? 'text-[#008952] font-bold hover:bg-emerald-50'
+                    : 'text-slate-800 font-medium hover:bg-slate-100'
+                }`}
+              >
+                {day}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Text-only footer actions (Today / Done) */}
+        <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between px-1">
+          <button
+            type="button"
+            onClick={() => {
+              setTempStart(todayStr);
+              setTempEnd(todayStr);
+              onApply('custom', todayStr, todayStr);
+              onClose();
+            }}
+            className="px-2 py-1.5 -ml-2 rounded-lg text-[15px] font-medium text-emerald-600 hover:bg-emerald-50 transition-colors cursor-pointer"
+          >
+            Today
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-1.5 -mr-1 rounded-lg text-[15px] font-bold text-emerald-600 hover:bg-emerald-50 transition-colors cursor-pointer"
+          >
+            Done
+          </button>
+        </div>
+      </div>
+      ) : (
       <div 
         className="w-full max-w-sm bg-white rounded-3xl shadow-2xl border border-slate-200/90 overflow-hidden p-5 space-y-4"
         role="dialog"
@@ -133,7 +245,7 @@ export const CalendarDateModal: React.FC<CalendarDateModalProps> = ({
           </div>
 
           {/* Days of Week Header */}
-          <div className="grid grid-cols-7 gap-1 text-center text-xs font-semibold text-slate-400 mb-2">
+          <div className="grid grid-cols-7 gap-1 text-center text-xs font-semibold text-slate-400 mb-2 md:text-sm">
             <span>Su</span>
             <span>Mo</span>
             <span>Tu</span>
@@ -171,7 +283,7 @@ export const CalendarDateModal: React.FC<CalendarDateModalProps> = ({
                       : isInRange
                       ? 'bg-emerald-100/70 text-emerald-950 font-bold rounded-lg'
                       : 'text-slate-800 hover:bg-slate-100'
-                  }`}
+                  } md:text-sm`}
                 >
                   {day}
                 </button>
@@ -180,11 +292,11 @@ export const CalendarDateModal: React.FC<CalendarDateModalProps> = ({
           </div>
         </div>
 
-        {/* Bottom FROM DATE and TO DATE Cards matching Screenshot */}
+        {/* Bottom FROM DATE and TO DATE Cards (range mode) */}
         <div className="grid grid-cols-2 gap-3 text-xs">
           {/* FROM DATE Card */}
           <div className="p-3 bg-white border border-slate-200/90 rounded-2xl shadow-2xs relative flex flex-col justify-between">
-            <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block mb-1">
+            <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block mb-1 md:text-xs">
               FROM DATE
             </span>
             <div className="flex items-center justify-between">
@@ -203,7 +315,7 @@ export const CalendarDateModal: React.FC<CalendarDateModalProps> = ({
 
           {/* TO DATE Card */}
           <div className="p-3 bg-white border border-slate-200/90 rounded-2xl shadow-2xs relative flex flex-col justify-between">
-            <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block mb-1">
+            <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block mb-1 md:text-xs">
               TO DATE
             </span>
             <div className="flex items-center justify-between">
@@ -221,6 +333,7 @@ export const CalendarDateModal: React.FC<CalendarDateModalProps> = ({
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 };

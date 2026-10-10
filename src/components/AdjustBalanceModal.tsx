@@ -85,7 +85,7 @@ export const AdjustBalanceModal: React.FC<AdjustBalanceModalProps> = ({
               <h3 id="adjust-balance-title" className="text-base font-bold text-slate-900 leading-snug">
                 Adjust Cash Balance
               </h3>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-slate-500 md:text-sm">
                 Reconcile physical wallet with app ledger
               </p>
             </div>
@@ -108,7 +108,7 @@ export const AdjustBalanceModal: React.FC<AdjustBalanceModalProps> = ({
               <Wallet className="w-4 h-4" />
             </div>
             <div>
-              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider md:text-xs">
                 Currently Tracked
               </p>
               <p className="text-sm font-bold text-slate-800">
@@ -119,7 +119,7 @@ export const AdjustBalanceModal: React.FC<AdjustBalanceModalProps> = ({
           <button
             type="button"
             onClick={() => handleQuickPreset(currentBalance)}
-            className="text-[11px] font-semibold text-emerald-600 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-lg border border-emerald-200 transition-colors cursor-pointer"
+            className="text-[11px] font-semibold text-emerald-600 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-lg border border-emerald-200 transition-colors cursor-pointer md:text-xs"
           >
             Copy
           </button>
@@ -128,11 +128,11 @@ export const AdjustBalanceModal: React.FC<AdjustBalanceModalProps> = ({
         {/* Form */}
         <form onSubmit={handleConfirm} className="space-y-4">
           <div>
-            <label htmlFor="actual-cash-input" className="block text-xs font-bold text-slate-700 mb-1.5">
+            <label htmlFor="actual-cash-input" className="block text-xs font-bold text-slate-700 mb-1.5 md:text-sm">
               Actual Cash In Hand
             </label>
             <div className="relative">
-              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 select-none">
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 select-none md:text-sm">
                 {currency}
               </span>
               <input
@@ -156,28 +156,28 @@ export const AdjustBalanceModal: React.FC<AdjustBalanceModalProps> = ({
               <button
                 type="button"
                 onClick={() => handleQuickPreset(0)}
-                className="px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors cursor-pointer"
+                className="px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors cursor-pointer md:text-xs"
               >
                 Zero (0)
               </button>
               <button
                 type="button"
                 onClick={() => handleQuickPreset(currentBalance + 100)}
-                className="px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors cursor-pointer"
+                className="px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors cursor-pointer md:text-xs"
               >
                 +100
               </button>
               <button
                 type="button"
                 onClick={() => handleQuickPreset(currentBalance + 500)}
-                className="px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors cursor-pointer"
+                className="px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors cursor-pointer md:text-xs"
               >
                 +500
               </button>
               <button
                 type="button"
                 onClick={() => handleQuickPreset(currentBalance + 1000)}
-                className="px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors cursor-pointer"
+                className="px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors cursor-pointer md:text-xs"
               >
                 +1,000
               </button>
@@ -231,7 +231,7 @@ export const AdjustBalanceModal: React.FC<AdjustBalanceModalProps> = ({
                         : '0.00'}
                     </span>
                   </div>
-                  <p className="mt-1 text-[11px] text-slate-600 leading-relaxed">
+                  <p className="mt-1 text-[11px] text-slate-600 leading-relaxed md:text-xs">
                     {difference > 0 
                       ? 'Creates a "Cash Added" adjustment entry to raise tracked cash to match your actual cash.'
                       : difference < 0 
@@ -244,7 +244,7 @@ export const AdjustBalanceModal: React.FC<AdjustBalanceModalProps> = ({
           )}
 
           {errorMessage && (
-            <div className="flex items-center gap-2 p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
+            <div className="flex items-center gap-2 p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 md:text-sm">
               <AlertCircle className="w-4 h-4 shrink-0 text-amber-600" />
               <span>{errorMessage}</span>
             </div>
@@ -255,14 +255,14 @@ export const AdjustBalanceModal: React.FC<AdjustBalanceModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer"
+              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer md:text-sm"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={!hasChange}
-              className="px-5 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl shadow-xs transition-colors cursor-pointer"
+              className="px-5 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl shadow-xs transition-colors cursor-pointer md:text-sm"
             >
               Apply Adjustment
             </button>

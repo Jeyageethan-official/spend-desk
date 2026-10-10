@@ -40,10 +40,33 @@ Deno.serve(async (request) => {
     return json({ error: 'Invalid request body.' }, 400);
   }
 
-  const chatId = typeof payload.chatId === 'string' ? payload.chatId.trim() : '';
+  const legacyChatId = typeof payload.chatId === 'string' ? payload.chatId.trim() : '';
   const message = typeof payload.message === 'string' ? payload.message.trim() : '';
-  if (!/^-?\d{4,20}$/.test(chatId) || !message || message.length > 3500) {
+  if (!message || message.length > 3500) {
     return json({ error: 'Invalid Telegram alert details.' }, 400);
+  }
+
+  // The chat is resolved SERVER-SIDE from this user's link (deep-link flow), so the
+  // browser can never target another user's chat. The legacy client-provided chat ID
+  // is only used as a fallback for accounts connected before the deep-link flow, and
+  // only when this user has no server-side link.
+  const { data: link } = await supabase
+    .from('telegram_links')
+    .select('chat_id, alerts_enabled')
+    .eq('user_id', user.id)
+    .maybeSingle();
+
+  let chatId = '';
+  if (link) {
+    if (link.alerts_enabled === false) {
+      // "Enable transaction alerts" toggle is OFF: suppress without disconnecting.
+      return json({ delivered: false, suppressed: true });
+    }
+    chatId = String(link.chat_id);
+  } else if (/^-?\d{4,20}$/.test(legacyChatId)) {
+    chatId = legacyChatId;
+  } else {
+    return json({ error: 'Telegram is not connected yet.' }, 400);
   }
 
   // Ensure there is only ONE '[SpendDesk Alert]' header at the very top.

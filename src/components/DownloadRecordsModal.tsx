@@ -250,7 +250,7 @@ export const DownloadRecordsModal: React.FC<DownloadRecordsModalProps> = ({
               <h2 className="text-sm font-bold text-slate-900 leading-tight">
                 Export Records
               </h2>
-              <p className="text-[11px] text-slate-400">
+              <p className="text-[11px] text-slate-400 md:text-xs">
                 Download transactions as CSV or PDF
               </p>
             </div>
@@ -268,7 +268,7 @@ export const DownloadRecordsModal: React.FC<DownloadRecordsModalProps> = ({
         <div className="p-4 sm:p-5 space-y-4 text-xs">
           {/* Format Selector */}
           <div>
-            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">
+            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5 md:text-xs">
               Export Format
             </label>
             <div className="grid grid-cols-2 gap-2">
@@ -283,8 +283,8 @@ export const DownloadRecordsModal: React.FC<DownloadRecordsModalProps> = ({
               >
                 <FileSpreadsheet className="w-4 h-4 shrink-0 text-[#0e6245]" />
                 <div>
-                  <span className="block text-xs font-bold leading-tight">CSV Sheet</span>
-                  <span className="text-[10px] text-slate-400 block mt-0.5">Excel &amp; Sheets</span>
+                  <span className="block text-xs font-bold leading-tight md:text-sm">CSV Sheet</span>
+                  <span className="text-[10px] text-slate-400 block mt-0.5 md:text-xs">Excel &amp; Sheets</span>
                 </div>
               </button>
 
@@ -299,8 +299,8 @@ export const DownloadRecordsModal: React.FC<DownloadRecordsModalProps> = ({
               >
                 <FileText className="w-4 h-4 shrink-0 text-[#0e6245]" />
                 <div>
-                  <span className="block text-xs font-bold leading-tight">PDF Statement</span>
-                  <span className="text-[10px] text-slate-400 block mt-0.5">Printable Report</span>
+                  <span className="block text-xs font-bold leading-tight md:text-sm">PDF Statement</span>
+                  <span className="text-[10px] text-slate-400 block mt-0.5 md:text-xs">Printable Report</span>
                 </div>
               </button>
             </div>
@@ -308,7 +308,7 @@ export const DownloadRecordsModal: React.FC<DownloadRecordsModalProps> = ({
 
           {/* Timeframe Scope Selector */}
           <div>
-            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">
+            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5 md:text-xs">
               Select Timeframe
             </label>
             <div className="space-y-1.5">
@@ -319,7 +319,7 @@ export const DownloadRecordsModal: React.FC<DownloadRecordsModalProps> = ({
                   period === 'current-month'
                     ? 'border-[#0e6245] bg-emerald-50/60 text-[#0e6245] font-bold'
                     : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                }`}
+                } md:text-sm`}
               >
                 <span>Current Month ({months[now.getMonth()]} {now.getFullYear()})</span>
                 {period === 'current-month' && <CheckCircle2 className="w-4 h-4 text-[#0e6245]" />}
@@ -332,7 +332,7 @@ export const DownloadRecordsModal: React.FC<DownloadRecordsModalProps> = ({
                   period === 'custom-month'
                     ? 'border-[#0e6245] bg-emerald-50/60 text-[#0e6245] font-bold'
                     : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                }`}
+                } md:text-sm`}
               >
                 <span>Select Specific Month &amp; Year</span>
                 {period === 'custom-month' && <CheckCircle2 className="w-4 h-4 text-[#0e6245]" />}
@@ -343,7 +343,7 @@ export const DownloadRecordsModal: React.FC<DownloadRecordsModalProps> = ({
                   <select
                     value={selectedMonth}
                     onChange={(e) => setSelectedMonth(Number(e.target.value))}
-                    className="p-2 text-xs bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 cursor-pointer focus:outline-hidden"
+                    className="p-2 text-xs bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 cursor-pointer focus:outline-hidden md:text-sm"
                   >
                     {months.map((m, idx) => (
                       <option key={m} value={idx}>{m}</option>
@@ -353,7 +353,7 @@ export const DownloadRecordsModal: React.FC<DownloadRecordsModalProps> = ({
                   <select
                     value={selectedYear}
                     onChange={(e) => setSelectedYear(Number(e.target.value))}
-                    className="p-2 text-xs bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 cursor-pointer focus:outline-hidden"
+                    className="p-2 text-xs bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 cursor-pointer focus:outline-hidden md:text-sm"
                   >
                     {years.map((y) => (
                       <option key={y} value={y}>{y}</option>
@@ -369,7 +369,7 @@ export const DownloadRecordsModal: React.FC<DownloadRecordsModalProps> = ({
                   period === 'all'
                     ? 'border-[#0e6245] bg-emerald-50/60 text-[#0e6245] font-bold'
                     : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                }`}
+                } md:text-sm`}
               >
                 <span>All Recorded Transactions</span>
                 {period === 'all' && <CheckCircle2 className="w-4 h-4 text-[#0e6245]" />}
@@ -387,7 +387,7 @@ export const DownloadRecordsModal: React.FC<DownloadRecordsModalProps> = ({
           <button
             type="button"
             onClick={format === 'csv' ? handleExportCSV : handleExportPDF}
-            className="w-full py-3 px-4 rounded-xl bg-[#0e6245] hover:bg-[#0b4e37] active:scale-98 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xs cursor-pointer transition-all"
+            className="w-full py-3 px-4 rounded-xl bg-[#0e6245] hover:bg-[#0b4e37] active:scale-98 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xs cursor-pointer transition-all md:text-sm"
           >
             <Download className="w-4 h-4" />
             <span>
