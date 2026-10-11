@@ -15,6 +15,7 @@ const UNIFIED_CATEGORIES_KEY = 'money_tracker_unified_categories_v3';
 const PROFILE_NAME_KEY = 'money_tracker_profile_name';
 const CUSTOM_AVATAR_KEY = 'money_tracker_custom_avatar';
 const PROFILE_EMAIL_KEY = 'money_tracker_profile_email';
+const PROFILE_OWNER_KEY = 'money_tracker_profile_owner_email';
 
 export interface UserProfile {
   name: string;
@@ -34,13 +35,29 @@ export const loadStoredProfile = (email?: string | null): UserProfile => {
     const avatarKey = getScopedKey(CUSTOM_AVATAR_KEY, cleanEmail);
     const emailKey = getScopedKey(PROFILE_EMAIL_KEY, cleanEmail);
 
-    let name = localStorage.getItem(nameKey) || localStorage.getItem(PROFILE_NAME_KEY);
-    if (!name || name.trim() === '') {
+    // One-time migration of the legacy GLOBAL profile keys (written by the
+    // pre-per-account versions): the FIRST account to use this browser claims
+    // them exactly once. Every other account starts clean, so signing in with
+    // a second Gmail can never inherit the first account's custom name/avatar.
+    if (cleanEmail && !localStorage.getItem(PROFILE_OWNER_KEY)) {
+      const legacyName = localStorage.getItem(PROFILE_NAME_KEY);
+      const legacyAvatar = localStorage.getItem(CUSTOM_AVATAR_KEY);
+      const legacyEmail = localStorage.getItem(PROFILE_EMAIL_KEY);
+      if (legacyName && legacyName.trim()) localStorage.setItem(nameKey, legacyName);
+      if (legacyAvatar) localStorage.setItem(avatarKey, legacyAvatar);
+      if (legacyEmail) localStorage.setItem(emailKey, legacyEmail);
+      localStorage.setItem(PROFILE_OWNER_KEY, cleanEmail);
+    }
+
+    // Strictly account-scoped reads - NO fallback to the global keys, so
+    // offline mode and every account only ever see their OWN profile.
+    let name = localStorage.getItem(nameKey) || '';
+    if (!name || !name.trim()) {
       name = cleanEmail ? cleanEmail.split('@')[0] : 'My Wallet';
     }
-    const avatar = localStorage.getItem(avatarKey) || localStorage.getItem(CUSTOM_AVATAR_KEY);
-    const storedEmail = localStorage.getItem(emailKey) || localStorage.getItem(PROFILE_EMAIL_KEY) || (cleanEmail || '');
-    return { name, avatar: avatar || null, email: storedEmail };
+    const avatar = localStorage.getItem(avatarKey) || null;
+    const storedEmail = localStorage.getItem(emailKey) || (cleanEmail || '');
+    return { name, avatar, email: storedEmail };
   } catch {
     return { name: cleanEmail ? cleanEmail.split('@')[0] : 'My Wallet', avatar: null, email: cleanEmail || '' };
   }
@@ -48,27 +65,31 @@ export const loadStoredProfile = (email?: string | null): UserProfile => {
 
 export const saveStoredProfile = (profile: Partial<UserProfile>, email?: string | null) => {
   try {
-    const userEmail = email || profile.email || null;
+    const rawEmail = email || profile.email || null;
+    const userEmail = rawEmail && rawEmail !== 'guest' ? rawEmail.trim().toLowerCase() : null;
     const nameKey = getScopedKey(PROFILE_NAME_KEY, userEmail);
     const avatarKey = getScopedKey(CUSTOM_AVATAR_KEY, userEmail);
     const emailKey = getScopedKey(PROFILE_EMAIL_KEY, userEmail);
 
+    // Claim the (legacy) global profile for this account if nobody owns it yet.
+    if (userEmail && !localStorage.getItem(PROFILE_OWNER_KEY)) {
+      localStorage.setItem(PROFILE_OWNER_KEY, userEmail);
+    }
+
+    // Scoped writes only - the global keys are never updated anymore so a
+    // profile saved by one account can't leak into another account's reads.
     if (profile.name !== undefined) {
       localStorage.setItem(nameKey, profile.name);
-      localStorage.setItem(PROFILE_NAME_KEY, profile.name);
     }
     if (profile.avatar !== undefined) {
       if (profile.avatar) {
         localStorage.setItem(avatarKey, profile.avatar);
-        localStorage.setItem(CUSTOM_AVATAR_KEY, profile.avatar);
       } else {
         localStorage.removeItem(avatarKey);
-        localStorage.removeItem(CUSTOM_AVATAR_KEY);
       }
     }
     if (profile.email !== undefined) {
       localStorage.setItem(emailKey, profile.email);
-      localStorage.setItem(PROFILE_EMAIL_KEY, profile.email);
     }
   } catch (e) {
     console.error('Failed to save profile to storage', e);

@@ -288,9 +288,12 @@ export default function App() {
     [transactions, headerDateFilter]
   );
 
+  // Sections filter over ALL transactions (not the header-date subset), so a
+  // section's "All" chip really shows the full total. The header calendar keeps
+  // driving only the wallet balance / summary cards.
   const filterFor = useCallback(
-    (tab: SectionTab) => filterTransactions(dateFilteredTransactions, sectionFilters[tab]),
-    [dateFilteredTransactions, sectionFilters]
+    (tab: SectionTab) => filterTransactions(transactions, sectionFilters[tab]),
+    [transactions, sectionFilters]
   );
 
   // Modal & View States
@@ -1598,8 +1601,9 @@ export default function App() {
   };
 
   // Financial Calculations
-  // The list the active section renders (global header date AND that section's
-  // own filter, so a section's presets never leak into other sections).
+  // The list the active section renders: that section's own filter over ALL
+  // transactions, so "All" shows the full total and a section's presets never
+  // leak into other sections. The header calendar only drives the balance.
   const filteredTransactions = useMemo(() => {
     const tab: SectionTab = activeTab === 'transactions' || activeTab === 'analytics' ? activeTab : 'dashboard';
     return filterFor(tab);
@@ -2005,6 +2009,12 @@ export default function App() {
               onUpdateProfile={handleUpdateProfile}
               onUpdateCategories={(newCats) => setCategories(newCats)}
               onResetAllData={() => {
+                // Tombstone every existing record FIRST: even if the Google
+                // sheet wipe below fails (expired token / offline), a later
+                // two-way sync can NEVER resurrect the cleared records.
+                const existingIds = transactions.map((t) => t.id);
+                markTxIdsDeleted(existingIds, currentUserEmail);
+                markTxIdsDeleted(existingIds, 'guest');
                 setTransactions([]);
                 setLendItems([]);
                 setSelectedTransactionIds([]);
@@ -2015,14 +2025,22 @@ export default function App() {
                 clearPendingSync(currentUserEmail);
                 clearPendingSync('guest');
                 if (activeSheet?.id) {
-                  clearSheetCache(activeSheet.id);
-                  saveSheetTransactions(activeSheet.id, []);
-                  saveSheetLendItems(activeSheet.id, []);
-                  if (accessToken) {
-                    void overwriteTransactionsInSheet(accessToken, activeSheet.id, [], []).catch(console.warn);
-                    void overwriteLendItemsInSheet(accessToken, activeSheet.id, []).catch(console.warn);
-                    void syncDashboardStats(accessToken, activeSheet.id, { currentCashBalance: 0, cashAdded: 0, cashSpent: 0, cardSpend: 0, totalSpend: 0, outOfWallet: 0 }, [], {}).catch(console.warn);
-                  }
+                  const sheetId = activeSheet.id;
+                  clearSheetCache(sheetId);
+                  saveSheetTransactions(sheetId, []);
+                  saveSheetLendItems(sheetId, []);
+                  void (async () => {
+                    try {
+                      let token = accessToken;
+                      if (!token || token === 'local_token' || token.startsWith('eyJ')) {
+                        token = await requestGoogleAccessToken(false).catch(() => '');
+                      }
+                      if (!token) return; // tombstones already guard the re-import
+                      await overwriteTransactionsInSheet(token, sheetId, [], []).catch(console.warn);
+                      await overwriteLendItemsInSheet(token, sheetId, []).catch(console.warn);
+                      await syncDashboardStats(token, sheetId, { currentCashBalance: 0, cashAdded: 0, cashSpent: 0, cardSpend: 0, totalSpend: 0, outOfWallet: 0 }, [], {}).catch(console.warn);
+                    } catch {}
+                  })();
                 }
                 if (user?.email) {
                   const wipeTimestamp = Math.max(Date.now(), cloudVersionRef.current + 5000);
