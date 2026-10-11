@@ -18,73 +18,6 @@ let cachedAccessToken: string | null = null;
 let silentRefreshPromise: Promise<string | null> | null = null;
 let interactiveAuthPromise: Promise<{ user: WorkspaceUser; accessToken: string }> | null = null;
 
-const GSI_SCRIPT_URL = 'https://accounts.google.com/gsi/client';
-let gsiLoadPromise: Promise<boolean> | null = null;
-let gsiTokenClient: any = null;
-
-/** Loads the Google Identity Services script once (for silent token renewal). */
-export const ensureGoogleGsiLoaded = async (): Promise<boolean> => {
-  if (typeof window === 'undefined' || typeof document === 'undefined') return false;
-  if ((window as any).google?.accounts?.oauth2) return true;
-  if (gsiLoadPromise) return gsiLoadPromise;
-
-  gsiLoadPromise = new Promise<boolean>((resolve) => {
-    const existing = document.querySelector<HTMLScriptElement>(`script[src="${GSI_SCRIPT_URL}"]`);
-    const script = existing || document.createElement('script');
-    const finish = (ok: boolean) => resolve(ok && Boolean((window as any).google?.accounts?.oauth2));
-    script.addEventListener('load', () => finish(true));
-    script.addEventListener('error', () => finish(false));
-    if (!existing) {
-      script.src = GSI_SCRIPT_URL;
-      script.async = true;
-      script.defer = true;
-      document.head.appendChild(script);
-    }
-  }).then((ok) => {
-    // Allow a retry later if the CDN load failed.
-    if (!ok) gsiLoadPromise = null;
-    return ok;
-  });
-
-  return gsiLoadPromise;
-};
-
-/**
- * Requests a fresh Google access token WITHOUT any visible sign-in flow.
- * With `prompt: ''` Google reuses the browser's existing Google session and the
- * consent the user already gave, so no popup appears in the normal case.
- */
-const requestGsiTokenSilently = async (): Promise<{ token: string; expiresInSeconds: number } | null> => {
-  const loaded = await ensureGoogleGsiLoaded();
-  const oauth2 = (window as any).google?.accounts?.oauth2;
-  if (!loaded || !oauth2) return null;
-
-  return new Promise((resolve) => {
-    try {
-      if (!gsiTokenClient) {
-        gsiTokenClient = oauth2.initTokenClient({
-          client_id: GOOGLE_OAUTH_CLIENT_ID,
-          scope: GOOGLE_SCOPES,
-          callback: () => {},
-          error_callback: () => {},
-        });
-      }
-      const timer = window.setTimeout(() => resolve(null), 10000);
-      gsiTokenClient.callback = (resp: any) => {
-        window.clearTimeout(timer);
-        if (resp?.access_token && !resp.error) {
-          resolve({ token: resp.access_token, expiresInSeconds: Number(resp.expires_in) || 3599 });
-        } else {
-          resolve(null);
-        }
-      };
-      gsiTokenClient.requestAccessToken({ prompt: '' });
-    } catch {
-      resolve(null);
-    }
-  });
-};
-
 export interface WorkspaceUser {
   id: string;
   email: string;
@@ -172,20 +105,16 @@ export const refreshGoogleTokenSilently = async (_userEmail?: string): Promise<s
       }
     } catch {}
 
-    // 3. The sign-in provider token eventually expires and Supabase does not
-    //    rotate it. Re-request a fresh Google access token silently through
-    //    Google Identity Services: with prompt:'' no popup appears while the
-    //    browser still has a Google session and the user's prior consent.
-    try {
-      const fresh = await requestGsiTokenSilently();
-      if (fresh) {
-        setCachedWorkspaceToken(fresh.token, fresh.expiresInSeconds);
-        return fresh.token;
-      }
-    } catch {}
-
-    // 4. Nothing better available - hand back whatever is cached so callers can
-    //    still decide between an interactive Connect Google and a clean error.
+    // 3. The provider token expires after ~1h and Supabase does not rotate it.
+    //    Browser-JS token renewal (Google Identity Services) is deliberately NOT
+    //    used: it requires this page's origin to be registered in the OAuth
+    //    client's "Authorized JavaScript origins" and otherwise fails with
+    //    Google's "Error 400: origin_mismatch" (the blocked sign-in screen).
+    //    Callers fall back to the Supabase OAuth redirect
+    //    (signInWithGoogleWorkspace -> requestGoogleAccessToken), which only
+    //    needs the already-authorized redirect URI and works from any origin.
+    //    Hand back whatever is cached so callers can still decide between an
+    //    interactive Connect Google redirect and a clean error.
     return getCachedWorkspaceToken();
   })().finally(() => {
     silentRefreshPromise = null;
