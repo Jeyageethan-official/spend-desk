@@ -1,6 +1,11 @@
 import { getSupabase, signInWithGoogleSupabase } from './supabase';
 
-export const GOOGLE_OAUTH_CLIENT_ID = '509348493041-ih637992a2lrmh6qdlvch1pkatpn70k0.apps.googleusercontent.com';
+// OAuth web client that Supabase uses for Google sign-in (project 377806164433).
+// It already holds the user's grant for the Sheets/Drive scopes from the login
+// consent, so a token request with prompt:'' is fully silent - no popup and no
+// consent screen. (The old5093... client had no grant and no authorized
+// JavaScript origins, which caused Google's "Error 400: origin_mismatch".)
+export const GOOGLE_OAUTH_CLIENT_ID = '377806164433-ftqbide3ul9jfenp00hcgveeonoifdjs.apps.googleusercontent.com';
 
 export const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/spreadsheets',
@@ -17,6 +22,115 @@ const USER_STORAGE_KEY = 'money_tracker_user_info';
 let cachedAccessToken: string | null = null;
 let silentRefreshPromise: Promise<string | null> | null = null;
 let interactiveAuthPromise: Promise<{ user: WorkspaceUser; accessToken: string }> | null = null;
+
+const GSI_SCRIPT_URL = 'https://accounts.google.com/gsi/client';
+const GSI_BLOCK_KEY = 'spenddesk_gsi_origin_blocked_at';
+let gsiLoadPromise: Promise<boolean> | null = null;
+let gsiTokenClient: any = null;
+let gsiLastErrorType: string | null = null;
+
+/**
+ * True when a recent GIS attempt failed with origin_mismatch/invalid_client:
+ * this page's origin is not in the OAuth client's "Authorized JavaScript
+ * origins". Retrying would only flash Google's blocked screen again, so the
+ * flag stops background attempts for a while (self-heals after 2 hours in
+ * case the console configuration was fixed meanwhile).
+ */
+const isGsiOriginBlocked = (): boolean => {
+  try {
+    const at = Number(localStorage.getItem(GSI_BLOCK_KEY) || '0');
+    return Boolean(at) && Date.now() - at < 2 * 60 * 60 * 1000;
+  } catch {
+    return false;
+  }
+};
+
+const markGsiOriginBlocked = () => {
+  try {
+    localStorage.setItem(GSI_BLOCK_KEY, String(Date.now()));
+  } catch {}
+};
+
+/** Clears the origin-block flag (called before deliberate user actions). */
+export const clearGsiOriginBlockFlag = () => {
+  try {
+    localStorage.removeItem(GSI_BLOCK_KEY);
+  } catch {}
+};
+
+/** Loads the Google Identity Services script once (for silent token renewal). */
+export const ensureGoogleGsiLoaded = async (): Promise<boolean> => {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return false;
+  if ((window as any).google?.accounts?.oauth2) return true;
+  if (gsiLoadPromise) return gsiLoadPromise;
+
+  gsiLoadPromise = new Promise<boolean>((resolve) => {
+    const existing = document.querySelector<HTMLScriptElement>(`script[src="${GSI_SCRIPT_URL}"]`);
+    const script = existing || document.createElement('script');
+    const finish = (ok: boolean) => resolve(ok && Boolean((window as any).google?.accounts?.oauth2));
+    script.addEventListener('load', () => finish(true));
+    script.addEventListener('error', () => finish(false));
+    if (!existing) {
+      script.src = GSI_SCRIPT_URL;
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
+    }
+  }).then((ok) => {
+    // Allow a retry later if the CDN load failed.
+    if (!ok) gsiLoadPromise = null;
+    return ok;
+  });
+
+  return gsiLoadPromise;
+};
+
+/**
+ * Requests a fresh Google access token WITHOUT any visible sign-in flow.
+ * With `prompt: ''` Google reuses the browser's existing Google session and
+ * the consent granted at sign-in, so neither a popup nor a consent screen
+ * appears in the normal case.
+ */
+const requestGsiTokenSilently = async (): Promise<{ token: string; expiresInSeconds: number } | null> => {
+  const loaded = await ensureGoogleGsiLoaded();
+  const oauth2 = (window as any).google?.accounts?.oauth2;
+  if (!loaded || !oauth2) return null;
+
+  return new Promise<{ token: string; expiresInSeconds: number } | null>((resolve) => {
+    try {
+      gsiLastErrorType = null;
+      if (!gsiTokenClient) {
+        gsiTokenClient = oauth2.initTokenClient({
+          client_id: GOOGLE_OAUTH_CLIENT_ID,
+          scope: GOOGLE_SCOPES,
+          callback: () => {},
+          error_callback: (err: any) => {
+            gsiLastErrorType = err?.type || 'unknown';
+          },
+        });
+      }
+      const timer = window.setTimeout(() => resolve(null), 10000);
+      gsiTokenClient.callback = (resp: any) => {
+        window.clearTimeout(timer);
+        if (resp?.access_token && !resp.error) {
+          resolve({ token: resp.access_token, expiresInSeconds: Number(resp.expires_in) || 3599 });
+        } else {
+          if (resp?.error === 'origin_mismatch' || resp?.error === 'invalid_client') markGsiOriginBlocked();
+          resolve(null);
+        }
+      };
+      gsiTokenClient.requestAccessToken({ prompt: '' });
+    } catch {
+      resolve(null);
+    }
+  }).then((result) => {
+    // GIS reports origin problems through error_callback rather than the token callback.
+    if (!result && (gsiLastErrorType === 'origin_mismatch' || gsiLastErrorType === 'invalid_client')) {
+      markGsiOriginBlocked();
+    }
+    return result;
+  });
+};
 
 export interface WorkspaceUser {
   id: string;
@@ -105,16 +219,29 @@ export const refreshGoogleTokenSilently = async (_userEmail?: string): Promise<s
       }
     } catch {}
 
-    // 3. The provider token expires after ~1h and Supabase does not rotate it.
-    //    Browser-JS token renewal (Google Identity Services) is deliberately NOT
-    //    used: it requires this page's origin to be registered in the OAuth
-    //    client's "Authorized JavaScript origins" and otherwise fails with
-    //    Google's "Error 400: origin_mismatch" (the blocked sign-in screen).
-    //    Callers fall back to the Supabase OAuth redirect
-    //    (signInWithGoogleWorkspace -> requestGoogleAccessToken), which only
-    //    needs the already-authorized redirect URI and works from any origin.
-    //    Hand back whatever is cached so callers can still decide between an
-    //    interactive Connect Google redirect and a clean error.
+    // 3. The provider token expires after ~1h and Supabase does not rotate it
+    //    (Supabase never stores Google's refresh token). Renew it silently via
+    //    Google Identity Services: with prompt:'' Google reuses the browser's
+    //    Google session AND the grant made at sign-in, so nothing visible
+    //    happens - completely silent renewal until the user signs out.
+    //    Requires this origin to be in the OAuth client's "Authorized
+    //    JavaScript origins"; if it is not, Google answers origin_mismatch -
+    //    we remember that and stop retrying instead of flashing the blocked
+    //    screen, and callers fall back to the Supabase OAuth redirect.
+    if (!isGsiOriginBlocked()) {
+      try {
+        const fresh = await requestGsiTokenSilently();
+        if (fresh) {
+          clearGsiOriginBlockFlag();
+          setCachedWorkspaceToken(fresh.token, fresh.expiresInSeconds);
+          return fresh.token;
+        }
+      } catch {}
+    }
+
+    // 4. Nothing better available - hand back whatever is cached so callers can
+    //    still decide between an interactive Connect Google redirect and a clean
+    //    error.
     return getCachedWorkspaceToken();
   })().finally(() => {
     silentRefreshPromise = null;

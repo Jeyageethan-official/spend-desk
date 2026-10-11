@@ -447,6 +447,23 @@ export default function App() {
     }
   }, [user?.email, accessToken]);
 
+  // Silent renewal watchdog: while the app is open, renew the Google token in
+  // the background before it expires, so Sheets/Drive never hit an "expired"
+  // state (until the user explicitly signs out).
+  useEffect(() => {
+    if (!user?.email) return;
+    const renewalTimer = window.setInterval(() => {
+      try {
+        if (isGoogleTokenExpired()) {
+          void refreshGoogleTokenSilently(user.email).then((newToken) => {
+            if (newToken) setAccessToken(newToken);
+          }).catch(() => {});
+        }
+      } catch {}
+    }, 5 * 60 * 1000);
+    return () => window.clearInterval(renewalTimer);
+  }, [user?.email]);
+
   // Network Connectivity State for Offline Mode & Auto-Sync
   const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true);
 

@@ -5,6 +5,7 @@ import {
   setCachedWorkspaceToken,
   isGoogleTokenExpired,
   refreshGoogleTokenSilently,
+  clearGsiOriginBlockFlag,
   GOOGLE_SCOPES 
 } from './workspaceAuth';
 import { sortTransactionsChronological, calculateRunningBalances } from './calculations';
@@ -19,8 +20,9 @@ import {
   parseSheetDateCell,
 } from './dashboardSheet';
 
-// Use the officially provisioned and authorized OAuth Client ID for this applet
-export const GOOGLE_OAUTH_CLIENT_ID = '509348493041-ih637992a2lrmh6qdlvch1pkatpn70k0.apps.googleusercontent.com';
+// The OAuth client Supabase uses for Google sign-in - it already holds the
+// user's Sheets/Drive grant, enabling fully silent token renewal.
+export const GOOGLE_OAUTH_CLIENT_ID = '377806164433-ftqbide3ul9jfenp00hcgveeonoifdjs.apps.googleusercontent.com';
 
 export const getGoogleClientId = (): string => {
   return GOOGLE_OAUTH_CLIENT_ID;
@@ -91,6 +93,10 @@ export const requestGoogleAccessToken = async (promptUser = true): Promise<strin
       return existing;
     }
   }
+
+  // A deliberate user tap gets one fresh chance at silent renewal even if
+  // background attempts were paused after an origin mismatch.
+  clearGsiOriginBlockFlag();
 
   // If token is expired or missing, try silent refresh first
   try {
