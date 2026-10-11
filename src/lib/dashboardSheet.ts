@@ -270,7 +270,9 @@ export const normalizeDashboardPeriod = (raw: unknown): DashboardPeriod => {
   if (s === 'this week' || s === 'week') return 'This week';
   if (s === 'this month' || s === 'month') return 'This month';
   if (s === 'custom') return 'Custom';
-  if (s === 'all time' || s === 'all' || s === '') return 'All time';
+  if (s === 'all time' || s === 'all') return 'All time';
+  // A never-set period cell (fresh sheet) starts on Today, not All time.
+  if (s === '') return 'Today';
   if (DASHBOARD_PERIODS.includes(raw as DashboardPeriod)) return raw as DashboardPeriod;
   return 'All time';
 };
@@ -338,11 +340,20 @@ const shortDate = (iso: string, currentYear: number): string => {
   return `${m[3]} ${MONTHS[monthIdx]}${yearPart}`;
 };
 
-const sparkBar = (value: number, max: number, color: string): { formula: string } => ({
-  formula:
-    `=SPARKLINE({${round2(value)},${round2(Math.max(max - value, 0))}},` +
-    `{"charttype","bar";"color1","${color}";"color2","${P.track}"})`,
-});
+const sparkBar = (value: number, max: number, color: string): { formula: string } => {
+  // SPARKLINE({0,0}) renders a FULL-width bar in Google Sheets, so a zero amount
+  // must draw the empty track instead of a filled bar.
+  if (!(value > 0) || !(max > 0)) {
+    return {
+      formula: `=SPARKLINE({0,1},{"charttype","bar";"color1","${P.track}";"color2","${P.track}"})`,
+    };
+  }
+  return {
+    formula:
+      `=SPARKLINE({${round2(value)},${round2(Math.max(max - value, 0))}},` +
+      `{"charttype","bar";"color1","${color}";"color2","${P.track}"})`,
+  };
+};
 
 const isoToSheetSerial = (iso: string): number | null => {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '');
@@ -563,7 +574,10 @@ export const buildDashboardLayout = (input: DashboardInput): DashboardLayout => 
   const kpiRow: Kpi[] = [
     {
       label: 'Cash balance',
-      value: { formula: '=SUMIF(Transactions!C:C, "IN", Transactions!E:E) - SUMIFS(Transactions!E:E, Transactions!C:C, "OUT", Transactions!G:G, "Cash")' },
+      // Follows the date filter like every other KPI: a "Today" filter with no
+      // transactions shows Rs 0 instead of the all-time balance. Floored at 0
+      // like the in-app running balance (excess shows under "Out of wallet").
+      value: { formula: '=IF(OR(C7="All time", F7=""), SUMIF(Transactions!C:C,"IN",Transactions!E:E) - SUMIFS(Transactions!E:E,Transactions!C:C,"OUT",Transactions!G:G,"Cash"), MAX(0, SUMIFS(Transactions!E:E,Transactions!C:C,"IN",Transactions!A:A,">="&F7,Transactions!A:A,"<="&H7) - SUMIFS(Transactions!E:E,Transactions!C:C,"OUT",Transactions!G:G,"Cash",Transactions!A:A,">="&F7,Transactions!A:A,"<="&H7)))' },
       sub: { formula: '=IF(B13<0, "Deficit — spending exceeds cash", IF(B13=0, "No cash on hand", IF(B13<1500, "Low cash", "Healthy")))' },
       accent: P.brandBright,
       valueColor: P.brand,

@@ -9,7 +9,6 @@ import {
   Check, 
   AlertCircle,
   Copy,
-  Download,
   FolderOpen,
   Link,
   Plus,
@@ -30,9 +29,7 @@ import {
   requestGoogleAccessToken,
   deleteUserSpreadsheet,
   DriveSpreadsheetItem,
-  GOOGLE_APPS_SCRIPT_TEMPLATE,
-  extractSpreadsheetId,
-  fetchSpreadsheetTitle
+  GOOGLE_APPS_SCRIPT_TEMPLATE
 } from '../lib/sheetsApi';
 import { 
   loadStoredWebhookUrl, 
@@ -91,8 +88,6 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
   const [isCreating, setIsCreating] = useState(false);
   const [deletingSheetId, setDeletingSheetId] = useState<string | null>(null);
   const [webhookInput, setWebhookInput] = useState(() => loadStoredWebhookUrl());
-  const [linkUrlInput, setLinkUrlInput] = useState('');
-  const [isLinkingUrl, setIsLinkingUrl] = useState(false);
   const [copiedScript, setCopiedScript] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
@@ -303,56 +298,6 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
     onNotification?.('Google Sheet disconnected.', 'info');
   };
 
-  const handleLinkSheetByUrl = async () => {
-    const raw = linkUrlInput.trim();
-    if (!raw) return;
-    const sheetId = extractSpreadsheetId(raw);
-    if (!sheetId) {
-      setErrorMsg('Invalid Google Sheet link or ID. Please paste a valid link like https://docs.google.com/spreadsheets/d/.../edit');
-      return;
-    }
-
-    setIsLinkingUrl(true);
-    setErrorMsg('');
-    setSuccessMsg('');
-
-    try {
-      let token = accessToken;
-      let title = 'Linked Google Sheet';
-
-      if (token && token !== 'local_token' && token.length > 20 && !token.startsWith('eyJ')) {
-        try {
-          title = await fetchSpreadsheetTitle(token, sheetId);
-        } catch {}
-      }
-
-      const meta: GoogleSheetMeta = {
-        id: sheetId,
-        name: title,
-        url: `https://docs.google.com/spreadsheets/d/${sheetId}/edit`,
-        lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      };
-
-      saveKnownSpreadsheet(meta, storageEmail);
-      onSetActiveSheet(meta);
-      setLinkUrlInput('');
-      setSuccessMsg(`Connected to "${title}"! Syncing records...`);
-      onNotification?.(`Connected to "${title}"!`, 'info');
-
-      try {
-        await onPushToSheet();
-        setSuccessMsg(`Connected to "${title}"! All records synced to sheet.`);
-        onNotification?.(`Synced records to "${title}"!`, 'success');
-      } catch (e: any) {
-        console.warn('Push on link error:', e);
-      }
-    } catch (err: any) {
-      setErrorMsg(err?.message || 'Could not connect spreadsheet.');
-    } finally {
-      setIsLinkingUrl(false);
-    }
-  };
-
   const handleDeleteDriveSheet = async (item: DriveSpreadsheetItem) => {
     if (!window.confirm(`Permanently delete "${item.name}" from Google Drive? This cannot be undone.`)) return;
     setDeletingSheetId(item.id);
@@ -444,15 +389,26 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
             </div>
 
             {activeSheet && (
-              <a
-                href={activeSheet.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="hidden sm:inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-slate-700 text-xs font-semibold hover:bg-slate-50 shadow-2xs transition-colors md:text-sm"
-              >
-                <span>Open Sheet</span>
-                <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
-              </a>
+              <div className="hidden sm:flex items-center gap-2">
+                <a
+                  href={activeSheet.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-slate-700 text-xs font-semibold hover:bg-slate-50 shadow-2xs transition-colors md:text-sm"
+                >
+                  <span>Open Sheet</span>
+                  <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
+                </a>
+                <button
+                  type="button"
+                  onClick={handleDisconnect}
+                  title="Disconnect Sheet"
+                  aria-label="Disconnect Sheet"
+                  className="inline-flex items-center justify-center p-2 rounded-xl bg-white border border-slate-200 text-rose-500 hover:text-rose-700 hover:bg-rose-50 hover:border-rose-200 shadow-2xs transition-colors cursor-pointer"
+                >
+                  <Unlink className="w-3.5 h-3.5" />
+                </button>
+              </div>
             )}
           </div>
 
@@ -584,25 +540,6 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                         </p>
                       </div>
 
-                      <div className="pt-1 flex items-center justify-between">
-                        <button
-                          type="button"
-                          onClick={handleDisconnect}
-                          className="text-xs font-semibold text-rose-600 hover:text-rose-700 flex items-center gap-1.5 cursor-pointer py-1 md:text-sm"
-                        >
-                          <Unlink className="w-3.5 h-3.5" />
-                          <span>Disconnect Sheet</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={onExportCSV}
-                          className="text-xs font-semibold text-slate-600 hover:text-slate-900 flex items-center gap-1.5 cursor-pointer py-1 md:text-sm"
-                        >
-                          <Download className="w-3.5 h-3.5 text-slate-500" />
-                          <span>Download CSV Backup</span>
-                        </button>
-                      </div>
                     </div>
                   ) : (
                     <div className="p-6 rounded-3xl bg-slate-50/70 border border-slate-200 text-center space-y-3">
@@ -645,33 +582,6 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                     </div>
                   </div>
 
-                  {/* Link Existing Sheet by URL / ID Block */}
-                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-3">
-                    <h4 className="font-bold text-xs text-slate-900 flex items-center gap-1.5 md:text-sm">
-                      <Link className="w-3.5 h-3.5 text-slate-600" />
-                      <span>Link Existing Google Sheet via URL or ID</span>
-                    </h4>
-                    <p className="text-[11px] text-slate-500 md:text-xs">
-                      Already have a spreadsheet? Paste its link or Spreadsheet ID below to connect it directly.
-                    </p>
-                    <div className="flex flex-col sm:flex-row gap-2">
-                      <input
-                        type="text"
-                        value={linkUrlInput}
-                        onChange={(e) => setLinkUrlInput(e.target.value)}
-                        placeholder="Paste https://docs.google.com/spreadsheets/d/.../edit"
-                        className="flex-1 px-3 py-2 rounded-xl border border-slate-300 bg-white text-xs font-medium text-slate-900 focus:outline-hidden md:text-sm"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleLinkSheetByUrl}
-                        disabled={isLinkingUrl || !linkUrlInput.trim()}
-                        className="px-4 py-2 bg-slate-900 hover:bg-black text-white font-bold text-xs rounded-xl shadow-2xs cursor-pointer disabled:opacity-40 whitespace-nowrap md:text-sm"
-                      >
-                        {isLinkingUrl ? 'Connecting...' : 'Connect Sheet'}
-                      </button>
-                    </div>
-                  </div>
                 </div>
               )}
 
