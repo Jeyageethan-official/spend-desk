@@ -240,15 +240,20 @@ export default function App() {
 
   const overallSummary = useMemo(() => calculateSummary(transactions, transactions), [transactions]);
 
-  // Default Filter State - always starts on 'all'
-  const DEFAULT_FILTER: FilterState = useMemo(() => ({
-    type: 'all',
-    startDate: '',
-    endDate: '',
-    category: 'All',
-    paymentMethod: 'All',
-    searchQuery: '',
-  }), []);
+  // Default Filter State - always starts on TODAY (the current date), on every
+  // app open. Never defaults to the all-time view; the midnight rollover above
+  // re-points the 'today' preset when the calendar day changes.
+  const DEFAULT_FILTER: FilterState = useMemo(() => {
+    const today = getLocalDateString();
+    return {
+      type: 'today',
+      startDate: today,
+      endDate: today,
+      category: 'All',
+      paymentMethod: 'All',
+      searchQuery: '',
+    };
+  }, []);
 
   type SectionTab = 'dashboard' | 'transactions' | 'analytics';
 

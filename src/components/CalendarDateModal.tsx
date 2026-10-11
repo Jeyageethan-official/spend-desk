@@ -195,43 +195,15 @@ export const CalendarDateModal: React.FC<CalendarDateModalProps> = ({
           })}
         </div>
 
-        {/* Text-only footer actions (All dates / Today / Done). "All dates" clears
-            the persistent header date so the wallet returns to the all-time view. */}
-        <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between px-1">
+        {/* Text-only footer action (Done) - the app always opens on the current date. */}
+        <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-end px-1">
           <button
             type="button"
-            onClick={() => {
-              setPickAnchor(null);
-              setTempStart('');
-              setTempEnd('');
-              onApply('all', '', '');
-              onClose();
-            }}
-            className="px-2 py-1.5 -ml-2 rounded-lg text-[15px] font-medium text-slate-500 hover:bg-slate-100 transition-colors cursor-pointer"
+            onClick={onClose}
+            className="px-3 py-1.5 -mr-1 rounded-lg text-[15px] font-bold text-emerald-600 hover:bg-emerald-50 transition-colors cursor-pointer"
           >
-            All dates
+            Done
           </button>
-          <div className="flex items-center gap-0.5">
-            <button
-              type="button"
-              onClick={() => {
-                setTempStart(todayStr);
-                setTempEnd(todayStr);
-                onApply('custom', todayStr, todayStr);
-                onClose();
-              }}
-              className="px-2 py-1.5 rounded-lg text-[15px] font-medium text-emerald-600 hover:bg-emerald-50 transition-colors cursor-pointer"
-            >
-              Today
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-3 py-1.5 -mr-1 rounded-lg text-[15px] font-bold text-emerald-600 hover:bg-emerald-50 transition-colors cursor-pointer"
-            >
-              Done
-            </button>
-          </div>
         </div>
       </div>
       ) : (
@@ -321,21 +293,8 @@ export const CalendarDateModal: React.FC<CalendarDateModalProps> = ({
           })}
         </div>
 
-        {/* Text-only footer actions (Today / Done) */}
-        <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between px-1">
-          <button
-            type="button"
-            onClick={() => {
-              setPickAnchor(null);
-              setTempStart(todayStr);
-              setTempEnd(todayStr);
-              onApply('custom', todayStr, todayStr);
-              onClose();
-            }}
-            className="px-2 py-1.5 -ml-2 rounded-lg text-[15px] font-medium text-emerald-600 hover:bg-emerald-50 transition-colors cursor-pointer"
-          >
-            Today
-          </button>
+        {/* Text-only footer action (Done) - the app always opens on the current date. */}
+        <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-end px-1">
           <button
             type="button"
             onClick={onClose}
