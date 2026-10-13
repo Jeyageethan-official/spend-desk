@@ -326,12 +326,25 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
             <div className="flex items-center justify-center relative max-w-xs mx-auto">
               <input
                 ref={amountInputRef}
-                type="number"
-                step="any"
+                type="text"
+                inputMode="decimal"
+                enterKeyHint="done"
+                pattern="[0-9]*\.?[0-9]*"
+                autoComplete="off"
                 required
                 placeholder="0.00"
                 value={amountStr}
-                onChange={(e) => setAmountStr(e.target.value)}
+                onChange={(e) => {
+                  // Keep only digits and a single decimal point for the mobile number pad
+                  const cleaned = e.target.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1');
+                  setAmountStr(cleaned);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleSubmit();
+                  }
+                }}
                 className={`w-48 text-3xl sm:text-4xl font-black bg-transparent text-center focus:outline-hidden [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
                   type === 'cash_added' 
                     ? 'text-emerald-600' 
@@ -428,8 +441,8 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
             </div>
           )}
 
-          {/* 4. Notes & Date Row */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {/* 4. Date & Payment Mode Row (side by side on mobile & tablet too) */}
+          <div className="grid grid-cols-2 gap-2">
             <div>
               <label className="text-[10px] font-bold uppercase text-slate-400 block mb-1 md:text-xs">
                 Date

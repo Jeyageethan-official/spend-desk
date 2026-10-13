@@ -131,7 +131,7 @@ export const DownloadRecordsModal: React.FC<DownloadRecordsModalProps> = ({
 
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
-      onNotification?.('Popup blocked. Please allow popups to view statement.', 'error');
+      onNotification?.('Popup blocked. Please allow popups to view the financial report.', 'error');
       return;
     }
 
@@ -139,7 +139,7 @@ export const DownloadRecordsModal: React.FC<DownloadRecordsModalProps> = ({
       <!DOCTYPE html>
       <html>
         <head>
-          <title>SpendDesk Financial Statement - ${titleLabel}</title>
+          <title>SpendDesk Financial Report - ${titleLabel}</title>
           <style>
             body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 32px; color: #0f172a; margin: 0; }
             .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #0e6245; padding-bottom: 16px; margin-bottom: 24px; }
@@ -163,7 +163,7 @@ export const DownloadRecordsModal: React.FC<DownloadRecordsModalProps> = ({
           <div class="header">
             <div>
               <h1 class="title">SpendDesk</h1>
-              <div class="subtitle">Financial Activity Statement · ${titleLabel}</div>
+              <div class="subtitle">Financial Activity Report · ${titleLabel}</div>
             </div>
             <div style="text-align: right; font-size: 12px; color: #64748b;">
               Generated: ${new Date().toLocaleDateString()}<br/>
@@ -224,8 +224,7 @@ export const DownloadRecordsModal: React.FC<DownloadRecordsModalProps> = ({
     `;
 
     printWindow.document.write(html);
-    printWindow.document.close();
-    onNotification?.('Generated statement. Use print dialog to save as PDF.', 'success');
+    printWindow.document.close();      onNotification?.('Generated financial report. Use print dialog to save as PDF.', 'success');
     onClose();
   };
 
@@ -299,7 +298,7 @@ export const DownloadRecordsModal: React.FC<DownloadRecordsModalProps> = ({
               >
                 <FileText className="w-4 h-4 shrink-0 text-[#0e6245]" />
                 <div>
-                  <span className="block text-xs font-bold leading-tight md:text-sm">PDF Statement</span>
+                  <span className="block text-xs font-bold leading-tight md:text-sm">PDF Financial Report</span>
                   <span className="text-[10px] text-slate-400 block mt-0.5 md:text-xs">Printable Report</span>
                 </div>
               </button>
@@ -391,7 +390,7 @@ export const DownloadRecordsModal: React.FC<DownloadRecordsModalProps> = ({
           >
             <Download className="w-4 h-4" />
             <span>
-              {format === 'csv' ? 'Download CSV Spreadsheet' : 'Generate PDF Statement'}
+              {format === 'csv' ? 'Download CSV Spreadsheet' : 'Generate Financial Report (PDF)'}
             </span>
           </button>
         </div>

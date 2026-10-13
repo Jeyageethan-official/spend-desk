@@ -894,7 +894,7 @@ export default function App() {
       time: sampleTime,
       paymentMethod: 'Cash',
       createdAt: Date.now(),
-    }, currency, overallSummary.currentCashBalance);
+    }, currency, calculateSummary(transactions, transactions.filter((t) => t && t.date === today)).currentCashBalance);
 
     const res = await sendTelegramAlert({
       ...testPayload,
@@ -1370,8 +1370,11 @@ export default function App() {
       }
 
       if (isNewTransaction && telegramSendActive) {
-        const currentSum = calculateSummary(updatedTxs, updatedTxs);
-        const telegramAlert = generateTransactionTelegramAlert(recordedTx, currency, currentSum.currentCashBalance);
+        // Telegram alerts report TODAY's balance only (not the all-time wallet balance).
+        const todayStr = getLocalDateString();
+        const todayTxs = updatedTxs.filter((t) => t && t.date === todayStr);
+        const todaySum = calculateSummary(updatedTxs, todayTxs);
+        const telegramAlert = generateTransactionTelegramAlert(recordedTx, currency, todaySum.currentCashBalance);
         void sendTelegramAlert({ ...telegramAlert, chatId: telegramAlertConfig.chatId })
           .then((res) => {
             if (res.queued) {
@@ -1384,13 +1387,15 @@ export default function App() {
             console.error('Telegram alert failed:', error);
           });
 
-        // Trigger Low Balance Alert if balance is below threshold
+        // Trigger Low Balance Alert if balance is below threshold.
+        // This check keeps the REAL all-time wallet balance (not the today-only view).
+        const walletSum = calculateSummary(updatedTxs, updatedTxs);
         if (
           budgetConfig.lowCashThreshold > 0 &&
-          currentSum.currentCashBalance <= budgetConfig.lowCashThreshold
+          walletSum.currentCashBalance <= budgetConfig.lowCashThreshold
         ) {
           const lowBalAlert = generateLowBalanceTelegramAlert(
-            currentSum.currentCashBalance,
+            walletSum.currentCashBalance,
             budgetConfig.lowCashThreshold,
             currency
           );
@@ -1488,8 +1493,10 @@ export default function App() {
     }
 
     if (telegramSendActive) {
-      const currentSum = calculateSummary(transactions, transactions);
-      const lendAlert = generateLendTelegramAlert(newItem, currency, currentSum.currentCashBalance);
+      // Alerts show TODAY's balance only, matching the transaction alerts.
+      const todayStr = getLocalDateString();
+      const todaySum = calculateSummary(transactions, transactions.filter((t) => t && t.date === todayStr));
+      const lendAlert = generateLendTelegramAlert(newItem, currency, todaySum.currentCashBalance);
       void sendTelegramAlert({ ...lendAlert, chatId: telegramAlertConfig.chatId })
         .then((res) => {
           if (!res.queued) {
@@ -1526,8 +1533,10 @@ export default function App() {
     if (changedItem) {
       markLendUpsert(changedItem, currentUserEmail);
       if (telegramSendActive) {
-        const currentSum = calculateSummary(transactions, transactions);
-        const lendAlert = generateLendTelegramAlert(changedItem, currency, currentSum.currentCashBalance);
+        // Alerts show TODAY's balance only, matching the transaction alerts.
+        const todayStr = getLocalDateString();
+        const todaySum = calculateSummary(transactions, transactions.filter((t) => t && t.date === todayStr));
+        const lendAlert = generateLendTelegramAlert(changedItem, currency, todaySum.currentCashBalance);
         void sendTelegramAlert({ ...lendAlert, chatId: telegramAlertConfig.chatId })
           .then((res) => {
             if (!res.queued) {

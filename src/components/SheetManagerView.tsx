@@ -389,7 +389,7 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
             </div>
 
             {activeSheet && (
-              <div className="hidden sm:flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0">
                 <a
                   href={activeSheet.url}
                   target="_blank"

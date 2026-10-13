@@ -701,7 +701,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       userProfile || { name: profileName, email: profileEmail, avatar: customAvatar || undefined },
       currency
     );
-    onNotification?.('Opening printable bank statement...', 'info');
+    onNotification?.('Opening printable financial report...', 'info');
   };
 
   // JSON Restore
@@ -1011,9 +1011,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                             <Database className="w-4 h-4" />
                           </div>
                           <div>
-                            <h4 className="font-bold text-xs text-slate-900 dark:text-white md:text-sm">Backup, PDF Statement &amp; Data</h4>
+                            <h4 className="font-bold text-xs text-slate-900 dark:text-white md:text-sm">Backup, Financial Report &amp; Data</h4>
                             <p className="text-[11px] text-slate-400 md:text-xs">
-                              PDF bank statement, CSV export, JSON backup &amp; restore
+                              PDF financial report, CSV export, JSON backup &amp; restore
                             </p>
                           </div>
                         </div>
@@ -1707,17 +1707,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             {currentSubPage === 'data' && (
               <div className="space-y-4 animate-in fade-in duration-150">
                 <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/90 dark:border-slate-800 p-5 shadow-xs space-y-4">
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">Export &amp; Bank Statement</h3>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">Export &amp; Financial Report</h3>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    {/* Official PDF Bank Statement */}
+                    {/* Official Financial Report (PDF) */}
                     <button
                       type="button"
                       onClick={handleExportPdfStatement}
                       className="p-4 rounded-2xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50/50 dark:bg-emerald-950/40 text-left hover:bg-emerald-100/60 dark:hover:bg-emerald-900/40 transition-colors cursor-pointer space-y-1 group"
                     >
                       <FileText className="w-5 h-5 text-emerald-700 dark:text-emerald-400 group-hover:scale-110 transition-transform" />
-                      <span className="font-bold text-xs text-slate-900 dark:text-white block md:text-sm">Official Bank Statement (PDF)</span>
+                      <span className="font-bold text-xs text-slate-900 dark:text-white block md:text-sm">Official Financial Report (PDF)</span>
                       <span className="text-[11px] text-slate-500 dark:text-slate-400 block md:text-xs">Printable detailed audit report</span>
                     </button>
 

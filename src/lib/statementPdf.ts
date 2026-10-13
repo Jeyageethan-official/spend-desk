@@ -51,7 +51,7 @@ export const generateBankStatementPdf = (
     <html>
       <head>
         <meta charset="utf-8" />
-        <title>Account Statement - ${userProfile.name}</title>
+        <title>Financial Report - ${userProfile.name}</title>
         <style>
           @media print {
             body { margin: 0; padding: 15px; -webkit-print-color-adjust: exact; }
@@ -195,18 +195,18 @@ export const generateBankStatementPdf = (
       </head>
       <body>
         <div className="no-print">
-          <button onclick="window.print()" class="btn-print">🖨️ Print / Save as PDF Statement</button>
+          <button onclick="window.print()" class="btn-print">🖨️ Print / Save as Financial Report (PDF)</button>
         </div>
 
         <div class="header">
           <div>
             <div class="brand">SpendDesk</div>
-            <div class="subtitle">Official Cash & Card Account Statement</div>
+            <div class="subtitle">Official Cash & Card Financial Report</div>
           </div>
           <div class="meta-box">
             <div><strong>Account Holder:</strong> ${userProfile.name}</div>
             <div><strong>Email:</strong> ${userProfile.email || 'Local User'}</div>
-            <div><strong>Statement Period:</strong> ${startDate} to ${endDate}</div>
+            <div><strong>Report Period:</strong> ${startDate} to ${endDate}</div>
             <div><strong>Generated On:</strong> ${nowStr}</div>
           </div>
         </div>
@@ -262,7 +262,7 @@ export const generateBankStatementPdf = (
         </table>
 
         <div class="footer">
-          SpendDesk Financial Tracker &bull; This statement is computer generated and verified by SpendDesk Local Engine.
+          SpendDesk Financial Tracker &bull; This financial report is computer generated and verified by SpendDesk Local Engine.
         </div>
       </body>
     </html>
