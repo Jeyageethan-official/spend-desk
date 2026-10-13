@@ -151,12 +151,15 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
     }
   }, [editingTransaction, defaultType, isOpen]);
 
-  // Focus input when modal opens
+  // Focus the amount field when the modal opens. `autoFocus` on the input
+  // handles the common case (mount happens inside the user's tap, so mobile
+  // Safari opens the number pad without a manual touch); this effect is the
+  // fallback for remount/edit flows - focused immediately, not on a timer,
+  // because iOS only raises the keyboard when focus happens right after the
+  // interaction rather than 100ms later.
   useEffect(() => {
     if (isOpen) {
-      setTimeout(() => {
-        amountInputRef.current?.focus();
-      }, 100);
+      amountInputRef.current?.focus();
     }
   }, [isOpen]);
 
@@ -326,6 +329,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
             <div className="flex items-center justify-center relative max-w-xs mx-auto">
               <input
                 ref={amountInputRef}
+                autoFocus
                 type="text"
                 inputMode="decimal"
                 enterKeyHint="done"
@@ -441,9 +445,12 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
             </div>
           )}
 
-          {/* 4. Date & Payment Mode Row (side by side on mobile & tablet too) */}
+          {/* 4. Date & Payment Mode Row (side by side on mobile & tablet too).
+              min-w-0 on both columns: mobile date inputs have a wide intrinsic
+              size that would otherwise overflow the 50% grid track and cover
+              the Cash/Card toggle. */}
           <div className="grid grid-cols-2 gap-2">
-            <div>
+            <div className="min-w-0">
               <label className="text-[10px] font-bold uppercase text-slate-400 block mb-1 md:text-xs">
                 Date
               </label>
@@ -453,12 +460,12 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                   type="date"
                   value={date}
                   onChange={(e) => setDate(e.target.value)}
-                  className="w-full pl-8 pr-2.5 py-2 text-xs text-left font-medium bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-hidden focus:bg-white md:text-sm"
+                  className="w-full min-w-0 pl-8 pr-2 py-2 text-xs text-left font-medium bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-hidden focus:bg-white md:text-sm md:pr-2.5"
                 />
               </div>
             </div>
 
-            <div>
+            <div className="min-w-0">
               <label className="text-[10px] font-bold uppercase text-slate-400 block mb-1 md:text-xs">
                 Payment Mode
               </label>

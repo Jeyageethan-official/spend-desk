@@ -366,20 +366,22 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
         {/* Main Card */}
         <div className="bg-white rounded-3xl border border-slate-200/90 shadow-xs flex flex-col min-h-[580px] overflow-hidden">
           {/* Connected spreadsheet header */}
-          <div className="p-5 border-b border-slate-100 bg-slate-50/80 flex items-center justify-between">
-            <div className="flex items-center gap-3">
+          <div className="p-5 border-b border-slate-100 bg-slate-50/80 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-3 min-w-0 flex-1">
               <div className="w-10 h-10 rounded-2xl bg-emerald-100/70 text-emerald-800 flex items-center justify-center shrink-0">
                 <FileSpreadsheet className="w-5 h-5" />
               </div>
-              <div>
-                <h3 className="text-sm font-bold text-slate-900">
+              <div className="min-w-0">
+                <h3 className="text-sm font-bold text-slate-900 leading-tight line-clamp-2">
                   {activeSheet ? activeSheet.name : 'No Spreadsheet Connected'}
                 </h3>
-                <p className="text-[11px] text-slate-500 mt-0.5 md:text-xs">
+                <p className="text-[10px] text-slate-500 mt-0.5 md:text-xs">
                   {activeSheet ? (
-                    <span className="text-emerald-700 font-semibold flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                      Connected · Last saved: {activeSheet.lastSyncedAt || 'Not yet'}
+                    <span className="text-emerald-700 font-semibold flex items-center gap-1.5 min-w-0">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                      <span className="truncate whitespace-nowrap">
+                        Connected · Last saved: {activeSheet.lastSyncedAt || 'Not yet'}
+                      </span>
                     </span>
                   ) : (
                     'Choose a Google Sheet as your personal backup ledger'
@@ -394,10 +396,13 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                   href={activeSheet.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-slate-700 text-xs font-semibold hover:bg-slate-50 shadow-2xs transition-colors md:text-sm"
+                  title="Open Sheet"
+                  aria-label="Open Sheet"
+                  className="inline-flex items-center justify-center gap-1 px-2 py-2 rounded-xl bg-white border border-slate-200 text-slate-700 text-xs font-semibold hover:bg-slate-50 shadow-2xs transition-colors md:px-3 md:py-1.5 md:text-sm"
                 >
-                  <span>Open Sheet</span>
-                  <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
+                  {/* Icon-only on phones so the title/status text keeps its room; label returns on md+ */}
+                  <span className="hidden md:inline">Open Sheet</span>
+                  <ExternalLink className="w-4 h-4 text-slate-400 md:w-3.5 md:h-3.5" />
                 </a>
                 <button
                   type="button"

@@ -2,9 +2,13 @@ import { getSupabase, signInWithGoogleSupabase } from './supabase';
 
 // OAuth web client that Supabase uses for Google sign-in (project 377806164433).
 // It already holds the user's grant for the Sheets/Drive scopes from the login
-// consent, so a token request with prompt:'' is fully silent - no popup and no
-// consent screen. (The old5093... client had no grant and no authorized
-// JavaScript origins, which caused Google's "Error 400: origin_mismatch".)
+// consent, so background renewal uses prompt:'none' - Google is FORCED to stay
+// fully silent: no popup, no account chooser, no consent screen, ever. When a
+// silent renewal is not possible Google returns an error to the callback
+// instead of showing UI, and we fall back to the cached token. Interactive
+// re-auth only ever happens on an explicit user tap. (The old 5093... client
+// had no grant and no authorized JavaScript origins, which caused Google's
+// "Error 400: origin_mismatch".)
 export const GOOGLE_OAUTH_CLIENT_ID = '377806164433-ftqbide3ul9jfenp00hcgveeonoifdjs.apps.googleusercontent.com';
 
 export const GOOGLE_SCOPES = [
@@ -87,9 +91,13 @@ export const ensureGoogleGsiLoaded = async (): Promise<boolean> => {
 
 /**
  * Requests a fresh Google access token WITHOUT any visible sign-in flow.
- * With `prompt: ''` Google reuses the browser's existing Google session and
- * the consent granted at sign-in, so neither a popup nor a consent screen
- * appears in the normal case.
+ * Uses `prompt: 'none'`, which GUARANTEES zero UI: Google must answer the
+ * token request silently from the browser's existing session + the consent
+ * granted at sign-in, and returns an error (login_required / access_denied /
+ * interaction_required) instead of ever opening an account-chooser popup or
+ * consent screen. (`prompt: ''` is NOT a silence guarantee - with several
+ * Google accounts signed into the browser it pops the account chooser on
+ * renewal, which is exactly what used to happen on page refresh.)
  */
 const requestGsiTokenSilently = async (): Promise<{ token: string; expiresInSeconds: number } | null> => {
   const loaded = await ensureGoogleGsiLoaded();
@@ -119,7 +127,9 @@ const requestGsiTokenSilently = async (): Promise<{ token: string; expiresInSeco
           resolve(null);
         }
       };
-      gsiTokenClient.requestAccessToken({ prompt: '' });
+      // prompt:'none' = hard zero-UI guarantee; errors resolve to null here
+      // instead of ever flashing Google sign-in screens during background renewal.
+      gsiTokenClient.requestAccessToken({ prompt: 'none' });
     } catch {
       resolve(null);
     }
@@ -221,9 +231,10 @@ export const refreshGoogleTokenSilently = async (_userEmail?: string): Promise<s
 
     // 3. The provider token expires after ~1h and Supabase does not rotate it
     //    (Supabase never stores Google's refresh token). Renew it silently via
-    //    Google Identity Services: with prompt:'' Google reuses the browser's
-    //    Google session AND the grant made at sign-in, so nothing visible
-    //    happens - completely silent renewal until the user signs out.
+    //    Google Identity Services with prompt:'none' - a hard guarantee of no
+    //    popup/chooser/consent UI during background refresh: Google either
+    //    reuses the browser session + sign-in grant silently, or returns an
+    //    error we can handle without any visible flow.
     //    Requires this origin to be in the OAuth client's "Authorized
     //    JavaScript origins"; if it is not, Google answers origin_mismatch -
     //    we remember that and stop retrying instead of flashing the blocked
