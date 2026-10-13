@@ -99,7 +99,7 @@ export const ensureGoogleGsiLoaded = async (): Promise<boolean> => {
  * Google accounts signed into the browser it pops the account chooser on
  * renewal, which is exactly what used to happen on page refresh.)
  */
-const requestGsiTokenSilently = async (): Promise<{ token: string; expiresInSeconds: number } | null> => {
+const requestGsiTokenSilently = async (userEmail?: string): Promise<{ token: string; expiresInSeconds: number } | null> => {
   const loaded = await ensureGoogleGsiLoaded();
   const oauth2 = (window as any).google?.accounts?.oauth2;
   if (!loaded || !oauth2) return null;
@@ -129,7 +129,13 @@ const requestGsiTokenSilently = async (): Promise<{ token: string; expiresInSeco
       };
       // prompt:'none' = hard zero-UI guarantee; errors resolve to null here
       // instead of ever flashing Google sign-in screens during background renewal.
-      gsiTokenClient.requestAccessToken({ prompt: 'none' });
+      // login_hint tells Google WHICH account owns the grant, so even with
+      // several Google accounts signed into the browser it can complete the
+      // silent renewal without asking the user to pick one.
+      gsiTokenClient.requestAccessToken({
+        prompt: 'none',
+        ...(userEmail ? { login_hint: userEmail } : {}),
+      });
     } catch {
       resolve(null);
     }
@@ -241,7 +247,7 @@ export const refreshGoogleTokenSilently = async (_userEmail?: string): Promise<s
     //    screen, and callers fall back to the Supabase OAuth redirect.
     if (!isGsiOriginBlocked()) {
       try {
-        const fresh = await requestGsiTokenSilently();
+        const fresh = await requestGsiTokenSilently(_userEmail);
         if (fresh) {
           clearGsiOriginBlockFlag();
           setCachedWorkspaceToken(fresh.token, fresh.expiresInSeconds);

@@ -404,6 +404,62 @@ export default function App() {
     };
   }, []);
 
+  // Stale-version self-heal: GitHub Pages caches index.html for ~10 minutes,
+  // so an old tab (or a phone's cached page) can keep running outdated code -
+  // including the previous GIS renewal that could pop Google's account
+  // chooser on refresh. Check for a newer deployed bundle periodically and
+  // whenever the tab regains focus; announce it once, then install it
+  // silently the next time the tab is hidden so the user is never
+  // interrupted and stale code can't keep running in the background.
+  useEffect(() => {
+    let reloadPending = false;
+    let updateAnnounced = false;
+
+    const getLoadedBundle = () =>
+      document.querySelector<HTMLScriptElement>('script[type="module"][src*="assets/index-"]')?.src || '';
+
+    const checkForUpdate = async () => {
+      const loadedBundle = getLoadedBundle();
+      if (!loadedBundle || reloadPending) return; // dev server has no hashed bundle
+      try {
+        const res = await fetch(new URL('index.html', document.baseURI).href, { cache: 'no-store' });
+        if (!res.ok) return;
+        const html = await res.text();
+        const match = html.match(/assets\/index-[^"']+\.js/);
+        if (!match) return;
+        const deployedBundle = new URL(match[0], res.url).href;
+        if (!deployedBundle || deployedBundle === loadedBundle) return;
+
+        const reloadWhenHidden = () => {
+          if (reloadPending || document.visibilityState !== 'hidden') return;
+          reloadPending = true;
+          window.location.reload();
+        };
+        document.addEventListener('visibilitychange', reloadWhenHidden);
+        if (document.visibilityState === 'hidden') {
+          reloadWhenHidden();
+          return;
+        }
+        if (!updateAnnounced) {
+          updateAnnounced = true;
+          showNotification('A new SpendDesk update is ready - it will install automatically when you switch tabs.', 'info');
+        }
+      } catch {
+        // Offline or blocked - the next interval/focus retries silently.
+      }
+    };
+
+    const interval = window.setInterval(() => void checkForUpdate(), 60000);
+    const onFocus = () => void checkForUpdate();
+    window.addEventListener('focus', onFocus);
+    const initialTimer = window.setTimeout(() => void checkForUpdate(), 8000);
+    return () => {
+      window.clearInterval(interval);
+      window.clearTimeout(initialTimer);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, []);
+
   // Process URL hash fragment on OAuth redirect return
   useEffect(() => {
     if (!window.location.hash) return;
