@@ -22,6 +22,7 @@ const TOKEN_KEY = 'money_tracker_access_token';
 const GOOGLE_TOKEN_KEY = 'spenddesk_google_token';
 const TOKEN_EXPIRY_KEY = 'spenddesk_token_expires_at';
 const USER_STORAGE_KEY = 'money_tracker_user_info';
+const LOGIN_HINT_KEY = 'spenddesk_google_login_hint';
 
 let cachedAccessToken: string | null = null;
 let silentRefreshPromise: Promise<string | null> | null = null;
@@ -206,6 +207,40 @@ export const setCachedWorkspaceToken = (token: string | null, expiresInSeconds?:
   }
 };
 
+/** Remembers which Google account owns this workspace's grant. */
+export const setGoogleLoginHint = (email?: string | null) => {
+  const value = (email || '').trim();
+  try {
+    if (value.includes('@')) localStorage.setItem(LOGIN_HINT_KEY, value);
+  } catch {}
+};
+
+/**
+ * Resolves the account that silent renewal must be pinned to.
+ *
+ * This is the single most important input for a zero-popup refresh: with four
+ * Google accounts signed into one browser, a `prompt:'none'` request sent with
+ * no `login_hint` gives Google nothing to disambiguate, and it answers with the
+ * "Choose an account" screen instead of a silent token. Every background
+ * renewal therefore always carries the signed-in user's email - whether the
+ * caller passed one or not.
+ */
+const resolveLoginHint = (explicit?: string): string | undefined => {
+  const clean = (v?: string | null): string | undefined => {
+    const s = (v || '').trim();
+    return s.includes('@') ? s : undefined;
+  };
+  const direct = clean(explicit);
+  if (direct) return direct;
+  try {
+    const saved = clean(localStorage.getItem(LOGIN_HINT_KEY));
+    if (saved) return saved;
+    const raw = localStorage.getItem(USER_STORAGE_KEY) || localStorage.getItem('money_tracker_user');
+    if (raw) return clean(JSON.parse(raw)?.email);
+  } catch {}
+  return undefined;
+};
+
 /**
  * Silent Google Identity Services token refresh (no user popup).
  * Keeps session, Sheets & Drive access alive indefinitely.
@@ -247,7 +282,7 @@ export const refreshGoogleTokenSilently = async (_userEmail?: string): Promise<s
     //    screen, and callers fall back to the Supabase OAuth redirect.
     if (!isGsiOriginBlocked()) {
       try {
-        const fresh = await requestGsiTokenSilently(_userEmail);
+        const fresh = await requestGsiTokenSilently(resolveLoginHint(_userEmail));
         if (fresh) {
           clearGsiOriginBlockFlag();
           setCachedWorkspaceToken(fresh.token, fresh.expiresInSeconds);
@@ -332,6 +367,8 @@ export const initWorkspaceAuth = (
           name: parsed.name || parsed.displayName || 'Google User',
           picture: parsed.picture || parsed.photoURL || undefined,
         };
+        // Keep silent renewal pinned to this account so Google never has to ask.
+        setGoogleLoginHint(user.email);
 
         // If we have an existing token, dispatch success immediately so the app renders seamlessly
         if (token && token !== 'local_token' && !token.startsWith('eyJ')) {
@@ -373,6 +410,7 @@ export const initWorkspaceAuth = (
   const handleAuthEvent = (e: Event) => {
     const detail = (e as CustomEvent).detail;
     if (detail?.user && detail?.token && onAuthSuccess) {
+      setGoogleLoginHint(detail.user?.email);
       onAuthSuccess(detail.user, detail.token);
     }
   };

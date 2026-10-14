@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient, User } from '@supabase/supabase-js';
+import { GOOGLE_GESTURE_BLOCKED_MESSAGE, hasFreshUserGesture } from './userGesture';
 
 const SUPABASE_URL_KEY = 'spenddesk_supabase_url';
 const SUPABASE_ANON_KEY = 'spenddesk_supabase_anon_key';
@@ -51,6 +52,14 @@ export interface AuthResult {
  * Sign in with Google using Supabase OAuth
  */
 export const signInWithGoogleSupabase = async (): Promise<AuthResult> => {
+  // Hard gate: Google's sign-in / account-chooser screen may only ever open
+  // because a human just tapped in SpendDesk. Background renewal, sheet sync
+  // and boot-restore paths reach this function too, so without this check they
+  // would navigate the tab away to Google on their own after the token expired.
+  if (!hasFreshUserGesture()) {
+    console.warn('Google sign-in blocked: no recent user gesture (background caller).');
+    return { success: false, errorMessage: GOOGLE_GESTURE_BLOCKED_MESSAGE };
+  }
   try {
     const supabase = getSupabase();
     // Dynamic redirect URL to ensure user stays on the exact current website domain (Live site vs Localhost)

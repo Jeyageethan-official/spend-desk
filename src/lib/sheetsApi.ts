@@ -109,8 +109,15 @@ export const requestGoogleAccessToken = async (promptUser = true): Promise<strin
     return existing || '';
   }
 
-  // Unified single sign-in flow via Supabase Google OAuth
-  await signInWithGoogleWorkspace();
+  // Interactive Google sign-in, user-tap paths only. signInWithGoogleSupabase
+  // refuses to navigate unless a real tap just happened, so a background caller
+  // silently keeps whatever token it has instead of dropping the tab onto
+  // Google's account chooser.
+  try {
+    await signInWithGoogleWorkspace();
+  } catch (err) {
+    console.warn('Interactive Google sign-in not started:', err);
+  }
   return existing || '';
 };
 
