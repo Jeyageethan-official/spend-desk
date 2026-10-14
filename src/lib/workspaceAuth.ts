@@ -1,4 +1,5 @@
 import { getSupabase, signInWithGoogleSupabase } from './supabase';
+import { hasFreshUserGesture } from './userGesture';
 
 // OAuth web client that Supabase uses for Google sign-in (project 377806164433).
 // It already holds the user's grant for the Sheets/Drive scopes from the login
@@ -271,16 +272,19 @@ export const refreshGoogleTokenSilently = async (_userEmail?: string): Promise<s
     } catch {}
 
     // 3. The provider token expires after ~1h and Supabase does not rotate it
-    //    (Supabase never stores Google's refresh token). Renew it silently via
-    //    Google Identity Services with prompt:'none' - a hard guarantee of no
-    //    popup/chooser/consent UI during background refresh: Google either
-    //    reuses the browser session + sign-in grant silently, or returns an
-    //    error we can handle without any visible flow.
+    //    (Supabase never stores Google's refresh token). The only client-side
+    //    renewal is Google Identity Services - but measured against the live
+    //    site, GIS calls window.open() on the OAuth endpoint EVERY time, even
+    //    with prompt:'none', so it always creates a Google window. A window is
+    //    still a popup, so this step is fenced behind a recorded user tap:
+    //    opening the app, the renewal watchdog and 401 retries can never put a
+    //    Google window on screen, while a tap-initiated sync renews silently
+    //    with prompt:'none' + login_hint (no chooser, no consent screen).
     //    Requires this origin to be in the OAuth client's "Authorized
     //    JavaScript origins"; if it is not, Google answers origin_mismatch -
     //    we remember that and stop retrying instead of flashing the blocked
     //    screen, and callers fall back to the Supabase OAuth redirect.
-    if (!isGsiOriginBlocked()) {
+    if (!isGsiOriginBlocked() && hasFreshUserGesture()) {
       try {
         const fresh = await requestGsiTokenSilently(resolveLoginHint(_userEmail));
         if (fresh) {

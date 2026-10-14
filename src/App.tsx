@@ -12,6 +12,7 @@ import {
   isGoogleTokenExpired,
   refreshGoogleTokenSilently,
 } from './lib/workspaceAuth';
+import { hasFreshUserGesture } from './lib/userGesture';
 import { 
   Transaction, 
   FilterState, 
@@ -514,18 +515,54 @@ export default function App() {
   // Silent renewal watchdog: while the app is open, renew the Google token in
   // the background before it expires, so Sheets/Drive never hit an "expired"
   // state (until the user explicitly signs out).
+  //
+  // Google Identity Services always opens a real window (verified against the
+  // live site - it calls window.open on the OAuth endpoint even with
+  // prompt:'none'), so a renewal on plain app open would be a popup. The
+  // watchdog therefore renews immediately only when a tap just happened, and
+  // otherwise arms a one-shot renewal for the next interaction: opening the app
+  // shows nothing, and sync repairs itself as soon as the user touches it.
   useEffect(() => {
     if (!user?.email) return;
-    const renewalTimer = window.setInterval(() => {
-      try {
-        if (isGoogleTokenExpired()) {
-          void refreshGoogleTokenSilently(user.email).then((newToken) => {
-            if (newToken) setAccessToken(newToken);
-          }).catch(() => {});
-        }
-      } catch {}
-    }, 5 * 60 * 1000);
-    return () => window.clearInterval(renewalTimer);
+    let disarm: (() => void) | null = null;
+
+    const renew = () => {
+      void refreshGoogleTokenSilently(user.email)
+        .then((newToken) => {
+          if (newToken) setAccessToken(newToken);
+        })
+        .catch(() => {});
+    };
+
+    const armRenewOnFirstGesture = () => {
+      if (disarm) return;
+      const fire = () => {
+        if (disarm) disarm();
+        renew();
+      };
+      window.addEventListener('pointerdown', fire, { once: true, capture: true });
+      window.addEventListener('keydown', fire, { once: true, capture: true });
+      disarm = () => {
+        window.removeEventListener('pointerdown', fire, { capture: true });
+        window.removeEventListener('keydown', fire, { capture: true });
+      };
+    };
+
+    const check = () => {
+      if (!isGoogleTokenExpired()) return;
+      if (hasFreshUserGesture()) {
+        renew();
+        return;
+      }
+      armRenewOnFirstGesture();
+    };
+
+    check();
+    const renewalTimer = window.setInterval(check, 5 * 60 * 1000);
+    return () => {
+      window.clearInterval(renewalTimer);
+      if (disarm) disarm();
+    };
   }, [user?.email]);
 
   // Network Connectivity State for Offline Mode & Auto-Sync
