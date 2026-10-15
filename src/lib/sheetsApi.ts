@@ -10,6 +10,7 @@ import {
 } from './workspaceAuth';
 import { sortTransactionsChronological, calculateRunningBalances } from './calculations';
 import { loadDeletedTxIds } from './storage';
+import { pushAuthTrace } from './authPhase';
 import {
   buildDashboardLayout,
   DashboardFilterState,
@@ -52,7 +53,7 @@ export const fetchGoogleWithAutoRefresh = async (
   // If token is missing, expired, or a Supabase JWT (starts with eyJ), silently refresh first
   if (!token || token.startsWith('eyJ') || isGoogleTokenExpired()) {
     try {
-      const fresh = await refreshGoogleTokenSilently();
+      const fresh = await refreshGoogleTokenSilently(undefined, 'google_api_preflight');
       if (fresh) token = fresh;
     } catch {}
   }
@@ -71,7 +72,7 @@ export const fetchGoogleWithAutoRefresh = async (
   if (res.status === 401) {
     // Attempt silent refresh and retry once
     try {
-      const refreshed = await refreshGoogleTokenSilently();
+      const refreshed = await refreshGoogleTokenSilently(undefined, 'google_api_401_retry');
       if (refreshed && refreshed !== token) {
         token = refreshed;
         res = await exec(refreshed);
@@ -86,7 +87,11 @@ export const fetchGoogleWithAutoRefresh = async (
  * Single Google OAuth Access Token Request.
  * Uses official Workspace OAuth integration flow.
  */
-export const requestGoogleAccessToken = async (promptUser = true): Promise<string> => {
+export const requestGoogleAccessToken = async (
+  promptUser = true,
+  caller = 'token_request'
+): Promise<string> => {
+  pushAuthTrace('token_request', { promptUser, caller });
   const existing = getStoredAccessToken();
   if (existing && existing !== 'local_token' && !existing.startsWith('eyJ') && existing.length > 20) {
     if (!isGoogleTokenExpired()) {
@@ -100,7 +105,7 @@ export const requestGoogleAccessToken = async (promptUser = true): Promise<strin
 
   // If token is expired or missing, try silent refresh first
   try {
-    const silentlyRefreshed = await refreshGoogleTokenSilently();
+    const silentlyRefreshed = await refreshGoogleTokenSilently(undefined, caller);
     if (silentlyRefreshed) return silentlyRefreshed;
   } catch {}
 
@@ -114,7 +119,7 @@ export const requestGoogleAccessToken = async (promptUser = true): Promise<strin
   // silently keeps whatever token it has instead of dropping the tab onto
   // Google's account chooser.
   try {
-    await signInWithGoogleWorkspace();
+    await signInWithGoogleWorkspace(caller);
   } catch (err) {
     console.warn('Interactive Google sign-in not started:', err);
   }

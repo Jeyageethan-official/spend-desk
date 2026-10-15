@@ -91,6 +91,14 @@ import {
 } from './lib/telegramAlert';
 import { getTelegramLinkStatus, TelegramLinkStatus } from './lib/telegramConnect';
 import { CloudWorkspace, fetchCloudWorkspace, saveCloudWorkspace, subscribeToCloudWorkspace, unsubscribeFromCloudWorkspace } from './lib/cloudWorkspace';
+import { AuthProgressOverlay } from './components/AuthProgressOverlay';
+import {
+  beginOAuthExchange,
+  failAuthPhase,
+  finishOAuthConnected,
+  getAuthPhase,
+  restorePersistedPhase,
+} from './lib/authPhase';
 import { clearPendingSync, hasPendingSync, loadPendingSync, markLendDelete, markLendUpsert, markSettingsDirty, markTransactionDelete, markTransactionUpsert, mergePendingWorkspace, stageWorkspaceForReplay } from './lib/pendingSync';
 import { clearSignedOutWorkspace, loadSignedOutWorkspace, saveSignedOutWorkspace } from './lib/signedOutWorkspace';
 import { Header } from './components/Header';
@@ -333,15 +341,41 @@ export default function App() {
 
   // Unified Auth Initialization: Google Workspace (Sheets & Drive) + Supabase
   useEffect(() => {
-    // Return-trip feedback: when the page just came back from Google's OAuth
-    // redirect, show "Completing sign-in…" while Supabase exchanges the code,
-    // instead of leaving a half-booted screen that feels frozen/slow.
+    // Return-trip handling: the page just came back from Google's OAuth
+    // redirect (or a normal boot). Restore the persisted auth phase so the
+    // overlay shows "Completing sign-in…" while Supabase exchanges the code,
+    // surface Google's error bounces (cancel/denied) instead of silently
+    // landing home, and clear stale confirmations from an earlier visit.
     let awaitingRedirectSignIn = false;
     try {
-      awaitingRedirectSignIn = sessionStorage.getItem('spenddesk_signin_pending') === '1';
+      restorePersistedPhase();
+      const pendingFlag = sessionStorage.getItem('spenddesk_signin_pending') === '1';
+      const bootPhase = getAuthPhase().phase;
+      awaitingRedirectSignIn = pendingFlag || bootPhase === 'redirecting' || bootPhase === 'exchanging';
       if (awaitingRedirectSignIn) {
-        sessionStorage.removeItem('spenddesk_signin_pending');
-        showNotification('Completing sign-in…', 'info');
+        // Overlay takes over: "Completing sign-in…" until the session lands,
+        // with a 25s watchdog that turns a stuck exchange into a clear error.
+        beginOAuthExchange();
+      }
+      // (Stale connected/error feedback is expired by restorePersistedPhase's
+      // TTL, and the overlay auto-clears a fresh "Signed in" confirmation.)
+      // Google can bounce back with #error=access_denied (user cancelled) or
+      // other OAuth errors - show them instead of quietly loading the app.
+      const searchParams = new URLSearchParams(window.location.search);
+      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+      const oauthError = searchParams.get('error') || hashParams.get('error');
+      if (oauthError && awaitingRedirectSignIn) {
+        const description =
+          searchParams.get('error_description') || hashParams.get('error_description') || oauthError;
+        failAuthPhase(
+          oauthError === 'access_denied'
+            ? 'Google sign-in was cancelled. Your local data is untouched - retry anytime.'
+            : `Google sign-in failed: ${description}`
+        );
+        awaitingRedirectSignIn = false;
+        try {
+          window.history.replaceState(null, '', window.location.pathname + window.location.search);
+        } catch {}
       }
     } catch {}
 
@@ -349,6 +383,8 @@ export default function App() {
     const unsubWorkspace = initWorkspaceAuth(
       (wsUser, token) => {
         const email = wsUser.email ? wsUser.email.trim().toLowerCase() : '';
+        // Session landed while the overlay was showing a phase → show "Signed in".
+        finishOAuthConnected(wsUser.email || undefined);
         setUser({
           displayName: wsUser.name,
           email: wsUser.email,
@@ -378,6 +414,7 @@ export default function App() {
       (authedUser, token) => {
         const email = authedUser.email ? authedUser.email.trim().toLowerCase() : '';
         setUser(authedUser);
+        finishOAuthConnected(authedUser.email || undefined);
         if (awaitingRedirectSignIn) {
           awaitingRedirectSignIn = false;
           showNotification(email ? `Signed in as ${email}` : 'Signed in successfully.', 'success');
@@ -1086,7 +1123,7 @@ export default function App() {
     if (!hasGoogleSheetsToken) {
       if (!options.interactive) return;
       try {
-        token = await requestGoogleAccessToken();
+        token = await requestGoogleAccessToken(true, 'sheet_push_interactive');
         setAccessToken(token);
       } catch (error: any) {
         if (!options.silent) showNotification(error?.message || 'Google Sheet permission is required.', 'error');
@@ -1169,7 +1206,7 @@ export default function App() {
       if (is401) {
         if (options.interactive) {
           try {
-            const fresh = await requestGoogleAccessToken(true);
+            const fresh = await requestGoogleAccessToken(true, 'sheet_pull_401_retry');
             if (fresh) {
               setAccessToken(fresh);
               await handlePullFromSheet(sId, fresh, { interactive: false, silent: options.silent });
@@ -1265,18 +1302,21 @@ export default function App() {
     showNotification(`Deleted ${txIds.length} transactions.`, 'info');
   };
 
-  // Unified Single Sign-In with Google via Supabase OAuth: Single redirect to Gmail account chooser
+  // Unified Single Sign-In with Google via Supabase OAuth: Single redirect to Gmail account chooser.
+  // The AuthProgressOverlay (not a toast) now carries the "Redirecting →
+  // Completing → Signed in / error" story, with this caller as the cause.
   const handleSignIn = async () => {
     try {
-      showNotification('Redirecting to Google Sign-In...', 'info');
-      const res = await signInWithGoogleSupabase();
+      const res = await signInWithGoogleSupabase('Sign-in button');
       if (!res.success && res.errorMessage) {
+        failAuthPhase(res.errorMessage);
         showNotification('Google Sign-In notice: ' + res.errorMessage, 'error');
       }
     } catch (err: any) {
       console.warn('Google Sign-In Exception:', err);
       const msg = String(err?.message || err);
       if (!msg.includes('closed') && !msg.includes('cancelled')) {
+        failAuthPhase(msg);
         showNotification('Google Sign-In notice: ' + msg, 'error');
       }
     }
@@ -1352,7 +1392,7 @@ export default function App() {
         return false;
       }
       try {
-        const freshToken = await requestGoogleAccessToken(true);
+        const freshToken = await requestGoogleAccessToken(true, 'sheet_push_401_retry');
         if (freshToken && !freshToken.startsWith('eyJ') && freshToken !== 'local_token' && freshToken.length > 20) {
           sheetToken = freshToken;
           setAccessToken(freshToken);
@@ -2294,7 +2334,7 @@ export default function App() {
                     try {
                       let token = accessToken;
                       if (!token || token === 'local_token' || token.startsWith('eyJ')) {
-                        token = await requestGoogleAccessToken(false).catch(() => '');
+                        token = await requestGoogleAccessToken(false, 'sheet_sync_silent').catch(() => '');
                       }
                       if (!token) return; // tombstones already guard the re-import
                       await overwriteTransactionsInSheet(token, sheetId, [], []).catch(console.warn);
@@ -2557,6 +2597,9 @@ export default function App() {
         onConfirm={confirmDelete}
         onCancel={() => setDeleteCandidate(null)}
       />
+
+      {/* Google sign-in phase overlay: redirecting → exchanging → connected / error */}
+      <AuthProgressOverlay onRetry={() => { void handleSignIn(); }} />
     </div>
   );
 }

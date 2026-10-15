@@ -1,5 +1,7 @@
 import { getSupabase, signInWithGoogleSupabase } from './supabase';
 import { hasFreshUserGesture } from './userGesture';
+import { pushAuthTrace } from './authPhase';
+import { fetchSheetsTokenFromServer } from './sheetsToken';
 
 // OAuth web client that Supabase uses for Google sign-in (project 377806164433).
 // It already holds the user's grant for the Sheets/Drive scopes from the login
@@ -134,6 +136,7 @@ const requestGsiTokenSilently = async (userEmail?: string): Promise<{ token: str
       // login_hint tells Google WHICH account owns the grant, so even with
       // several Google accounts signed into the browser it can complete the
       // silent renewal without asking the user to pick one.
+      pushAuthTrace('gis_silent_token_request', { prompt: 'none', hint: userEmail || '(none)' });
       gsiTokenClient.requestAccessToken({
         prompt: 'none',
         ...(userEmail ? { login_hint: userEmail } : {}),
@@ -246,10 +249,14 @@ const resolveLoginHint = (explicit?: string): string | undefined => {
  * Silent Google Identity Services token refresh (no user popup).
  * Keeps session, Sheets & Drive access alive indefinitely.
  */
-export const refreshGoogleTokenSilently = async (_userEmail?: string): Promise<string | null> => {
+export const refreshGoogleTokenSilently = async (
+  _userEmail?: string,
+  caller = 'background'
+): Promise<string | null> => {
   if (silentRefreshPromise) return silentRefreshPromise;
 
   silentRefreshPromise = (async () => {
+    pushAuthTrace('silent_refresh_start', { caller });
     // 1. A still-valid cached token is the best refresh - reuse it.
     const cached = getCachedWorkspaceToken();
     if (cached && !isGoogleTokenExpired()) return cached;
@@ -271,7 +278,21 @@ export const refreshGoogleTokenSilently = async (_userEmail?: string): Promise<s
       }
     } catch {}
 
-    // 3. The provider token expires after ~1h and Supabase does not rotate it
+    // 3. BACKEND REFRESH (P2s): our `sheets-token` edge function trades
+    //    Google's stored offline refresh token for a fresh access token.
+    //    This needs NO Google UI at all - no popup, no redirect, no gesture -
+    //    so it is the path that makes "sign in once, stay connected for
+    //    months" real. Falls through to step 4 when the function/secret/table
+    //    is not deployed yet, keeping today's behaviour as the fallback.
+    try {
+      const fromServer = await fetchSheetsTokenFromServer();
+      if (fromServer?.token) {
+        setCachedWorkspaceToken(fromServer.token, fromServer.expiresInSeconds);
+        return fromServer.token;
+      }
+    } catch {}
+
+    // 4. The provider token expires after ~1h and Supabase does not rotate it
     //    (Supabase never stores Google's refresh token). The only client-side
     //    renewal is Google Identity Services - but measured against the live
     //    site, GIS calls window.open() on the OAuth endpoint EVERY time, even
@@ -295,7 +316,7 @@ export const refreshGoogleTokenSilently = async (_userEmail?: string): Promise<s
       } catch {}
     }
 
-    // 4. Nothing better available - hand back whatever is cached so callers can
+    // 5. Nothing better available - hand back whatever is cached so callers can
     //    still decide between an interactive Connect Google redirect and a clean
     //    error.
     return getCachedWorkspaceToken();
@@ -330,13 +351,15 @@ export const fetchGoogleUserInfo = async (accessToken: string): Promise<{
  * Single Sign-In with Google via Supabase OAuth.
  * Performs a single clean redirect displaying the user's Gmail account chooser list.
  */
-export const signInWithGoogleWorkspace = async (): Promise<{ user: WorkspaceUser; accessToken: string }> => {
+export const signInWithGoogleWorkspace = async (
+  caller = 'Connect Google button'
+): Promise<{ user: WorkspaceUser; accessToken: string }> => {
   if (interactiveAuthPromise) {
     return interactiveAuthPromise;
   }
 
   interactiveAuthPromise = (async () => {
-    const res = await signInWithGoogleSupabase();
+    const res = await signInWithGoogleSupabase(caller);
     if (!res.success && res.errorMessage) {
       throw new Error(res.errorMessage);
     }

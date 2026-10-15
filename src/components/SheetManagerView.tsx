@@ -188,7 +188,7 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
       let token = accessToken;
 
       if (!token || token === 'local_token' || token.length < 30 || token.startsWith('eyJ')) {
-        token = await requestGoogleAccessToken();
+        token = await requestGoogleAccessToken(true, 'sheet_manager_create');
       }
 
       let created;
@@ -204,7 +204,7 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
           errStr.includes('PERMISSION_DENIED')
         ) {
           try { localStorage.removeItem('money_tracker_access_token'); } catch (e) {}
-          token = await requestGoogleAccessToken();
+          token = await requestGoogleAccessToken(true, 'sheet_manager_create_retry');
           created = await createMoneyTrackerSpreadsheet(token, title);
         } else {
           throw err;
@@ -304,7 +304,7 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
     setErrorMsg('');
     try {
       let token = accessToken;
-      if (!token || token === 'local_token' || token.startsWith('eyJ')) token = await requestGoogleAccessToken();
+      if (!token || token === 'local_token' || token.startsWith('eyJ')) token = await requestGoogleAccessToken(true, 'sheet_manager_delete');
       await deleteUserSpreadsheet(token, item.id);
       removeKnownSpreadsheet(item.id, storageEmail);
       setSpreadsheets((current) => current.filter((sheet) => sheet.id !== item.id));

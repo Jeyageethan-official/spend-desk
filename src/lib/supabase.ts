@@ -1,5 +1,6 @@
 import { createClient, SupabaseClient, User } from '@supabase/supabase-js';
 import { GOOGLE_GESTURE_BLOCKED_MESSAGE, hasFreshUserGesture } from './userGesture';
+import { beginGoogleRedirect, pushAuthTrace } from './authPhase';
 
 const SUPABASE_URL_KEY = 'spenddesk_supabase_url';
 const SUPABASE_ANON_KEY = 'spenddesk_supabase_anon_key';
@@ -51,13 +52,14 @@ export interface AuthResult {
 /**
  * Sign in with Google using Supabase OAuth
  */
-export const signInWithGoogleSupabase = async (): Promise<AuthResult> => {
+export const signInWithGoogleSupabase = async (caller = 'Sign-in button'): Promise<AuthResult> => {
   // Hard gate: Google's sign-in / account-chooser screen may only ever open
   // because a human just tapped in SpendDesk. Background renewal, sheet sync
   // and boot-restore paths reach this function too, so without this check they
   // would navigate the tab away to Google on their own after the token expired.
   if (!hasFreshUserGesture()) {
     console.warn('Google sign-in blocked: no recent user gesture (background caller).');
+    pushAuthTrace('oauth_blocked_no_gesture', { caller });
     return { success: false, errorMessage: GOOGLE_GESTURE_BLOCKED_MESSAGE };
   }
   try {
@@ -90,9 +92,11 @@ export const signInWithGoogleSupabase = async (): Promise<AuthResult> => {
     }
 
     if (data?.url) {
-      // Let the app show "Completing sign-in…" the instant Google redirects
-      // back, instead of a half-booted screen while the code exchange runs.
-      try { sessionStorage.setItem('spenddesk_signin_pending', '1'); } catch {}
+      // Mark the round-trip in-flight BEFORE leaving: the overlay shows
+      // "Redirecting to Google…" with the caller as the cause, and the return
+      // trip flips straight into "Completing sign-in…" instead of a blank boot.
+      beginGoogleRedirect(caller);
+      pushAuthTrace('oauth_navigate', { caller });
       window.location.href = data.url;
     }
 
@@ -165,11 +169,52 @@ export const signUpWithEmailSupabase = async (email: string, password: string): 
 };
 
 /**
+ * Store Google's offline refresh token server-side (RLS-scoped, one row per
+ * user) so the `sheets-token` edge function can mint fresh Sheets/Drive access
+ * tokens with ZERO Google UI - no popup, no redirect, ever. This is what makes
+ * "sign in once, stay signed in for months" possible: the browser never needs
+ * to talk to Google again after the initial consent.
+ */
+export const persistProviderRefreshToken = (userId: string, refreshToken?: string | null): void => {
+  if (!userId || !refreshToken || refreshToken.length < 10) return;
+  try {
+    const supabase = getSupabase();
+    void supabase
+      .from('google_refresh_tokens')
+      .upsert(
+        { user_id: userId, refresh_token: refreshToken, updated_at: new Date().toISOString() },
+        { onConflict: 'user_id' }
+      )
+      .then(
+        ({ error }) => {
+          if (error) {
+            // Table not migrated yet (or offline) - GIS fallback still covers us.
+            pushAuthTrace('google_refresh_token_store_failed', { reason: error.message });
+          } else {
+            pushAuthTrace('google_refresh_token_stored', {});
+          }
+        },
+        () => {}
+      );
+  } catch {}
+};
+
+/**
  * Sign out user
  */
 export const signOutSupabase = async () => {
   try {
     const supabase = getSupabase();
+    // Drop the stored Google refresh token FIRST (while our session JWT is
+    // still valid, so RLS lets us delete our own row): signing out must fully
+    // disconnect Google, not leave a live credential behind on the server.
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user?.id) {
+        await supabase.from('google_refresh_tokens').delete().eq('user_id', session.user.id);
+        pushAuthTrace('google_refresh_token_deleted', {});
+      }
+    } catch {}
     // Default Supabase sign-out revokes every session for this account. SpendDesk
     // deliberately signs out this browser/device only; other signed-in devices
     // keep their own active session and continue receiving realtime updates.
@@ -219,6 +264,11 @@ export const initSupabaseAuth = (
           localStorage.setItem('spenddesk_token_expires_at', String(Date.now() + 3540 * 1000));
         } catch {}
       }
+      // P2s: hand Google's offline refresh token to our backend once, so all
+      // future token needs are answered server-side with no Google UI.
+      if (session.provider_refresh_token) {
+        persistProviderRefreshToken(session.user.id, session.provider_refresh_token);
+      }
       try {
         localStorage.setItem(USER_STORAGE_KEY, JSON.stringify({
           id: u.id,
@@ -250,6 +300,11 @@ export const initSupabaseAuth = (
           localStorage.setItem('spenddesk_google_token', session.provider_token);
           localStorage.setItem('spenddesk_token_expires_at', String(Date.now() + 3540 * 1000));
         } catch {}
+      }
+      // P2s: hand Google's offline refresh token to our backend once, so all
+      // future token needs are answered server-side with no Google UI.
+      if (session.provider_refresh_token) {
+        persistProviderRefreshToken(session.user.id, session.provider_refresh_token);
       }
       try {
         localStorage.setItem(USER_STORAGE_KEY, JSON.stringify({
