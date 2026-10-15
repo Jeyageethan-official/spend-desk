@@ -49,6 +49,18 @@ export const mergePendingWorkspace = (remote: CloudWorkspace, local: CloudWorksp
     ...(pending.settingsDirty ? local : remote),
     transactions: Array.from(txs.values()).sort((a, b) => b.createdAt - a.createdAt),
     lendItems: Array.from(lends.values()).sort((a, b) => b.createdAt - a.createdAt),
+    // Tombstones from every source ride along so offline deletes propagate to
+    // all devices instead of being re-imported from remote or a stale tab.
+    deletedTxIds: Array.from(new Set([
+      ...(remote.deletedTxIds || []),
+      ...(local.deletedTxIds || []),
+      ...pending.transactionDeletes,
+    ])),
+    deletedLendIds: Array.from(new Set([
+      ...(remote.deletedLendIds || []),
+      ...(local.deletedLendIds || []),
+      ...pending.lendDeletes,
+    ])),
     version: 1,
     updatedAt,
   };

@@ -90,6 +90,9 @@ export const signInWithGoogleSupabase = async (): Promise<AuthResult> => {
     }
 
     if (data?.url) {
+      // Let the app show "Completing sign-in…" the instant Google redirects
+      // back, instead of a half-booted screen while the code exchange runs.
+      try { sessionStorage.setItem('spenddesk_signin_pending', '1'); } catch {}
       window.location.href = data.url;
     }
 

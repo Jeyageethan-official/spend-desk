@@ -107,6 +107,8 @@ export interface LendItem {
   dueDate?: string;
   phone?: string;
   settledAt?: string;
+  /** Auto-created wallet entry linked to this settle (removed if un-settled). */
+  settlementTxId?: string;
   createdAt: number;
 }
 

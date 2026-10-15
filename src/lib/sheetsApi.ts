@@ -1237,7 +1237,6 @@ export const overwriteTransactionsInSheet = async (
   }
 
   const sorted = sortTransactionsChronological(transactions);
-  const runningBalances = calculateRunningBalances(sorted);
   const safeLends = [...(lendItems || [])];
 
   // Group transactions chronologically by date
@@ -1254,6 +1253,11 @@ export const overwriteTransactionsInSheet = async (
 
   txsByDate.forEach((dayTxs, dateStr) => {
     const dateHeader = formatDateToSheetHeader(dateStr);
+
+    // Per-day balance: each date starts its own running cash balance, so the
+    // Balance column shows THAT day's movement only instead of one all-time
+    // figure carried down every row.
+    const dayRunning = calculateRunningBalances(dayTxs);
 
     // Side lend column for the date banner row if available (Date, Person, Reason, Amount)
     const lendBanner = lendIdx < safeLends.length ? safeLends[lendIdx++] : null;
@@ -1277,7 +1281,7 @@ export const overwriteTransactionsInSheet = async (
 
     // Data rows for transactions on this date
     dayTxs.forEach((tx) => {
-      const rb = runningBalances.get(tx.id);
+      const rb = dayRunning.get(tx.id);
       const bal = rb ? rb.balance : 0;
       const oow = rb ? rb.outOfWallet : 0;
       const isCard = tx.paymentMethod === 'Card' || tx.paymentMethod === 'Bank Transfer' || tx.type === 'card_expense';

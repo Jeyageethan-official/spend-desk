@@ -54,6 +54,10 @@ import {
   markTxIdDeleted,
   markTxIdsDeleted,
   unmarkTxIdDeleted,
+  loadLendDeletedIds,
+  markLendIdsDeleted,
+  unmarkLendIdDeleted,
+  exportFullBackupJson,
   saveLastUserEmail,
   loadLastUserEmail
 } from './lib/storage';
@@ -329,6 +333,18 @@ export default function App() {
 
   // Unified Auth Initialization: Google Workspace (Sheets & Drive) + Supabase
   useEffect(() => {
+    // Return-trip feedback: when the page just came back from Google's OAuth
+    // redirect, show "Completing sign-in…" while Supabase exchanges the code,
+    // instead of leaving a half-booted screen that feels frozen/slow.
+    let awaitingRedirectSignIn = false;
+    try {
+      awaitingRedirectSignIn = sessionStorage.getItem('spenddesk_signin_pending') === '1';
+      if (awaitingRedirectSignIn) {
+        sessionStorage.removeItem('spenddesk_signin_pending');
+        showNotification('Completing sign-in…', 'info');
+      }
+    } catch {}
+
     // 1. Listen for Google Workspace Auth
     const unsubWorkspace = initWorkspaceAuth(
       (wsUser, token) => {
@@ -362,6 +378,10 @@ export default function App() {
       (authedUser, token) => {
         const email = authedUser.email ? authedUser.email.trim().toLowerCase() : '';
         setUser(authedUser);
+        if (awaitingRedirectSignIn) {
+          awaitingRedirectSignIn = false;
+          showNotification(email ? `Signed in as ${email}` : 'Signed in successfully.', 'success');
+        }
         if (token && (!accessToken || accessToken === 'local_token' || accessToken.startsWith('eyJ'))) {
           setAccessToken(token);
         }
@@ -652,7 +672,8 @@ export default function App() {
     const rawTxs = loadStoredTransactions(scope);
     const deletedIds = loadDeletedTxIds(scope);
     const initialTxs = sanitizeTransactions(rawTxs.filter((t) => !deletedIds.has(t.id)));
-    const initialLends = loadStoredLendItems(scope);
+    const lendTombstones = loadLendDeletedIds(scope);
+    const initialLends = loadStoredLendItems(scope).filter((l) => !lendTombstones.has(l.id));
 
     setTransactions(initialTxs);
     latestStateRef.current.transactions = initialTxs;
@@ -787,6 +808,10 @@ export default function App() {
       profile: s.userProfile,
       currency: s.currency,
       dailyRefresh: s.dailyRefresh,
+      // Tombstones ride along with every push so a delete performed here is
+      // never re-applied from a device that still holds the old record.
+      deletedTxIds: Array.from(loadDeletedTxIds(s.currentUserEmail)),
+      deletedLendIds: Array.from(loadLendDeletedIds(s.currentUserEmail)),
     };
   }, []);
 
@@ -810,12 +835,28 @@ export default function App() {
     const remoteTxs = sanitizeTransactions(Array.isArray(workspace.transactions) ? workspace.transactions : []);
     const remoteLends = Array.isArray(workspace.lendItems) ? workspace.lendItems : [];
 
+    // Merge the remote tombstones into the local lists FIRST: they are the
+    // shared memory of what was deleted, so records removed on any device can
+    // never be resurrected by a stale push or a sheet re-import here.
+    if (Array.isArray(workspace.deletedTxIds) && workspace.deletedTxIds.length > 0) {
+      markTxIdsDeleted(workspace.deletedTxIds, scope);
+    }
+    if (Array.isArray(workspace.deletedLendIds) && workspace.deletedLendIds.length > 0) {
+      markLendIdsDeleted(workspace.deletedLendIds, scope);
+    }
     const deletedIds = loadDeletedTxIds(scope);
-    const filteredRemoteTxs = remoteTxs.filter((t) => !deletedIds.has(t.id));
+    const deletedLendIds = loadLendDeletedIds(scope);
 
-    // Never let an empty remote cloud wipe local transactions
+    const filteredRemoteTxs = remoteTxs.filter((t) => !deletedIds.has(t.id));
+    const filteredRemoteLends = remoteLends.filter((l) => !deletedLendIds.has(l.id));
+
+    // Never let an empty remote cloud wipe local transactions - UNLESS every
+    // local record is tombstoned too (the remote reflects our own delete).
+    // The old code pushed local state back in that case, which made a
+    // Delete-All bounce back a second later from any tab holding stale data.
     const currentLocalTxs = loadStoredTransactions(scope);
-    if (filteredRemoteTxs.length === 0 && currentLocalTxs.length > 0) {
+    const localNonDeletedTxs = currentLocalTxs.filter((t) => !deletedIds.has(t.id));
+    if (filteredRemoteTxs.length === 0 && localNonDeletedTxs.length > 0) {
       void saveCloudWorkspace(getLatestWorkspace(Date.now() + 100)).catch(console.warn);
       return;
     }
@@ -827,14 +868,18 @@ export default function App() {
       saveSheetTransactions(workspace.activeSheet.id, filteredRemoteTxs);
     }
 
-    setLendItems(remoteLends);
-    saveStoredLendItems(remoteLends, scope);
+    setLendItems(filteredRemoteLends);
+    latestStateRef.current.lendItems = filteredRemoteLends;
+    saveStoredLendItems(filteredRemoteLends, scope);
     if (workspace.activeSheet?.id) {
-      saveSheetLendItems(workspace.activeSheet.id, remoteLends);
+      saveSheetLendItems(workspace.activeSheet.id, filteredRemoteLends);
     }
 
     if (Array.isArray(workspace.categories) && workspace.categories.length > 0) {
       saveStoredCategoryDefs(workspace.categories, scope);
+      // Keep React state in step with storage: skipping this left the UI
+      // showing a category that had already been deleted (or restoring one).
+      setCategories(workspace.categories);
     }
     const nextBudget = workspace.budgetConfig || loadStoredBudgetConfig(scope);
     setBudgetConfig(nextBudget);
@@ -969,7 +1014,7 @@ export default function App() {
       return;
     }
     queueCloudSync();
-  }, [transactions, lendItems, budgetConfig, alertPhone, telegramAlertConfig, activeSheet, userProfile, currency, user?.email, cloudSyncReady, queueCloudSync]);
+  }, [transactions, lendItems, categories, budgetConfig, alertPhone, telegramAlertConfig, activeSheet, userProfile, currency, user?.email, cloudSyncReady, queueCloudSync]);
 
   const handleSendTelegramTest = async (chatId: string) => {
     if (!chatId.trim()) {
@@ -1055,6 +1100,9 @@ export default function App() {
 
       const deletedIds = loadDeletedTxIds(currentUserEmail);
       const validRemoteTxs = remoteTxs.filter((t) => !deletedIds.has(t.id));
+      // Deleted lend/borrow records must never come back from the sheet either.
+      const lendTombstones = loadLendDeletedIds(currentUserEmail);
+      const validRemoteLends = remoteLends.filter((l) => !lendTombstones.has(l.id));
 
       // If user deleted rows in Google Sheets, detect missing items and mark them deleted so they don't resurrect:
       if (validRemoteTxs.length > 0 && transactions.length > 0) {
@@ -1065,8 +1113,17 @@ export default function App() {
         }
       }
 
+      // Safety: an EMPTY sheet must never wipe records the app still holds -
+      // an unpushed or partially-pushed sheet reads back empty too. Real
+      // "delete everything" goes through Delete All (which tombstones first),
+      // so keeping non-tombstoned local records on an empty read is correct.
+      const localNonDeletedTxs = loadStoredTransactions(currentUserEmail).filter((t) => !deletedIds.has(t.id));
+      const localNonDeletedLends = loadStoredLendItems(currentUserEmail).filter((l) => !lendTombstones.has(l.id));
+      const effectiveTxs = validRemoteTxs.length === 0 && localNonDeletedTxs.length > 0 ? localNonDeletedTxs : validRemoteTxs;
+      const effectiveLends = validRemoteLends.length === 0 && localNonDeletedLends.length > 0 ? localNonDeletedLends : validRemoteLends;
+
       // Cleanly replace: show ONLY the valid sanitized records from this connected Google Sheet
-      const sortedTxs = sanitizeTransactions(validRemoteTxs).sort((a, b) => {
+      const sortedTxs = sanitizeTransactions(effectiveTxs).sort((a, b) => {
         const dateDiff = new Date(b.date).getTime() - new Date(a.date).getTime();
         if (dateDiff !== 0) return dateDiff;
         return (b.createdAt || 0) - (a.createdAt || 0);
@@ -1077,14 +1134,14 @@ export default function App() {
       saveStoredTransactions(sortedTxs, currentUserEmail);
       saveSheetTransactions(sId, sortedTxs);
 
-      setLendItems(remoteLends);
-      saveStoredLendItems(remoteLends, currentUserEmail);
-      saveSheetLendItems(sId, remoteLends);
+      setLendItems(effectiveLends);
+      saveStoredLendItems(effectiveLends, currentUserEmail);
+      saveSheetLendItems(sId, effectiveLends);
 
       if (user?.email) {
         const nextWs = buildCloudWorkspace(Date.now());
         nextWs.transactions = sortedTxs;
-        nextWs.lendItems = remoteLends;
+        nextWs.lendItems = effectiveLends;
         void saveCloudWorkspace(nextWs).catch(console.warn);
       }
 
@@ -1607,28 +1664,98 @@ export default function App() {
   };
 
   const handleToggleLendStatus = (id: string) => {
-    const updated = lendItems.map((item) => {
-      if (item.id === id) {
-        const nextStatus = item.status === 'pending' ? 'settled' : 'pending';
-        return {
-          ...item,
-          status: nextStatus as any,
-          settledAt: nextStatus === 'settled' ? new Date().toISOString() : undefined,
+    const item = lendItems.find((i) => i.id === id);
+    if (!item) return;
+    const nextStatus: 'pending' | 'settled' = item.status === 'pending' ? 'settled' : 'pending';
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const timeStr = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    const dateStr = getLocalDateString();
+
+    let updatedTxs = transactions;
+    let settlementTxId: string | undefined;
+
+    if (nextStatus === 'settled') {
+      // SETTLED = the money actually moved, so it must hit the wallet as a
+      // real transaction: a lent amount comes BACK as cash added; a borrowed
+      // amount GOES OUT as a cash expense.
+      const isLent = item.type === 'lent';
+      settlementTxId = item.settlementTxId || `tx-lendset-${item.id}`;
+      const existingTx = transactions.find((t) => t.id === settlementTxId);
+      if (!existingTx) {
+        const settlementTx: Transaction = {
+          id: settlementTxId,
+          date: dateStr,
+          time: timeStr,
+          type: isLent ? 'cash_added' : 'cash_expense',
+          category: 'Other',
+          amount: item.amount,
+          paymentMethod: 'Cash',
+          notes: isLent
+            ? `Settled: received from ${item.personName} — ${item.thingsOrReason}`
+            : `Settled: paid to ${item.personName} — ${item.thingsOrReason}`,
+          createdAt: Date.now(),
         };
+        unmarkTxIdDeleted(settlementTx.id, currentUserEmail);
+        updatedTxs = [settlementTx, ...transactions];
+        markTransactionUpsert(settlementTx, currentUserEmail);
+        latestStateRef.current.transactions = updatedTxs;
+        saveStoredTransactions(updatedTxs, currentUserEmail);
+        if (activeSheet?.id) {
+          saveSheetTransactions(activeSheet.id, updatedTxs);
+        }
+        setTransactions(updatedTxs);
       }
-      return item;
+    } else if (item.settlementTxId) {
+      // Un-settling reverses the money movement: remove the auto-created
+      // entry and tombstone it so sheet/cloud sync can never bring it back.
+      if (transactions.some((t) => t.id === item.settlementTxId)) {
+        markTxIdDeleted(item.settlementTxId, currentUserEmail);
+        markTransactionDelete(item.settlementTxId, currentUserEmail);
+        updatedTxs = transactions.filter((t) => t.id !== item.settlementTxId);
+        latestStateRef.current.transactions = updatedTxs;
+        saveStoredTransactions(updatedTxs, currentUserEmail);
+        if (activeSheet?.id) {
+          saveSheetTransactions(activeSheet.id, updatedTxs);
+        }
+        setTransactions(updatedTxs);
+      }
+      settlementTxId = undefined;
+    }
+
+    const updated = lendItems.map((i) => {
+      if (i.id !== id) return i;
+      return {
+        ...i,
+        status: nextStatus,
+        settledAt: nextStatus === 'settled' ? now.toISOString() : undefined,
+        settlementTxId: nextStatus === 'settled' ? settlementTxId : undefined,
+      };
     });
+    latestStateRef.current.lendItems = updated;
     saveStoredLendItems(updated, currentUserEmail);
     if (activeSheet?.id) {
       saveSheetLendItems(activeSheet.id, updated);
     }
-    const changedItem = updated.find((item) => item.id === id);
+    setLendItems(updated);
+
+    // Persist the whole change (lend + settlement transaction) to the cloud
+    // immediately so other devices see the same movement at the same moment.
+    if (user?.email) {
+      const nextWs = buildCloudWorkspace(Date.now() + 50);
+      nextWs.transactions = updatedTxs;
+      nextWs.lendItems = updated;
+      cloudVersionRef.current = nextWs.updatedAt;
+      void saveCloudWorkspace(nextWs).catch(console.warn);
+    }
+
+    const changedItem = updated.find((i) => i.id === id);
     if (changedItem) {
       markLendUpsert(changedItem, currentUserEmail);
       if (telegramSendActive) {
         // Alerts show TODAY's balance only, matching the transaction alerts.
         const todayStr = getLocalDateString();
-        const todaySum = calculateSummary(transactions, transactions.filter((t) => t && t.date === todayStr));
+        const todaySum = calculateSummary(updatedTxs, updatedTxs.filter((t) => t && t.date === todayStr));
         const lendAlert = generateLendTelegramAlert(changedItem, currency, todaySum.currentCashBalance);
         void sendTelegramAlert({ ...lendAlert, chatId: telegramAlertConfig.chatId })
           .then((res) => {
@@ -1644,21 +1771,29 @@ export default function App() {
           .catch(console.warn);
       }
     }
-    setLendItems(updated);
-    showNotification('Status updated.', 'info');
+
+    showNotification(
+      nextStatus === 'settled'
+        ? item.type === 'lent'
+          ? `Settled — ${formatCurrency(item.amount, currency)} received and added to cash.`
+          : `Settled — ${formatCurrency(item.amount, currency)} paid and deducted from cash.`
+        : 'Settled status reverted — the settlement entry was removed.',
+      'info'
+    );
 
     if (activeSheet) {
-      queueSheetPush({ transactions, lendItems: updated });
+      queueSheetPush({ transactions: updatedTxs, lendItems: updated });
     }
     const webhookUrl = loadStoredWebhookUrl();
     if (webhookUrl) {
-      const sum = calculateSummary(transactions, transactions);
-      syncViaWebhook(webhookUrl, transactions, sum, updated).catch(console.warn);
+      const sum = calculateSummary(updatedTxs, updatedTxs);
+      syncViaWebhook(webhookUrl, updatedTxs, sum, updated).catch(console.warn);
     }
   };
 
   const handleDeleteLendItem = (id: string) => {
     const updated = lendItems.filter((i) => i.id !== id);
+    markLendIdsDeleted([id], currentUserEmail);
     markLendDelete(id, currentUserEmail);
     saveStoredLendItems(updated, currentUserEmail);
     if (activeSheet?.id) {
@@ -2111,14 +2246,38 @@ export default function App() {
               onUpdateProfile={handleUpdateProfile}
               onUpdateCategories={(newCats) => setCategories(newCats)}
               onResetAllData={() => {
-                // Tombstone every existing record FIRST: even if the Google
+                // 1. BACKUP FIRST - download a full JSON restore point before
+                // anything is destroyed, per the safety requirement.
+                try {
+                  const json = exportFullBackupJson(currentUserEmail);
+                  const blob = new Blob([json], { type: 'application/json' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `spenddesk-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+                  document.body.appendChild(a);
+                  a.click();
+                  a.remove();
+                  setTimeout(() => URL.revokeObjectURL(url), 4000);
+                } catch (err) {
+                  console.error('Backup export failed:', err);
+                  showNotification('Backup export failed - nothing was deleted. Try again.', 'error');
+                  return;
+                }
+
+                // 2. Tombstone every existing record FIRST: even if the Google
                 // sheet wipe below fails (expired token / offline), a later
                 // two-way sync can NEVER resurrect the cleared records.
                 const existingIds = transactions.map((t) => t.id);
+                const existingLendIds = lendItems.map((l) => l.id);
                 markTxIdsDeleted(existingIds, currentUserEmail);
                 markTxIdsDeleted(existingIds, 'guest');
+                markLendIdsDeleted(existingLendIds, currentUserEmail);
+                markLendIdsDeleted(existingLendIds, 'guest');
                 setTransactions([]);
                 setLendItems([]);
+                latestStateRef.current.transactions = [];
+                latestStateRef.current.lendItems = [];
                 setSelectedTransactionIds([]);
                 saveStoredTransactions([], currentUserEmail);
                 saveStoredTransactions([], 'guest');
@@ -2147,21 +2306,16 @@ export default function App() {
                 if (user?.email) {
                   const wipeTimestamp = Math.max(Date.now(), cloudVersionRef.current + 5000);
                   cloudVersionRef.current = wipeTimestamp;
-                  void saveCloudWorkspace({
-                    version: 1,
-                    updatedAt: wipeTimestamp,
-                    transactions: [],
-                    lendItems: [],
-                    categories: loadStoredCategoryDefs(currentUserEmail),
-                    budgetConfig,
-                    alertPhone,
-                    telegramAlertConfig,
-                    activeSheet,
-                    profile: userProfile,
-                    currency,
-                  }).catch(console.warn);
+                  const wipeWs = buildCloudWorkspace(wipeTimestamp);
+                  wipeWs.transactions = [];
+                  wipeWs.lendItems = [];
+                  // Carry the full tombstone list so every other device applies
+                  // the wipe too instead of pushing its old records back.
+                  wipeWs.deletedTxIds = Array.from(new Set([...(wipeWs.deletedTxIds || []), ...existingIds]));
+                  wipeWs.deletedLendIds = Array.from(new Set([...(wipeWs.deletedLendIds || []), ...existingLendIds]));
+                  void saveCloudWorkspace(wipeWs).catch(console.warn);
                 }
-                showNotification('All records reset successfully! Storage and Google Sheet refreshed.', 'info');
+                showNotification('Backup downloaded. All records reset! Storage and Google Sheet refreshed.', 'info');
               }}
               onRestoreTransactions={() => {
                 setTransactions(loadStoredTransactions(currentUserEmail));

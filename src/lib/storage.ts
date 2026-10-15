@@ -2,6 +2,7 @@ import { Transaction, GoogleSheetMeta, BudgetConfig, LendItem } from '../types/f
 
 const TX_STORAGE_KEY = 'money_tracker_transactions_v2';
 const DELETED_TX_IDS_KEY = 'spenddesk_deleted_tx_ids_v1';
+const DELETED_LEND_IDS_KEY = 'spenddesk_deleted_lend_ids_v1';
 const LAST_USER_EMAIL_KEY = 'spenddesk_last_user_email_v1';
 const SHEET_META_KEY = 'money_tracker_active_sheet_v2';
 const GLOBAL_LAST_ACTIVE_SHEET_KEY = 'spenddesk_last_active_sheet_v1';
@@ -324,6 +325,40 @@ export const unmarkTxIdDeleted = (id: string, email?: string | null) => {
   try {
     const key = getScopedKey(DELETED_TX_IDS_KEY, email);
     const set = loadDeletedTxIds(email);
+    if (set.has(id)) {
+      set.delete(id);
+      localStorage.setItem(key, JSON.stringify(Array.from(set)));
+    }
+  } catch {}
+};
+
+export const loadLendDeletedIds = (email?: string | null): Set<string> => {
+  try {
+    const key = getScopedKey(DELETED_LEND_IDS_KEY, email);
+    const raw = localStorage.getItem(key);
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) return new Set(arr);
+    }
+  } catch {}
+  return new Set();
+};
+
+export const markLendIdsDeleted = (ids: string[], email?: string | null) => {
+  if (!ids || ids.length === 0) return;
+  try {
+    const key = getScopedKey(DELETED_LEND_IDS_KEY, email);
+    const set = loadLendDeletedIds(email);
+    ids.forEach((id) => set.add(id));
+    localStorage.setItem(key, JSON.stringify(Array.from(set)));
+  } catch {}
+};
+
+export const unmarkLendIdDeleted = (id: string, email?: string | null) => {
+  if (!id) return;
+  try {
+    const key = getScopedKey(DELETED_LEND_IDS_KEY, email);
+    const set = loadLendDeletedIds(email);
     if (set.has(id)) {
       set.delete(id);
       localStorage.setItem(key, JSON.stringify(Array.from(set)));

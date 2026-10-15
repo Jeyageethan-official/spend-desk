@@ -16,19 +16,30 @@ export interface CloudWorkspace {
   profile: UserProfile;
   currency: string;
   dailyRefresh?: boolean;
+  /** Tombstones travel with the workspace so a delete stays deleted on every
+   *  device: without them another device's stale push resurrects the record. */
+  deletedTxIds?: string[];
+  deletedLendIds?: string[];
 }
 
 let activeWorkspaceChannel: RealtimeChannel | null = null;
+let postgresChannel: RealtimeChannel | null = null;
+let localBroadcast: BroadcastChannel | null | undefined;
 
+// One shared BroadcastChannel for the whole app. Creating a fresh channel per
+// call (the old behaviour) leaked channels whose onmessage handlers still fired
+// with stale closures - a second apply of old workspace data.
 const getLocalBroadcast = (): BroadcastChannel | null => {
+  if (localBroadcast !== undefined) return localBroadcast;
+  localBroadcast = null;
   try {
     if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-      return new BroadcastChannel('spenddesk_workspace_sync');
+      localBroadcast = new BroadcastChannel('spenddesk_workspace_sync');
     }
   } catch {
     // Safari Private Browsing or tracking protection blocks BroadcastChannel
   }
-  return null;
+  return localBroadcast;
 };
 
 const getCurrentUserId = async (): Promise<string | null> => {
@@ -90,49 +101,68 @@ export const subscribeToCloudWorkspace = async (
   const userId = await getCurrentUserId();
   if (!userId) return null;
 
-  // Listen to cross-tab updates in the same browser
+  const handleWorkspace = (ws: CloudWorkspace | undefined) => {
+    if (ws) onWorkspace(ws);
+  };
+
+  // Listen to cross-tab updates in the same browser (shared singleton)
   const localBc = getLocalBroadcast();
   if (localBc) {
     try {
       localBc.onmessage = (event) => {
-        const ws = event.data?.workspace as CloudWorkspace | undefined;
-        if (ws) onWorkspace(ws);
+        handleWorkspace(event.data?.workspace as CloudWorkspace | undefined);
       };
     } catch (e) {
       console.warn('Local broadcast listen error:', e);
     }
   }
 
-  // Realtime channel with both WebSocket Broadcast and Postgres Changes
+  // Primary channel: pure WebSocket Broadcast - works with no table/publication
+  // configuration, and it is the path that must never fail for realtime to work.
   const channel = getSupabase()
     .channel(`spenddesk-workspace-${userId}`)
     .on('broadcast', { event: 'workspace_update' }, (payload) => {
-      const ws = payload.payload?.workspace as CloudWorkspace | undefined;
-      if (ws) onWorkspace(ws);
+      handleWorkspace(payload.payload?.workspace as CloudWorkspace | undefined);
     })
-    .on('postgres_changes', {
-      event: '*',
-      schema: 'public',
-      table: 'user_workspaces',
-      filter: `user_id=eq.${userId}`,
-    }, (payload) => {
-      const ws = (payload.new as { workspace?: CloudWorkspace })?.workspace;
-      if (ws) onWorkspace(ws);
-    });
-
-  channel.subscribe((status) => {
-    if (status === 'SUBSCRIBED') {
-      activeWorkspaceChannel = channel;
-    }
-  });
+    .subscribe();
 
   activeWorkspaceChannel = channel;
+
+  // Best-effort Postgres Changes on a SEPARATE channel. If the table is not in
+  // the realtime publication the old single-channel setup degraded to
+  // CHANNEL_ERROR and took the broadcast down with it - splitting them keeps
+  // realtime alive either way.
+  try {
+    postgresChannel = getSupabase()
+      .channel(`spenddesk-workspace-db-${userId}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'user_workspaces',
+        filter: `user_id=eq.${userId}`,
+      }, (payload) => {
+        handleWorkspace((payload.new as { workspace?: CloudWorkspace })?.workspace);
+      })
+      .subscribe();
+  } catch (e) {
+    console.warn('Postgres changes subscribe skipped:', e);
+    postgresChannel = null;
+  }
+
   return channel;
 };
 
 export const unsubscribeFromCloudWorkspace = (channel: RealtimeChannel | null) => {
   if (activeWorkspaceChannel === channel) {
     activeWorkspaceChannel = null;
+  }
+  if (postgresChannel) {
+    void getSupabase().removeChannel(postgresChannel);
+    postgresChannel = null;
+  }
+  const localBc = getLocalBroadcast();
+  if (localBc) {
+    try { localBc.onmessage = null; } catch {}
   }
   if (channel) void getSupabase().removeChannel(channel);
 };
