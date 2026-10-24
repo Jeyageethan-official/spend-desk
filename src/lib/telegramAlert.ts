@@ -7,6 +7,12 @@ export interface TelegramAlertPayload {
   title: string;
   message: string;
   createdAt?: number;
+  /**
+   * Outbox identity. Assigned the moment an alert is queued (write-ahead), so
+   * the same alert can be located and removed after the server confirms
+   * delivery, and a retry never duplicates it.
+   */
+  id?: string;
 }
 
 export const generateTransactionTelegramAlert = (
@@ -120,62 +126,85 @@ const PENDING_TELEGRAM_ALERTS_KEY = 'spenddesk_pending_telegram_alerts_v1';
 export const getPendingTelegramAlerts = (): TelegramAlertPayload[] => {
   try {
     const raw = localStorage.getItem(PENDING_TELEGRAM_ALERTS_KEY);
-    return raw ? JSON.parse(raw) : [];
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }
 };
 
+/** Add to the durable outbox. Safe to call often; ids deduplicate retries. */
 export const queueOfflineTelegramAlert = (payload: TelegramAlertPayload): void => {
   try {
     const current = getPendingTelegramAlerts();
-    current.push({ ...payload, createdAt: payload.createdAt || Date.now() });
+    const id = payload.id || `tg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    if (current.some((a) => a.id === id)) return;
+    current.push({ ...payload, id, createdAt: payload.createdAt || Date.now() });
     localStorage.setItem(PENDING_TELEGRAM_ALERTS_KEY, JSON.stringify(current));
   } catch (e) {
     console.warn('Failed to queue offline Telegram alert:', e);
   }
 };
 
-export const flushPendingTelegramAlerts = async (): Promise<number> => {
-  if (typeof navigator !== 'undefined' && !navigator.onLine) {
-    return 0;
-  }
-  const pending = getPendingTelegramAlerts();
-  if (pending.length === 0) return 0;
-
-  const remaining: TelegramAlertPayload[] = [];
-  let sentCount = 0;
-
-  for (const alert of pending) {
-    try {
-      const { error } = await getSupabase().functions.invoke('telegram-alert', {
-        body: alert,
-      });
-      if (error) {
-        remaining.push(alert);
-      } else {
-        sentCount++;
-      }
-    } catch {
-      remaining.push(alert);
-    }
-  }
-
+/** Remove one alert from the outbox once it has actually been delivered. */
+const removeFromOutbox = (id?: string): void => {
+  if (!id) return;
   try {
+    const remaining = getPendingTelegramAlerts().filter((a) => a.id !== id);
     if (remaining.length === 0) {
       localStorage.removeItem(PENDING_TELEGRAM_ALERTS_KEY);
     } else {
       localStorage.setItem(PENDING_TELEGRAM_ALERTS_KEY, JSON.stringify(remaining));
     }
   } catch {}
+};
 
-  return sentCount;
+// Serialises flushes. Two overlapping flushes (boot + the 'online' handler)
+// used to both read the same pending list and both send it, doubling alerts.
+let flushInFlight: Promise<number> | null = null;
+
+export const flushPendingTelegramAlerts = (): Promise<number> => {
+  if (flushInFlight) return flushInFlight;
+
+  flushInFlight = (async (): Promise<number> => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return 0;
+    const pending = getPendingTelegramAlerts();
+    if (pending.length === 0) return 0;
+
+    let sentCount = 0;
+    for (const alert of pending) {
+      try {
+        const { error } = await getSupabase().functions.invoke('telegram-alert', {
+          body: alert,
+        });
+        if (!error) {
+          sentCount++;
+          // Remove only the one that landed, so an alert queued WHILE this
+          // flush was running is never wiped without being sent.
+          removeFromOutbox(alert.id);
+        }
+      } catch {
+        // Leave it queued for the next flush.
+      }
+    }
+
+    return sentCount;
+  })().finally(() => {
+    flushInFlight = null;
+  });
+
+  return flushInFlight;
 };
 
 /**
- * Sends alert through Supabase Edge Function.
- * If offline or if the network fails, it queues the alert persistently in localStorage
- * so it will automatically be sent once internet connectivity is restored.
+ * Send an alert through the Supabase Edge Function.
+ *
+ * WRITE-AHEAD: the alert is persisted to the durable outbox BEFORE the network
+ * call, and only removed once the server confirms delivery. The old order -
+ * send first, queue only on failure - lost every alert whose tab was closed
+ * while the request was in flight, because nothing had been written yet.
+ * Closing the app right after saving a transaction is now safe: the next open
+ * (or the next 'online' event) flushes whatever is still queued.
  */
 export const sendTelegramAlert = async (
   payload: TelegramAlertPayload
@@ -187,15 +216,20 @@ export const sendTelegramAlert = async (
   let cleanMessage = payload.message.trim();
   cleanMessage = cleanMessage.replace(/^(\*?\[?SpendDesk Alert\]?\*?\s*\n*)+/i, '').trim();
 
-  const cleanPayload = {
+  const cleanPayload: TelegramAlertPayload = {
     ...payload,
+    id: payload.id || `tg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     title: '[SpendDesk Alert]',
     message: cleanMessage,
+    createdAt: payload.createdAt || Date.now(),
   };
+
+  // Persist first. This is the whole fix: from this instant the alert survives
+  // a closed tab, a killed process or a dead battery.
+  queueOfflineTelegramAlert(cleanPayload);
 
   const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
   if (isOffline) {
-    queueOfflineTelegramAlert(cleanPayload);
     return { delivered: false, queued: true };
   }
 
@@ -204,12 +238,11 @@ export const sendTelegramAlert = async (
       body: cleanPayload,
     });
     if (error) {
-      queueOfflineTelegramAlert(cleanPayload);
       return { delivered: false, queued: true };
     }
+    removeFromOutbox(cleanPayload.id);
     return { delivered: true, queued: false };
   } catch {
-    queueOfflineTelegramAlert(cleanPayload);
     return { delivered: false, queued: true };
   }
 };

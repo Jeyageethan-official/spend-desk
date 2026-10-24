@@ -217,14 +217,29 @@ export default function App() {
 
   // Server-side Telegram link (deep-link flow): chat IDs never live in the browser.
   const [telegramLinkStatus, setTelegramLinkStatus] = useState<TelegramLinkStatus | null>(null);
-  const refreshTelegramLinkStatus = async () => {
+  // True while the FIRST status lookup for this account is still in flight. Without
+  // it the UI renders "Not connected" for the moment before the answer lands -
+  // which is what made a connected account look disconnected on every open.
+  const [isTelegramStatusLoading, setIsTelegramStatusLoading] = useState(false);
+
+  const refreshTelegramLinkStatus = async (): Promise<TelegramLinkStatus | null> => {
     try {
       const status = await getTelegramLinkStatus();
       setTelegramLinkStatus(status);
       return status;
-    } catch {
-      // Offline / signed out / not configured: fall back to the legacy local config.
-      setTelegramLinkStatus(null);
+    } catch (error) {
+      // Only a genuine "nobody is signed in" clears the status. A network blip,
+      // a cold Supabase function or a 5xx must NOT wipe what we already know:
+      // doing so flipped a connected account back to "Not connected" until the
+      // next successful lookup, which is the bug users were seeing.
+      const status = (error as { context?: { status?: number } })?.context?.status ?? 0;
+      const isAuthFailure = status === 401 || status === 403;
+      if (isAuthFailure) {
+        setTelegramLinkStatus(null);
+        return null;
+      }
+      // Keep the last known state; callers still get null so they know this
+      // attempt did not produce fresh data.
       return null;
     }
   };
@@ -234,9 +249,14 @@ export default function App() {
     // signed in is a guaranteed 401, so the local fallback is used instead.
     if (!user?.id) {
       setTelegramLinkStatus(null);
+      setIsTelegramStatusLoading(false);
       return;
     }
-    void refreshTelegramLinkStatus();
+    // Start from "unknown", not "disconnected": until the server answers we
+    // genuinely do not know, and asserting the wrong answer is the visible bug.
+    setTelegramLinkStatus(null);
+    setIsTelegramStatusLoading(true);
+    void refreshTelegramLinkStatus().finally(() => setIsTelegramStatusLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
@@ -296,6 +316,21 @@ export default function App() {
     };
   }, []);
 
+  // The all-time view, used as the opening state of the look-back sections
+  // (Transactions, Analytics). Empty date bounds mean "no date restriction" -
+  // filterTransactions only applies a bound when it is a non-empty string.
+  const ALL_FILTER: FilterState = useMemo(
+    () => ({
+      type: 'all',
+      startDate: '',
+      endDate: '',
+      category: 'All',
+      paymentMethod: 'All',
+      searchQuery: '',
+    }),
+    []
+  );
+
   type SectionTab = 'dashboard' | 'transactions' | 'analytics';
 
   // Global HEADER date filter: picked in the header calendar pill, persists
@@ -305,10 +340,15 @@ export default function App() {
 
   // Per-SECTION filters: each section's FilterBar edits only its own state, so
   // changing e.g. the Transactions range never touches Dashboard/Analytics.
+  //
+  // Dashboard opens on TODAY because it is the "what is happening now" view and
+  // the wallet balance follows it. Transactions and Analytics open on ALL: they
+  // are the look-back views, and defaulting them to a single day meant a fresh
+  // open always showed an empty list to anyone whose spending was not today.
   const [sectionFilters, setSectionFilters] = useState<Record<SectionTab, FilterState>>({
     dashboard: DEFAULT_FILTER,
-    transactions: DEFAULT_FILTER,
-    analytics: DEFAULT_FILTER,
+    transactions: ALL_FILTER,
+    analytics: ALL_FILTER,
   });
   const setSectionFilter = useCallback((tab: SectionTab, next: FilterState) => {
     setSectionFilters((prev) => ({ ...prev, [tab]: next }));
@@ -1823,47 +1863,56 @@ export default function App() {
       showNotification('Transaction recorded.', 'success');
     }
 
-    // Non-blocking background side effects (SMS, Telegram, Webhook)
+    // TELEGRAM ALERTS ARE PERSISTED SYNCHRONOUSLY, before this handler returns.
+    //
+    // This whole block used to live inside the setTimeout below. Deferring it
+    // meant that saving a transaction and closing the app immediately dropped
+    // the alert before it existed anywhere - the timer never fired, so nothing
+    // was ever queued and nothing could ever be flushed. sendTelegramAlert
+    // writes to the durable outbox before its first await, so calling it
+    // directly makes the alert survive a closed tab; only the network attempt
+    // stays in the background.
+    if (isNewTransaction && telegramSendActive) {
+      // Telegram alerts report TODAY's balance only (not the all-time wallet balance).
+      const todayStr = getLocalDateString();
+      const todayTxs = updatedTxs.filter((t) => t && t.date === todayStr);
+      const todaySum = calculateSummary(updatedTxs, todayTxs);
+      const telegramAlert = generateTransactionTelegramAlert(recordedTx, currency, todaySum.currentCashBalance);
+      void sendTelegramAlert({ ...telegramAlert, chatId: telegramAlertConfig.chatId })
+        .then((res) => {
+          if (res.queued) {
+            showNotification('Offline: Telegram alert queued, will send when online.', 'info');
+          } else {
+            showNotification('Telegram alert delivered.', 'success');
+          }
+        })
+        .catch((error) => {
+          console.error('Telegram alert failed:', error);
+        });
+
+      // Trigger Low Balance Alert if balance is below threshold.
+      // This check keeps the REAL all-time wallet balance (not the today-only view).
+      const walletSum = calculateSummary(updatedTxs, updatedTxs);
+      if (
+        budgetConfig.lowCashThreshold > 0 &&
+        walletSum.currentCashBalance <= budgetConfig.lowCashThreshold
+      ) {
+        const lowBalAlert = generateLowBalanceTelegramAlert(
+          walletSum.currentCashBalance,
+          budgetConfig.lowCashThreshold,
+          currency
+        );
+        void sendTelegramAlert({ ...lowBalAlert, chatId: telegramAlertConfig.chatId }).catch(console.warn);
+      }
+    }
+
+    // Non-blocking background side effects (SMS, Webhook)
     setTimeout(() => {
       if (sendSmsTo) {
         handleUpdateAlertPhone(sendSmsTo);
         const currentSum = calculateSummary(updatedTxs, updatedTxs);
         const smsBody = generateTransactionSmsText(recordedTx, currentSum.currentCashBalance, currency);
         triggerDeviceSms(sendSmsTo, smsBody);
-      }
-
-      if (isNewTransaction && telegramSendActive) {
-        // Telegram alerts report TODAY's balance only (not the all-time wallet balance).
-        const todayStr = getLocalDateString();
-        const todayTxs = updatedTxs.filter((t) => t && t.date === todayStr);
-        const todaySum = calculateSummary(updatedTxs, todayTxs);
-        const telegramAlert = generateTransactionTelegramAlert(recordedTx, currency, todaySum.currentCashBalance);
-        void sendTelegramAlert({ ...telegramAlert, chatId: telegramAlertConfig.chatId })
-          .then((res) => {
-            if (res.queued) {
-              showNotification('Offline: Telegram alert queued, will send when online.', 'info');
-            } else {
-              showNotification('Telegram alert delivered.', 'success');
-            }
-          })
-          .catch((error) => {
-            console.error('Telegram alert failed:', error);
-          });
-
-        // Trigger Low Balance Alert if balance is below threshold.
-        // This check keeps the REAL all-time wallet balance (not the today-only view).
-        const walletSum = calculateSummary(updatedTxs, updatedTxs);
-        if (
-          budgetConfig.lowCashThreshold > 0 &&
-          walletSum.currentCashBalance <= budgetConfig.lowCashThreshold
-        ) {
-          const lowBalAlert = generateLowBalanceTelegramAlert(
-            walletSum.currentCashBalance,
-            budgetConfig.lowCashThreshold,
-            currency
-          );
-          void sendTelegramAlert({ ...lowBalAlert, chatId: telegramAlertConfig.chatId }).catch(console.warn);
-        }
       }
 
       const webhookUrl = loadStoredWebhookUrl();
@@ -2634,6 +2683,7 @@ export default function App() {
               onUpdateTelegramAlertConfig={handleUpdateTelegramAlertConfig}
               onSendTelegramTest={handleSendTelegramTest}
               telegramLinkStatus={telegramLinkStatus}
+              isTelegramStatusLoading={isTelegramStatusLoading}
               onRefreshTelegramLink={refreshTelegramLinkStatus}
               onCloudSyncRequested={() => {
                 markSettingsDirty(currentUserEmail);

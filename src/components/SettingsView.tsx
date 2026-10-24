@@ -105,6 +105,13 @@ interface SettingsViewProps {
   onUpdateTelegramAlertConfig: (config: TelegramAlertConfig) => void;
   onSendTelegramTest: (chatId: string) => Promise<void>;
   telegramLinkStatus?: TelegramLinkStatus | null;
+  /**
+   * True while the first status lookup for this account is still in flight.
+   * Until the server answers we genuinely do not know whether Telegram is
+   * connected, so the panel says so instead of asserting "Not connected" -
+   * which made a connected account look disconnected on every open.
+   */
+  isTelegramStatusLoading?: boolean;
   onRefreshTelegramLink?: () => Promise<unknown> | void;
   onCloudSyncRequested?: () => void;
   cloudWorkspaceRevision?: number;
@@ -168,6 +175,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onUpdateTelegramAlertConfig,
   onSendTelegramTest,
   telegramLinkStatus,
+  isTelegramStatusLoading = false,
   onRefreshTelegramLink,
   onCloudSyncRequested,
   cloudWorkspaceRevision = 0,
@@ -355,6 +363,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
 
   const telegramConnected = Boolean(telegramLinkStatus?.connected);
+  // Still asking the server: a third state between connected and not-connected.
+  const telegramUnknown = isTelegramStatusLoading && !telegramLinkStatus;
   const telegramPending =
     isWaitingForTelegram || Boolean(telegramLinkStatus?.pending && !telegramConnected);
 
@@ -1554,6 +1564,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     >
                       {telegramPending ? (
                         <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : telegramUnknown ? (
+                        <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
                       ) : telegramConnected ? (
                         <CheckCircle2 className="w-5 h-5" />
                       ) : (
@@ -1567,18 +1579,26 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                             ? 'Telegram connected successfully'
                             : telegramPending
                             ? 'Waiting for Telegram connection'
+                            : telegramUnknown
+                            ? 'Checking connection…'
                             : 'Not connected'}
                         </span>
                         <span
                           className={`text-[10px] font-black px-2 py-0.5 rounded-full md:text-xs ${
                             telegramConnected
                               ? 'bg-emerald-600/10 text-emerald-700 dark:text-emerald-300'
-                              : telegramPending
+                              : telegramPending || telegramUnknown
                               ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300'
                               : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
                           }`}
                         >
-                          {telegramConnected ? 'Connected' : telegramPending ? 'Connecting…' : 'Not connected'}
+                          {telegramConnected
+                            ? 'Connected'
+                            : telegramPending
+                            ? 'Connecting…'
+                            : telegramUnknown
+                            ? 'Checking…'
+                            : 'Not connected'}
                         </span>
                       </div>
                       <p className="text-[10px] leading-relaxed text-slate-500 dark:text-slate-400 mt-1 md:text-xs">
@@ -1586,6 +1606,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           ? 'Your chat is linked only to your account. No chat IDs to manage.'
                           : telegramPending
                           ? 'Press Start in the Telegram chat we just opened — this page updates automatically.'
+                          : telegramUnknown
+                          ? 'Confirming your Telegram link with the server.'
                           : 'One tap connects the bot to your account securely — nothing to copy or paste.'}
                       </p>
                     </div>
