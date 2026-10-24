@@ -117,6 +117,7 @@ import { SmsParserModal } from './components/SmsParserModal';
 import { AuthHelpModal } from './components/AuthHelpModal';
 import { AdjustBalanceModal } from './components/AdjustBalanceModal';
 import { OutOfWalletModal } from './components/OutOfWalletModal';
+import { SessionExpiredModal, SessionNoticeKind } from './components/SessionExpiredModal';
 import { BottomNav } from './components/BottomNav';
 import { Sidebar } from './components/Sidebar';
 import { AnalyticsView } from './components/AnalyticsView';
@@ -170,11 +171,16 @@ export default function App() {
   // What this device believes about the sign-in:
   //   signed_in  - a live session exists,
   //   signed_out - the user signed out on purpose (local mode, no nagging),
-  //   expired    - the session died while the app was closed (local mode WITH
-  //                an honest banner, because the user expects their data to
-  //                sync again).
+  //   expired    - the session died while the app was closed (local mode, and
+  //                the one moment where the app says so out loud).
   const [authStatus, setAuthStatus] = useState<AuthStatus>(() => readAuthStatus());
-  const [isSessionBannerDismissed, setIsSessionBannerDismissed] = useState(false);
+  // The connection-lost alert. A lost session or a revoked Google grant is
+  // announced exactly once by a modal; a cooldown stops it nagging on every
+  // retry tick, and an intentional sign-out never raises it at all.
+  const [connectionNotice, setConnectionNotice] = useState<SessionNoticeKind | null>(null);
+  const [isReconnecting, setIsReconnecting] = useState(false);
+  const lastConnectionNoticeAtRef = useRef(0);
+  const noTokenPushStreakRef = useRef(0);
   // After sign-out, keep the last account's offline workspace visible. This is
   // intentionally persisted so a refresh also retains the user's local ledger.
   // A later Google sign-in always replaces it with that Google account's scope.
@@ -354,6 +360,19 @@ export default function App() {
     }, 4000);
   };
 
+  // Raise the connection-lost popup for a genuine loss of sync capability.
+  //   'session' - the sign-in itself is gone (cloud + sheet both pause),
+  //   'google'  - sign-in alive but Google access revoked (sheet pauses).
+  // Never twice inside 10 minutes: the sync watchdog retries on a timer, and
+  // a modal that re-pops every tick would be worse than the old silent failure.
+  const reportConnectionLost = (kind: SessionNoticeKind) => {
+    const now = Date.now();
+    if (now - lastConnectionNoticeAtRef.current < 10 * 60 * 1000) return;
+    lastConnectionNoticeAtRef.current = now;
+    // A beat after paint so the app is on screen first when this fires at boot.
+    window.setTimeout(() => setConnectionNotice(kind), kind === 'session' ? 700 : 0);
+  };
+
   // Unified Auth Initialization: Google Workspace (Sheets & Drive) + Supabase
   useEffect(() => {
     // Return-trip handling: the page just came back from Google's OAuth
@@ -431,7 +450,6 @@ export default function App() {
         });
         writeAuthStatus('signed_in');
         setAuthStatus('signed_in');
-        setIsSessionBannerDismissed(false);
 
         if (ctx.providerToken) {
           // Fresh Google token straight from the sign-in exchange (~1h life).
@@ -498,6 +516,9 @@ export default function App() {
           if (readAuthStatus() === 'signed_in') {
             writeAuthStatus('expired');
             setAuthStatus('expired');
+            // Reopening after a few days and finding yourself signed out is
+            // exactly the case the user wants TOLD about, not hinted at.
+            reportConnectionLost('session');
           }
           return;
         }
@@ -513,6 +534,14 @@ export default function App() {
         const nextStatus: AuthStatus = reason === 'signed_out' ? 'signed_out' : 'expired';
         writeAuthStatus(nextStatus);
         setAuthStatus(nextStatus);
+        // A session that died while the app was running is a real loss of
+        // sync - raise the popup. An intentional sign-out is NOT: the user
+        // asked for it, so they get local mode and no modal.
+        if (nextStatus === 'expired') {
+          reportConnectionLost('session');
+        } else {
+          setConnectionNotice(null);
+        }
       },
     });
 
@@ -1489,12 +1518,38 @@ export default function App() {
 
     if (!hasGoogleSheetsToken) {
       if (!options.interactive) {
-        // Token not cached yet (e.g. right after boot). Keep the outbox dirty
-        // so the watchdog retries once the server-side token mint is ready.
+        // No token in hand yet (usually right after boot). Run the silent
+        // ladder FIRST - cache -> provider token -> server mint - so reopening
+        // the app self-heals with no popup and no redirect, the same way a
+        // manual push would.
+        try {
+          const freshToken = await refreshGoogleTokenSilently(currentUserEmail, 'sheet_push_no_token');
+          if (freshToken && !freshToken.startsWith('eyJ') && freshToken !== 'local_token' && freshToken.length > 20) {
+            sheetToken = freshToken;
+            setAccessToken(freshToken);
+            hasGoogleSheetsToken = true;
+            noTokenPushStreakRef.current = 0;
+          }
+        } catch {}
+      }
+      if (!hasGoogleSheetsToken && !options.interactive) {
+        // Still nothing: keep the outbox dirty so the watchdog retries once
+        // the server-side token mint is ready.
         markSheetSyncDirty(currentUserEmail, 'no google token yet');
+        // One empty round right after boot is normal (mint still in flight).
+        // Two in a row means the Google grant itself is gone - revoked, or
+        // never stored - so raise it ONCE rather than retrying silently for
+        // the rest of the session and leaving the sheet stale.
+        noTokenPushStreakRef.current += 1;
+        if (noTokenPushStreakRef.current >= 2) reportConnectionLost('google');
         isPushingToSheetRef.current = false;
         return false;
       }
+    }
+
+    // Interactive path ONLY: a real user tap is the one thing that may open
+    // Google. A silent/background push must never get here.
+    if (!hasGoogleSheetsToken && options.interactive) {
       try {
         const freshToken = await requestGoogleAccessToken(true, 'sheet_push_401_retry');
         if (freshToken && !freshToken.startsWith('eyJ') && freshToken !== 'local_token' && freshToken.length > 20) {
@@ -1555,6 +1610,7 @@ export default function App() {
       setActiveSheet(updatedMeta);
 
       clearSheetSyncDirty(currentUserEmail);
+      noTokenPushStreakRef.current = 0;
       if (!options.silent) {
         showNotification(`Synced ${currentLocalTxs.length} records with "${sheetToSync.name}"!`, 'success');
       }
@@ -1622,6 +1678,27 @@ export default function App() {
   useEffect(() => {
     pushToSheetRef.current = handlePushToSheet;
   }, [handlePushToSheet]);
+
+  // EVERY open and EVERY refresh re-syncs the sheet - not just the next edit.
+  // The watchdog below only flushes instantly when the outbox is already
+  // dirty, so a clean sheet would otherwise sit untouched for up to its 45s
+  // idle poll after a reopen, which reads as "my sheet stopped updating".
+  // One push per signed-in session, late enough for the server-side token
+  // mint to have landed, and keyed on the account + sheet so switching
+  // accounts gets its own push.
+  const didBootSheetPushRef = useRef(false);
+  useEffect(() => {
+    didBootSheetPushRef.current = false;
+  }, [user?.email, activeSheet?.id]);
+
+  useEffect(() => {
+    if (!user?.email || !activeSheet || didBootSheetPushRef.current) return;
+    didBootSheetPushRef.current = true;
+    const timer = window.setTimeout(() => {
+      void pushToSheetRef.current({ silent: true }).catch(() => {});
+    }, 2500);
+    return () => window.clearTimeout(timer);
+  }, [user?.email, activeSheet?.id]);
 
   useEffect(() => {
     if (!user?.email || !activeSheet) return;
@@ -2299,35 +2376,22 @@ export default function App() {
         </div>
       )}
 
-      {/* Session Expired Banner: the sign-in session died (long idle, revoked
-          refresh token) so the app fell back to Local Mode. Say so honestly
-          instead of looking connected while nothing syncs. */}
-      {authStatus === 'expired' && !isSessionBannerDismissed && (
-        <div className="bg-amber-500/10 border-b border-amber-500/30 text-amber-800 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs sm:text-sm font-medium md:pl-[var(--sidebar-w)]">
-          <div className="flex items-center gap-2 min-w-0">
-            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-            <span className="truncate">
-              Your sign-in session expired - running in Local Mode. Your data is safe on this device; sign in again to sync it back to the cloud.
-            </span>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => { void handleSignIn(); }}
-              className="rounded-lg bg-amber-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-amber-700 cursor-pointer"
-            >
-              Sign in again
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsSessionBannerDismissed(true)}
-              className="text-[11px] font-bold text-amber-700 hover:underline cursor-pointer"
-            >
-              Dismiss
-            </button>
-          </div>
-        </div>
-      )}
+      {/* Connection-lost ALERT - the single surface for a lost sign-in. The
+          amber banner that used to sit above it was removed: two warnings for
+          one event was noise, and this one is unmissable on its own. Raised
+          once per genuine loss of sync (session revoked, or the Google grant
+          is gone), never on an intentional sign-out. */}
+      <SessionExpiredModal
+        kind={connectionNotice}
+        isSigningIn={isReconnecting}
+        onSignIn={() => {
+          setIsReconnecting(true);
+          // On success this navigates away to Google; on failure handleSignIn
+          // surfaces the reason and we drop back to the modal.
+          void handleSignIn().finally(() => setIsReconnecting(false));
+        }}
+        onDismiss={() => setConnectionNotice(null)}
+      />
 
       {/* Dynamic Island Floating Pill Toast (Matching user reference screenshot) */}
       <AnimatePresence>
