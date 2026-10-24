@@ -226,7 +226,10 @@ export const calculateSummary = (
   }
 
   const cashAdded = filtTxs
-    .filter((tx) => tx && tx.type === 'cash_added')
+    // A carried-forward opening balance is not new money, so it must not
+    // inflate the Cash In KPI (or the sheet column derived from it) - it
+    // still counts towards the wallet balance via the running-balance pass.
+    .filter((tx) => tx && tx.type === 'cash_added' && !tx.isCarryForward)
     .reduce((sum, tx) => sum + (tx.amount || 0), 0);
 
   const cashSpent = filtTxs

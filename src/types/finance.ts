@@ -26,6 +26,15 @@ export interface Transaction {
   notes: string;
   receiptImage?: string;
   createdAt: number;
+  /**
+   * Opening balance carried over from the previous day (set when the user
+   * accepts the daily "continue yesterday's balance" prompt, or uses the same
+   * option inside Cash In). It counts towards the wallet balance exactly like
+   * a cash top-up, but it is NOT new money - so the Cash In KPI, the sheet's
+   * Cash In column and analytics all exclude it. Optional: records written
+   * before this feature simply do not have it.
+   */
+  isCarryForward?: boolean;
 }
 
 export type DateFilterType = 'today' | 'yesterday' | 'week' | 'month' | 'custom' | 'all';

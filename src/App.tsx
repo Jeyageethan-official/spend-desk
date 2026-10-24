@@ -105,6 +105,14 @@ import {
 import { clearPendingSync, hasPendingSync, loadPendingSync, markLendDelete, markLendUpsert, markSettingsDirty, markTransactionDelete, markTransactionUpsert, mergePendingWorkspace, stageWorkspaceForReplay } from './lib/pendingSync';
 import { clearSheetSyncDirty, markSheetSyncDirty, noteSheetSyncAttempt, readSheetOutbox, SHEET_OUTBOX_MAX_BACKOFF_MS } from './lib/sheetOutbox';
 import { clearSignedOutWorkspace, loadSignedOutWorkspace, saveSignedOutWorkspace } from './lib/signedOutWorkspace';
+import {
+  buildCarryForwardTransaction,
+  CarryForwardOffer,
+  evaluateCarryForward,
+  hasCarryPromptFor,
+  markCarryPromptShown,
+} from './lib/dailyCarryForward';
+import { DailyCarryForwardModal } from './components/DailyCarryForwardModal';
 import { Header } from './components/Header';
 import { SummaryCards } from './components/SummaryCards';
 import { BudgetAlerts } from './components/BudgetAlerts';
@@ -181,6 +189,10 @@ export default function App() {
   const [isReconnecting, setIsReconnecting] = useState(false);
   const lastConnectionNoticeAtRef = useRef(0);
   const noTokenPushStreakRef = useRef(0);
+  // Daily balance carry-forward. Offered once per day per account: yesterday's
+  // closing balance becomes today's opening balance as a real ledger row.
+  const [carryOffer, setCarryOffer] = useState<CarryForwardOffer | null>(null);
+  const [isApplyingCarry, setIsApplyingCarry] = useState(false);
   // After sign-out, keep the last account's offline workspace visible. This is
   // intentionally persisted so a refresh also retains the user's local ledger.
   // A later Google sign-in always replaces it with that Google account's scope.
@@ -2210,6 +2222,59 @@ export default function App() {
     };
   }, [dailyRefresh]);
 
+  // DAILY BALANCE CARRY-FORWARD
+  //
+  // The wallet balance follows the active date filter, and the header defaults
+  // to "today", so the first open of a new day reads Rs 0.00 even though the
+  // user finished yesterday holding cash. Offer yesterday's closing balance as
+  // today's opening balance - ONCE per day per account, and only while today
+  // has no rows yet (once they start recording, the on-screen balance is
+  // meaningful and a carry-forward would double-count).
+  //
+  // Re-evaluated whenever the ledger or scope changes, and again when the
+  // daily-refresh rollover moves the app onto a new calendar day.
+  //
+  // The OFFER is purely mathematical - it stays alive after a dismissal so the
+  // Cash In flow can still offer it. Whether the ALERT fires is gated
+  // separately by hasCarryPromptFor, which is what makes it once-only.
+  const carryOption = useMemo(
+    () => evaluateCarryForward({ transactions, today: currentDateStr }),
+    [transactions, currentDateStr]
+  );
+
+  const showCarryAlert = Boolean(carryOption) &&
+    !hasCarryPromptFor(currentDateStr, currentStorageScope) &&
+    // Never compete with the connection-lost alert or an in-flight sign-in
+    // exchange: a modal stacked on a modal is noise.
+    !connectionNotice &&
+    !getAuthPhase().phase.startsWith('exchang');
+
+  useEffect(() => {
+    setCarryOffer(showCarryAlert ? carryOption : null);
+  }, [carryOption, showCarryAlert]);
+
+  // Accept: write a real ledger row dated today flagged as a carry-forward.
+  // It counts towards the wallet balance but is excluded from the Cash In KPI,
+  // so the figure on screen is right without pretending new money arrived.
+  const handleAcceptCarryForward = (offer: CarryForwardOffer) => {
+    markCarryPromptShown(currentDateStr, currentStorageScope);
+    setIsApplyingCarry(true);
+    try {
+      handleSaveTransaction(buildCarryForwardTransaction(offer, currentDateStr));
+      showNotification(`Balance of ${formatCurrency(offer.amount, currency)} carried into today.`, 'success');
+    } finally {
+      setIsApplyingCarry(false);
+      setCarryOffer(null);
+    }
+  };
+
+  // Dismiss: record the day so the prompt does not come back on every reload.
+  // The same option stays reachable from the Cash In flow afterwards.
+  const handleDismissCarryForward = () => {
+    markCarryPromptShown(currentDateStr, currentStorageScope);
+    setCarryOffer(null);
+  };
+
   const todayStr = currentDateStr;
 
   const todaySpend = useMemo(() => {
@@ -2391,6 +2456,18 @@ export default function App() {
           void handleSignIn().finally(() => setIsReconnecting(false));
         }}
         onDismiss={() => setConnectionNotice(null)}
+      />
+
+      {/* Daily carry-forward ALERT - offered once per day per account, only
+          while today has no rows yet. Accepting writes a flagged ledger row so
+          the balance is right and the sheet stays reconcilable; dismissing
+          never asks again today and leaves the same option inside Cash In. */}
+      <DailyCarryForwardModal
+        offer={carryOffer}
+        currency={currency}
+        isApplying={isApplyingCarry}
+        onConfirm={() => { if (carryOffer) handleAcceptCarryForward(carryOffer); }}
+        onDismiss={handleDismissCarryForward}
       />
 
       {/* Dynamic Island Floating Pill Toast (Matching user reference screenshot) */}
@@ -2837,6 +2914,8 @@ export default function App() {
         editingTransaction={editingTransaction}
         defaultType={modalDefaultType}
         defaultAlertPhone={alertPhone}
+        carryForward={carryOption}
+        currency={currency}
         onOpenSmsReader={() => setIsSmsModalOpen(true)}
         onOpenSettingsCategories={() => {
           setIsTxModalOpen(false);

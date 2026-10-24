@@ -21,6 +21,8 @@ import {
   Settings as SettingsIcon
 } from 'lucide-react';
 import { Transaction, TransactionType, Category, PaymentMethod } from '../types/finance';
+import { formatCurrency } from '../lib/calculations';
+import { CarryForwardOffer } from '../lib/dailyCarryForward';
 import { 
   loadStoredCategoryDefs, 
   CategoryDef 
@@ -38,6 +40,13 @@ interface TransactionModalProps {
   onOpenSmsReader?: () => void;
   onOpenSettingsCategories?: () => void;
   storageEmail?: string | null;
+  /**
+   * Yesterday's closing balance, when there is one to carry into today.
+   * Offered as a one-tap button inside the Cash In flow - the escape hatch
+   * for someone who dismissed the daily carry-forward alert.
+   */
+  carryForward?: CarryForwardOffer | null;
+  currency?: string;
 }
 
 export const TransactionModal: React.FC<TransactionModalProps> = ({
@@ -49,9 +58,15 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   defaultAlertPhone = '',
   onOpenSettingsCategories,
   storageEmail,
+  carryForward = null,
+  currency = 'Rs',
 }) => {
   const [type, setType] = useState<TransactionType>(defaultType);
   const [amountStr, setAmountStr] = useState<string>('');
+  // Set when the user tapped "Continue yesterday's balance": the row that gets
+  // saved is flagged as a carry-forward so it counts towards the balance but
+  // never inflates the Cash In KPI.
+  const [isCarryForwardTx, setIsCarryForwardTx] = useState(false);
   const [category, setCategory] = useState<Category>('Food');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Cash');
   const [date, setDate] = useState<string>('');
@@ -203,8 +218,15 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
     }
   }, [isOpen]);
 
+  // A carry-forward only makes sense on a fresh Cash In: never carried across
+  // an edit, a type switch, or a reopen of the sheet.
+  useEffect(() => {
+    if (isOpen) setIsCarryForwardTx(false);
+  }, [isOpen]);
+
   const handleTypeChange = (newType: TransactionType) => {
     setType(newType);
+    setIsCarryForwardTx(false);
     if (newType === 'cash_added') {
       setCategory('Cash Added');
       setPaymentMethod('Cash');
@@ -212,6 +234,17 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       if (category === 'Income / Top-up' || category === 'Cash Added') setCategory('Food');
       setPaymentMethod('Cash');
     }
+  };
+
+  // One-tap carry-forward inside Cash In: fills the amount and marks the row so
+  // it is saved as an opening balance rather than real new money.
+  const applyCarryForward = () => {
+    if (!carryForward) return;
+    setAmountStr(String(carryForward.amount));
+    setCategory('Cash Added');
+    setPaymentMethod('Cash');
+    setIsCarryForwardTx(true);
+    setNotes(`Opening balance carried from ${carryForward.fromLabel}`);
   };
 
   const handleQuickAdd = (addVal: number) => {
@@ -242,6 +275,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       notes: notes.trim(),
       receiptImage: receiptImage || undefined,
       sendSmsTo: defaultAlertPhone ? defaultAlertPhone : undefined,
+      isCarryForward: isCarryForwardTx && type === 'cash_added' ? true : undefined,
     });
 
     onClose();
@@ -322,6 +356,40 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
           </div>
 
           {/* 2. Amount Input Box */}
+          {/* Carry-forward shortcut: only meaningful on a fresh Cash In, never
+              while editing an existing row (which may already be one). */}
+          {type === 'cash_added' && carryForward && !editingTransaction && (
+            <div
+              className={`rounded-2xl border px-3.5 py-2.5 flex items-center justify-between gap-3 transition-colors ${
+                isCarryForwardTx
+                  ? 'bg-emerald-50 border-emerald-200'
+                  : 'bg-slate-50 border-slate-200/90'
+              }`}
+            >
+              <div className="min-w-0">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                  {isCarryForwardTx ? 'Opening balance' : `From ${carryForward.fromLabel}`}
+                </p>
+                <p className="text-xs text-slate-600 truncate mt-0.5">
+                  {isCarryForwardTx
+                    ? 'Counts as balance, not new income.'
+                    : `You closed that day with ${formatCurrency(carryForward.amount, currency)}`}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={isCarryForwardTx ? () => setIsCarryForwardTx(false) : applyCarryForward}
+                className={`shrink-0 px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all cursor-pointer ${
+                  isCarryForwardTx
+                    ? 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                    : 'bg-slate-900 text-white hover:bg-slate-800 active:scale-95'
+                }`}
+              >
+                {isCarryForwardTx ? 'Undo' : 'Continue'}
+              </button>
+            </div>
+          )}
+
           <div className="bg-slate-50 border border-slate-200/90 rounded-2xl p-4 text-center">
             <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1 md:text-xs">
               Amount
