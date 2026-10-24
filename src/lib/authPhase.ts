@@ -212,6 +212,10 @@ declare global {
       exchanging: typeof beginOAuthExchange;
       fail: typeof failAuthPhase;
       clear: typeof clearAuthPhase;
+      /** Added by the app: wipe the sign-in state of THIS device (data kept). */
+      reset?: () => void;
+      /** Added by the app: what this device currently believes about the sign-in. */
+      status?: () => { authStatus: string; user: string | null };
     };
   }
 }

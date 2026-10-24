@@ -88,8 +88,6 @@ export const LendBorrowView: React.FC<LendBorrowViewProps> = ({
     .filter((i) => i.type === 'borrowed')
     .reduce((sum, i) => sum + i.amount, 0);
 
-  const netBalance = totalLentToReceive - totalBorrowedToPay;
-
   // Filtered List
   const filteredItems = items.filter((i) => {
     if (filterStatus !== 'all' && i.status !== filterStatus) return false;
@@ -161,7 +159,7 @@ export const LendBorrowView: React.FC<LendBorrowViewProps> = ({
   return (
     <div className="space-y-3.5">
       {/* 1. Executive Summary Cards (Clean short headings, no bracket Tamil) */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+      <div className="grid grid-cols-2 gap-2.5">
         {/* I LENT */}
         <div className="bg-white rounded-2xl p-4 border border-emerald-200/80 shadow-xs flex flex-col justify-between">
           <div className="flex items-center justify-between text-emerald-600 mb-1">
@@ -195,24 +193,6 @@ export const LendBorrowView: React.FC<LendBorrowViewProps> = ({
           </span>
           <p className="text-lg sm:text-2xl font-black text-red-700 mt-0.5 truncate">
             {formatCurrency(totalBorrowedToPay, currency)}
-          </p>
-        </div>
-
-        {/* NET BALANCE */}
-        <div className="col-span-2 sm:col-span-1 bg-slate-900 text-white rounded-2xl p-4 shadow-xs flex flex-col justify-between">
-          <div className="flex items-center justify-between text-slate-300 mb-1">
-            <span className="p-1.5 rounded-lg bg-slate-800 text-emerald-400">
-              <HandCoins className="w-4 h-4" />
-            </span>
-            <span className="text-[10px] font-bold uppercase text-slate-400 md:text-xs">
-              Balance
-            </span>
-          </div>
-          <span className="text-xs font-bold text-slate-300 uppercase tracking-wider md:text-sm">
-            Net Position
-          </span>
-          <p className={`text-lg sm:text-2xl font-black mt-0.5 truncate ${netBalance >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-            {formatCurrency(netBalance, currency)}
           </p>
         </div>
       </div>

@@ -5,7 +5,6 @@ import {
   setCachedWorkspaceToken,
   isGoogleTokenExpired,
   refreshGoogleTokenSilently,
-  clearGsiOriginBlockFlag,
   GOOGLE_SCOPES 
 } from './workspaceAuth';
 import { sortTransactionsChronological, calculateRunningBalances } from './calculations';
@@ -98,10 +97,6 @@ export const requestGoogleAccessToken = async (
       return existing;
     }
   }
-
-  // A deliberate user tap gets one fresh chance at silent renewal even if
-  // background attempts were paused after an origin mismatch.
-  clearGsiOriginBlockFlag();
 
   // If token is expired or missing, try silent refresh first
   try {
@@ -1256,6 +1251,11 @@ export const overwriteTransactionsInSheet = async (
   const dateRowIndices: number[] = [];
   let lendIdx = 0;
 
+  // Out of Wallet is global, not per-day: it must match the in-app
+  // "Out of Wallet" badge (a running measure over ALL transactions), so it is
+  // computed once here over the full chronological list.
+  const globalRunning = calculateRunningBalances(sorted);
+
   txsByDate.forEach((dayTxs, dateStr) => {
     const dateHeader = formatDateToSheetHeader(dateStr);
 
@@ -1288,7 +1288,8 @@ export const overwriteTransactionsInSheet = async (
     dayTxs.forEach((tx) => {
       const rb = dayRunning.get(tx.id);
       const bal = rb ? rb.balance : 0;
-      const oow = rb ? rb.outOfWallet : 0;
+      const gRb = globalRunning.get(tx.id);
+      const oow = gRb ? gRb.outOfWallet : 0;
       const isCard = tx.paymentMethod === 'Card' || tx.paymentMethod === 'Bank Transfer' || tx.type === 'card_expense';
       const isCashIn = tx.type === 'cash_added';
 

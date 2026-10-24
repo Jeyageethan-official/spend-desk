@@ -575,9 +575,15 @@ export const buildDashboardLayout = (input: DashboardInput): DashboardLayout => 
     {
       label: 'Cash balance',
       // Follows the date filter like every other KPI: a "Today" filter with no
-      // transactions shows Rs 0 instead of the all-time balance. Floored at 0
-      // like the in-app running balance (excess shows under "Out of wallet").
-      value: { formula: '=IF(OR(C7="All time", F7=""), SUMIF(Transactions!C:C,"IN",Transactions!E:E) - SUMIFS(Transactions!E:E,Transactions!C:C,"OUT",Transactions!G:G,"Cash"), MAX(0, SUMIFS(Transactions!E:E,Transactions!C:C,"IN",Transactions!A:A,">="&F7,Transactions!A:A,"<="&H7) - SUMIFS(Transactions!E:E,Transactions!C:C,"OUT",Transactions!G:G,"Cash",Transactions!A:A,">="&F7,Transactions!A:A,"<="&H7)))' },
+      // transactions shows Rs 0 instead of the all-time balance.
+      // Cash spent beyond the wallet does NOT reduce the wallet balance (it is
+      // out-of-wallet money), so the raw IN-OUT difference is floored exactly
+      // like the in-app running balance by adding back the Out of Wallet column:
+      //   raw + outOfWallet = the clamped running balance (never below 0), which
+      // matches the Balance column of the Transactions sheet. The filtered branch
+      // is floored at 0 like the in-app running balance: a custom range that
+      // starts after earlier cash-in rows can sum negative on its own.
+      value: { formula: '=IF(OR(C7="All time", F7=""), SUMIF(Transactions!C:C,"IN",Transactions!E:E) - SUMIFS(Transactions!E:E,Transactions!C:C,"OUT",Transactions!G:G,"Cash") + SUM(Transactions!J:J), MAX(0, SUMIFS(Transactions!E:E,Transactions!C:C,"IN",Transactions!A:A,">="&F7,Transactions!A:A,"<="&H7) - SUMIFS(Transactions!E:E,Transactions!C:C,"OUT",Transactions!G:G,"Cash",Transactions!A:A,">="&F7,Transactions!A:A,"<="&H7) + SUMIFS(Transactions!J:J,Transactions!A:A,">="&F7,Transactions!A:A,"<="&H7)))' },
       sub: { formula: '=IF(B13<0, "Deficit — spending exceeds cash", IF(B13=0, "No cash on hand", IF(B13<1500, "Low cash", "Healthy")))' },
       accent: P.brandBright,
       valueColor: P.brand,
@@ -618,8 +624,11 @@ export const buildDashboardLayout = (input: DashboardInput): DashboardLayout => 
     },
     {
       label: 'Out of wallet',
-      value: { formula: '=IF(B13<0, ABS(B13), 0)' },
-      sub: { formula: '=IF(B13<0, "Spent beyond cash on hand", "Nothing beyond cash on hand")' },
+      // Sums the per-transaction Out of Wallet column (Transactions!J), so it
+      // matches the in-app "Out of Wallet" badge instead of deriving from B13
+      // (which can no longer go negative once the balance is floored).
+      value: { formula: '=IF(OR(C7="All time", F7=""), SUM(Transactions!J:J), SUMIFS(Transactions!J:J,Transactions!A:A,">="&F7,Transactions!A:A,"<="&H7))' },
+      sub: { formula: '=IF(Q13>0, "Spent beyond cash on hand", "Nothing beyond cash on hand")' },
       accent: '#D97706',
       valueColor: summary.outOfWallet > 0 ? P.warn : P.ink,
       subColor: summary.outOfWallet > 0 ? P.warn : P.faint,

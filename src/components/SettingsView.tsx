@@ -119,6 +119,8 @@ interface SettingsViewProps {
   onUpdateCategories?: (cats: CategoryDef[]) => void;
   onResetAllData?: () => void;
   onRestoreTransactions?: (txs: Transaction[], lends?: LendItem[]) => void;
+  /** Wipe this device's sign-in state (session, Google token) without touching data. */
+  onResetSignIn?: () => void;
   initialSection?: 'main' | 'categories' | 'preferences' | 'budget' | 'cloud' | 'data' | 'about' | 'profile';
   onNotification?: (msg: string, type?: 'success' | 'info' | 'error') => void;
   totalCashBalance?: number;
@@ -180,6 +182,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onUpdateCategories,
   onResetAllData,
   onRestoreTransactions,
+  onResetSignIn,
   initialSection = 'main',
   onNotification,
 }) => {
@@ -1801,6 +1804,26 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       <span className="text-sm font-bold text-slate-900 dark:text-white font-mono">v3.2 PRO</span>
                     </div>
                   </div>
+                </div>
+
+                {/* Sign-in recovery: clears the session + Google token on THIS
+                    device only. The account's data stays untouched and comes
+                    back with the next sign-in. */}
+                <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/90 dark:border-slate-800 p-5 shadow-xs space-y-3">
+                  <div className="flex items-center gap-2 text-slate-900 dark:text-white font-bold text-sm">
+                    <RotateCcw className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                    <span>Sign-in Recovery</span>
+                  </div>
+                  <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed md:text-sm">
+                    Stuck on &quot;signed in&quot; but nothing syncs, or the wrong account shows up? Reset the sign-in state of this device. Your transactions, debts and settings are kept and come back when you sign in again.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => onResetSignIn?.()}
+                    className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-bold hover:bg-slate-800 dark:hover:bg-slate-200 cursor-pointer md:text-sm"
+                  >
+                    Reset sign-in on this device
+                  </button>
                 </div>
               </div>
             )}

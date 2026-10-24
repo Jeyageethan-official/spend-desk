@@ -1,18 +1,20 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { 
-  initSupabaseAuth, 
-  signOutSupabase,
-  signInWithGoogleSupabase 
+  initAuthListener,
+  signInWithGoogleSupabase,
+  readAuthStatus,
+  writeAuthStatus,
+  AuthStatus,
 } from './lib/supabase';
 import {
-  signInWithGoogleWorkspace,
-  initWorkspaceAuth,
-  signOutGoogleWorkspace,
   getCachedWorkspaceToken,
+  setCachedWorkspaceToken,
+  clearWorkspaceTokenState,
+  setCurrentWorkspaceAccount,
   isGoogleTokenExpired,
   refreshGoogleTokenSilently,
+  resetSignIn,
 } from './lib/workspaceAuth';
-import { hasFreshUserGesture } from './lib/userGesture';
 import { 
   Transaction, 
   FilterState, 
@@ -65,6 +67,7 @@ import {
   calculateSummary, 
   calculateCategoryBreakdown, 
   calculateWeeklyDailyTrend, 
+  calculateRunningBalances,
   filterTransactions,
   formatCurrency,
   sanitizeTransactions,
@@ -100,6 +103,7 @@ import {
   restorePersistedPhase,
 } from './lib/authPhase';
 import { clearPendingSync, hasPendingSync, loadPendingSync, markLendDelete, markLendUpsert, markSettingsDirty, markTransactionDelete, markTransactionUpsert, mergePendingWorkspace, stageWorkspaceForReplay } from './lib/pendingSync';
+import { clearSheetSyncDirty, markSheetSyncDirty, noteSheetSyncAttempt, readSheetOutbox, SHEET_OUTBOX_MAX_BACKOFF_MS } from './lib/sheetOutbox';
 import { clearSignedOutWorkspace, loadSignedOutWorkspace, saveSignedOutWorkspace } from './lib/signedOutWorkspace';
 import { Header } from './components/Header';
 import { SummaryCards } from './components/SummaryCards';
@@ -112,6 +116,7 @@ import { ConfirmModal } from './components/ConfirmModal';
 import { SmsParserModal } from './components/SmsParserModal';
 import { AuthHelpModal } from './components/AuthHelpModal';
 import { AdjustBalanceModal } from './components/AdjustBalanceModal';
+import { OutOfWalletModal } from './components/OutOfWalletModal';
 import { BottomNav } from './components/BottomNav';
 import { Sidebar } from './components/Sidebar';
 import { AnalyticsView } from './components/AnalyticsView';
@@ -156,21 +161,20 @@ const loadLastOfflineWorkspace = (): string | null => {
 };
 
 export default function App() {
-  const [user, setUser] = useState<any>(() => {
-    try {
-      const saved = localStorage.getItem('money_tracker_user') || localStorage.getItem('money_tracker_user_info');
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
-  });
-  const [accessToken, setAccessToken] = useState<string | null>(() => {
-    try {
-      return localStorage.getItem('money_tracker_access_token');
-    } catch {
-      return null;
-    }
-  });
+  // The Supabase session is the ONLY source of truth for "signed in".
+  // A stored profile is a display cache, never an auth signal: restoring it
+  // as a live session is exactly what made the app look connected (and
+  // silently fail to sync) after a long idle.
+  const [user, setUser] = useState<any>(null);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
+  // What this device believes about the sign-in:
+  //   signed_in  - a live session exists,
+  //   signed_out - the user signed out on purpose (local mode, no nagging),
+  //   expired    - the session died while the app was closed (local mode WITH
+  //                an honest banner, because the user expects their data to
+  //                sync again).
+  const [authStatus, setAuthStatus] = useState<AuthStatus>(() => readAuthStatus());
+  const [isSessionBannerDismissed, setIsSessionBannerDismissed] = useState(false);
   // After sign-out, keep the last account's offline workspace visible. This is
   // intentionally persisted so a refresh also retains the user's local ledger.
   // A later Google sign-in always replaces it with that Google account's scope.
@@ -208,6 +212,12 @@ export default function App() {
   };
 
   useEffect(() => {
+    // The Telegram link belongs to an account. Asking for it while nobody is
+    // signed in is a guaranteed 401, so the local fallback is used instead.
+    if (!user?.id) {
+      setTelegramLinkStatus(null);
+      return;
+    }
     void refreshTelegramLinkStatus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
@@ -314,6 +324,8 @@ export default function App() {
   const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
   const [modalDefaultType, setModalDefaultType] = useState<TransactionType>('cash_expense');
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  // Out-of-wallet → "was this borrowed?" prompt (amount + date of the excess).
+  const [oowPrompt, setOowPrompt] = useState<{ amount: number; date: string } | null>(null);
   const [isSmsModalOpen, setIsSmsModalOpen] = useState(false);
   const [isAuthHelpOpen, setIsAuthHelpOpen] = useState(false);
   const [isSignOutConfirmOpen, setIsSignOutConfirmOpen] = useState(false);
@@ -329,6 +341,9 @@ export default function App() {
   const [pendingSheetPushEmail, setPendingSheetPushEmail] = useState<string | null>(loadPendingSheetPushEmail);
   const cloudVersionRef = useRef(0);
   const cloudSyncTimerRef = useRef<number | null>(null);
+  // The account that currently owns this device's Google credentials. Used to
+  // drop the previous account's token the moment a different account signs in.
+  const lastSignedInEmailRef = useRef<string | null>(null);
   const queueSheetPushRef = useRef<((snapshot?: { transactions: Transaction[]; lendItems: LendItem[] }) => void) | null>(null);
   const suppressNextCloudSyncRef = useRef(false);
 
@@ -379,87 +394,129 @@ export default function App() {
       }
     } catch {}
 
-    // 1. Listen for Google Workspace Auth
-    const unsubWorkspace = initWorkspaceAuth(
-      (wsUser, token) => {
-        const email = wsUser.email ? wsUser.email.trim().toLowerCase() : '';
-        // Session landed while the overlay was showing a phase → show "Signed in".
-        finishOAuthConnected(wsUser.email || undefined);
-        setUser({
-          displayName: wsUser.name,
-          email: wsUser.email,
-          photoURL: wsUser.picture,
-        });
-        if (token) setAccessToken(token);
-        if (email) {
-          saveLastUserEmail(email);
-          mergeGuestDataIntoUser(email);
-          setOfflineWorkspaceEmail(email);
+    // THE SINGLE AUTH LISTENER.
+    // The Supabase session is the only authority on "is anybody signed in".
+    // Google tokens, the stored profile and the sheet pointer are caches that
+    // can never fake a sign-in - which is exactly what caused the old
+    // "still signed in but nothing syncs" state after a long idle.
+    const unsubAuth = initAuthListener({
+      onSignedIn: (account, ctx) => {
+        const email = account.email;
+        if (!email) return;
+        const key = email.trim().toLowerCase();
 
-          // Auto-connect last connected Google Sheet if not currently set
-          const lastSheet = loadStoredSheetMeta(email) || loadStoredSheetMeta(null);
-          if (lastSheet) {
-            setActiveSheet(lastSheet);
-            saveStoredSheetMeta(lastSheet, email);
+        // A different account just took over this device: drop the previous
+        // account's Google token so no credential leaks across accounts.
+        const isNewAccount = lastSignedInEmailRef.current !== key;
+        if (lastSignedInEmailRef.current && isNewAccount) {
+          clearWorkspaceTokenState();
+          cloudVersionRef.current = 0;
+          // The sheet on screen belongs to the previous account - drop it
+          // instead of showing (and pushing into) someone else's spreadsheet.
+          setActiveSheet(null);
+        }
+        lastSignedInEmailRef.current = key;
+        // This account now owns the device's Google credentials. The token is
+        // bound to it, so a leftover token from an earlier session can never
+        // be picked up again.
+        setCurrentWorkspaceAccount(key);
+
+        // Session landed while the overlay was showing a phase → show "Signed in".
+        finishOAuthConnected(account.email);
+        setUser({
+          id: account.id,
+          displayName: account.name,
+          email: account.email,
+          photoURL: account.picture,
+        });
+        writeAuthStatus('signed_in');
+        setAuthStatus('signed_in');
+        setIsSessionBannerDismissed(false);
+
+        if (ctx.providerToken) {
+          // Fresh Google token straight from the sign-in exchange (~1h life).
+          setCachedWorkspaceToken(ctx.providerToken, undefined, key);
+          setAccessToken(ctx.providerToken);
+        } else {
+          const cached = getCachedWorkspaceToken();
+          if (cached) setAccessToken(cached);
+          if (!cached || isGoogleTokenExpired()) {
+            void refreshGoogleTokenSilently(key, 'signin')
+              .then((token) => { if (token) setAccessToken(token); })
+              .catch(console.warn);
           }
         }
-      },
-      () => {
-        // Workspace not signed in
-      }
-    );
 
-    // 2. Listen for Supabase session if present
-    const unsubSupabase = initSupabaseAuth(
-      (authedUser, token) => {
-        const email = authedUser.email ? authedUser.email.trim().toLowerCase() : '';
-        setUser(authedUser);
-        finishOAuthConnected(authedUser.email || undefined);
+        saveLastUserEmail(key);
+        mergeGuestDataIntoUser(key);
+        setOfflineWorkspaceEmail(key);
+
         if (awaitingRedirectSignIn) {
           awaitingRedirectSignIn = false;
-          showNotification(email ? `Signed in as ${email}` : 'Signed in successfully.', 'success');
+          showNotification(`Signed in as ${key}`, 'success');
         }
-        if (token && (!accessToken || accessToken === 'local_token' || accessToken.startsWith('eyJ'))) {
-          setAccessToken(token);
-        }
-        if (email) {
-          saveLastUserEmail(email);
-          mergeGuestDataIntoUser(email);
-          setOfflineWorkspaceEmail(email);
 
-          // Auto-connect last connected Google Sheet if not currently set
-          const lastSheet = loadStoredSheetMeta(email) || loadStoredSheetMeta(null);
+        // Auto-connect THIS account's own sheet - never another account's.
+        // Only on a fresh sign-in: a routine token refresh must not re-pick
+        // the sheet or re-run the Drive discovery.
+        if (isNewAccount) {
+          const lastSheet = loadStoredSheetMeta(key);
           if (lastSheet) {
             setActiveSheet(lastSheet);
-            saveStoredSheetMeta(lastSheet, email);
-          } else if (token && token.length > 20 && !token.startsWith('eyJ')) {
-            // Auto-discover Drive spreadsheets on initial sign-in
-            listUserSpreadsheets(token).then((driveList) => {
-              if (driveList.length > 0) {
-                const match = driveList.find((s) => /spenddesk|cash|wallet|money/i.test(s.name)) || driveList[0];
-                const sheetMeta: GoogleSheetMeta = {
-                  id: match.id,
-                  name: match.name,
-                  url: match.webViewLink || `https://docs.google.com/spreadsheets/d/${match.id}/edit`,
-                  lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                };
-                setActiveSheet(sheetMeta);
-                saveStoredSheetMeta(sheetMeta, email);
-                saveKnownSpreadsheet(sheetMeta, email);
-              }
-            }).catch(console.warn);
+            saveStoredSheetMeta(lastSheet, key);
+          } else {
+            // First sign-in for this account: look for a sheet in their Drive.
+            void (async () => {
+              const token = getCachedWorkspaceToken() || (await refreshGoogleTokenSilently(key, 'discover_sheet'));
+              if (!token) return;
+              const driveList = await listUserSpreadsheets(token);
+              if (!driveList || driveList.length === 0) return;
+              const match =
+                driveList.find((s) => /spenddesk|cash|wallet|money/i.test(s.name)) || driveList[0];
+              const sheetMeta: GoogleSheetMeta = {
+                id: match.id,
+                name: match.name,
+                url: match.webViewLink || `https://docs.google.com/spreadsheets/d/${match.id}/edit`,
+                lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              };
+              setActiveSheet(sheetMeta);
+              saveStoredSheetMeta(sheetMeta, key);
+              saveKnownSpreadsheet(sheetMeta, key);
+            })().catch(console.warn);
           }
         }
       },
-      () => {
-        // Supabase signed out
-      }
-    );
+      onSignedOut: (reason) => {
+        if (reason === 'boot') {
+          // Return trip from Google: the session is still being exchanged, so
+          // the boot snapshot legitimately has no session yet. The SIGNED_IN
+          // event follows within a second - this is NOT an expired session.
+          if (awaitingRedirectSignIn) return;
+          // No session on this device right now. If we believed we were signed
+          // in, the session died while the app was closed -> stay in local mode
+          // but SAY SO instead of pretending to be connected.
+          if (readAuthStatus() === 'signed_in') {
+            writeAuthStatus('expired');
+            setAuthStatus('expired');
+          }
+          return;
+        }
+        // The session is gone (signed out on purpose, or revoked/expired).
+        setUser(null);
+        setAccessToken(null);
+        // The Google credentials die with the session: a token without a
+        // session is exactly the "looks connected, syncs nothing" state.
+        clearWorkspaceTokenState();
+        setCurrentWorkspaceAccount(null);
+        cloudVersionRef.current = 0;
+        setCloudSyncReady(false);
+        const nextStatus: AuthStatus = reason === 'signed_out' ? 'signed_out' : 'expired';
+        writeAuthStatus(nextStatus);
+        setAuthStatus(nextStatus);
+      },
+    });
 
-    return () => {
-      unsubWorkspace();
-      unsubSupabase();
-    };
+    return unsubAuth;
   }, []);
 
   // Stale-version self-heal: GitHub Pages caches index.html for ~10 minutes,
@@ -536,12 +593,12 @@ export default function App() {
       const providerToken = params.get('provider_token');
       const grantedScope = params.get('scope') || '';
       if (providerToken) {
+        // Legacy return path (older Google redirect). The token is kept in
+        // memory only: it is not bound to an account yet, and a token without
+        // an owner is never cached (that is how a dead session used to look
+        // alive). The Supabase session hands over the real, account-bound
+        // token a moment later.
         setAccessToken(providerToken);
-        try { 
-          localStorage.setItem('money_tracker_access_token', providerToken);
-          localStorage.setItem('spenddesk_google_token', providerToken);
-          localStorage.setItem('spenddesk_token_expires_at', String(Date.now() + 3540 * 1000));
-        } catch {}
         if (grantedScope && (!grantedScope.includes('spreadsheets') && !grantedScope.includes('drive'))) {
           showNotification('Notice: Please check "Select all" permissions to enable Google Sheets syncing.', 'info');
         }
@@ -556,16 +613,19 @@ export default function App() {
     }
   }, []);
 
-  // Google Session Persistence: Automatically refresh expired Google token silently in background so Sheets & Drive stay ready
+  // Google Session Persistence: keep a working Sheets/Drive token in hand.
+  // The renewal ladder is server-side (zero Google UI); it only ever fails
+  // when the account really has to re-consent.
   useEffect(() => {
-    if (user?.email) {
-      if (!accessToken || accessToken === 'local_token' || accessToken.startsWith('eyJ') || isGoogleTokenExpired()) {
-        void refreshGoogleTokenSilently(user.email).then((newToken) => {
+    if (!user?.email) return;
+    if (!accessToken || isGoogleTokenExpired()) {
+      void refreshGoogleTokenSilently(user.email, 'token_persistence')
+        .then((newToken) => {
           if (newToken) {
             setAccessToken(newToken);
           }
-        }).catch(console.warn);
-      }
+        })
+        .catch(console.warn);
     }
   }, [user?.email, accessToken]);
 
@@ -573,52 +633,28 @@ export default function App() {
   // the background before it expires, so Sheets/Drive never hit an "expired"
   // state (until the user explicitly signs out).
   //
-  // Google Identity Services always opens a real window (verified against the
-  // live site - it calls window.open on the OAuth endpoint even with
-  // prompt:'none'), so a renewal on plain app open would be a popup. The
-  // watchdog therefore renews immediately only when a tap just happened, and
-  // otherwise arms a one-shot renewal for the next interaction: opening the app
-  // shows nothing, and sync repairs itself as soon as the user touches it.
+  // Renewal runs entirely through the backend (`sheets-token` edge function,
+  // driven by the offline refresh token stored at sign-in) with ZERO Google UI
+  // - no popup, no redirect, no gesture needed. The old Google Identity
+  // Services path opened a real window on every renewal, so it was removed;
+  // the app now stays exactly as it is after any amount of idle time and
+  // nothing ever appears on screen.
   useEffect(() => {
     if (!user?.email) return;
-    let disarm: (() => void) | null = null;
 
-    const renew = () => {
-      void refreshGoogleTokenSilently(user.email)
+    const check = () => {
+      if (!isGoogleTokenExpired()) return;
+      void refreshGoogleTokenSilently(user.email, 'renewal_watchdog')
         .then((newToken) => {
           if (newToken) setAccessToken(newToken);
         })
         .catch(() => {});
     };
 
-    const armRenewOnFirstGesture = () => {
-      if (disarm) return;
-      const fire = () => {
-        if (disarm) disarm();
-        renew();
-      };
-      window.addEventListener('pointerdown', fire, { once: true, capture: true });
-      window.addEventListener('keydown', fire, { once: true, capture: true });
-      disarm = () => {
-        window.removeEventListener('pointerdown', fire, { capture: true });
-        window.removeEventListener('keydown', fire, { capture: true });
-      };
-    };
-
-    const check = () => {
-      if (!isGoogleTokenExpired()) return;
-      if (hasFreshUserGesture()) {
-        renew();
-        return;
-      }
-      armRenewOnFirstGesture();
-    };
-
     check();
     const renewalTimer = window.setInterval(check, 5 * 60 * 1000);
     return () => {
       window.clearInterval(renewalTimer);
-      if (disarm) disarm();
     };
   }, [user?.email]);
 
@@ -1113,7 +1149,9 @@ export default function App() {
   ) => {
     if (isPendingSignedOutReplay) return;
     const sId = targetSheetId || activeSheet?.id;
-    let token = targetToken || accessToken;
+    // Fall back to the single token cache: after a reload the in-memory token
+    // is empty until the silent renewal lands, but the cached one is valid.
+    let token = targetToken || accessToken || getCachedWorkspaceToken();
     if (!sId) {
       if (!options.silent) showNotification('Connect a Google Sheet first.', 'info');
       return;
@@ -1242,7 +1280,9 @@ export default function App() {
 
       // If activeSheet is not yet bound in state, auto-connect from storage or Google Drive
       if (!sId) {
-        const stored = loadStoredSheetMeta(currentUserEmail) || loadStoredSheetMeta(null);
+        // THIS account's sheet only (or the signed-out sheet when nobody is
+        // signed in) - never the device-wide pointer.
+        const stored = loadStoredSheetMeta(currentUserEmail);
         if (stored?.id) {
           sId = stored.id;
           setActiveSheet(stored);
@@ -1334,22 +1374,74 @@ export default function App() {
       saveStoredBudgetConfig(budgetConfig, signedOutScope);
       saveLastUserEmail(signedOutScope);
       setOfflineWorkspaceEmail(signedOutScope);
+      // Stage the final local state so the next sign-in replays these edits
+      // instead of letting the remote copy silently overwrite them.
+      stageWorkspaceForReplay(transactions, lendItems, signedOutScope);
+      // Arm the one-time sheet replay too: sheet pushes are blocked while
+      // signed out, so without this marker every edit made in local mode
+      // would leave the connected Google Sheet behind until the next manual
+      // sync. The marker survives until the first push after re-sign-in
+      // succeeds (see the pending-replay effect below).
+      try {
+        localStorage.setItem(PENDING_SHEET_PUSH_KEY, signedOutScope);
+      } catch (e) {}
+      setPendingSheetPushEmail(signedOutScope);
       try {
         localStorage.setItem(LAST_OFFLINE_WORKSPACE_KEY, signedOutScope);
       } catch (e) {}
     }
-    try {
-      localStorage.removeItem('money_tracker_user');
-      localStorage.removeItem('money_tracker_user_info');
-      localStorage.removeItem('spenddesk_google_token');
-      localStorage.removeItem('money_tracker_access_token');
-    } catch (e) {}
-    await signOutGoogleWorkspace();
-    await signOutSupabase();
+    // Drop EVERY credential: the Supabase session, Google's offline refresh
+    // token, the cached access token and the in-memory copies. The account's
+    // own data stays on this device (local mode) and comes back on the next
+    // sign-in.
+    await resetSignIn();
+    lastSignedInEmailRef.current = null;
+    cloudVersionRef.current = 0;
+    setCloudSyncReady(false);
     setUser(null);
     setAccessToken(null);
+    writeAuthStatus('signed_out');
+    setAuthStatus('signed_out');
     showNotification('Signed out. Your transactions remain saved in local storage.', 'info');
   };
+
+  // FULL SIGN-IN RESET: wipes every credential on this device so the next
+  // sign-in starts from a clean slate (the "it is stuck / it shows the wrong
+  // account" escape hatch). The account's data stays on the device and
+  // returns with the next sign-in.
+  const handleResetSignIn = async () => {
+    // Keep whatever is on screen alive across the wipe: stage it so the next
+    // sign-in replays it over the remote copy (same guarantee as sign-out).
+    const scope = user?.email ? user.email.trim().toLowerCase() : (offlineWorkspaceEmail || null);
+    if (scope && scope !== 'guest') {
+      stageWorkspaceForReplay(transactions, lendItems, scope);
+    }
+    await resetSignIn();
+    lastSignedInEmailRef.current = null;
+    cloudVersionRef.current = 0;
+    setCloudSyncReady(false);
+    setUser(null);
+    setAccessToken(null);
+    writeAuthStatus('signed_out');
+    setAuthStatus('signed_out');
+    showNotification('Sign-in state cleared. Reloading for a clean start…', 'info');
+    setTimeout(() => window.location.reload(), 800);
+  };
+
+  // Debug / support hook: `window.__spenddeskAuth.reset()` wipes the sign-in
+  // state of this device without touching the account's data. It EXTENDS the
+  // diagnostics object that authPhase.ts installs - the phase/trace helpers
+  // must keep working.
+  const signedInEmailRef = useRef<string | null>(null);
+  signedInEmailRef.current = user?.email || null;
+  useEffect(() => {
+    const w = window as any;
+    w.__spenddeskAuth = {
+      ...(w.__spenddeskAuth || {}),
+      reset: () => { void handleResetSignIn(); },
+      status: () => ({ authStatus: readAuthStatus(), user: signedInEmailRef.current }),
+    };
+  }, []);
 
   const isPushingToSheetRef = useRef(false);
 
@@ -1360,7 +1452,11 @@ export default function App() {
   ): Promise<boolean> => {
     let sheetToSync = activeSheet;
     if (!sheetToSync) {
-      const stored = loadStoredSheetMeta(currentUserEmail) || loadStoredSheetMeta(null) || loadStoredSheetMeta('guest');
+      // Only THIS account's sheet - or, when nobody is signed in, the sheet
+      // that was connected while signed out. The device-wide "last sheet"
+      // pointer belongs to whichever account connected last; using it here
+      // leaked one account's sheet into another account's workspace.
+      const stored = loadStoredSheetMeta(currentUserEmail);
       if (stored?.id) {
         sheetToSync = stored;
         setActiveSheet(stored);
@@ -1372,7 +1468,12 @@ export default function App() {
       }
       return false;
     }
-    if (isPushingToSheetRef.current) return false;
+    if (isPushingToSheetRef.current) {
+      // Another push is in flight. Mark the sheet dirty so the sync watchdog
+      // re-pushes after it finishes instead of silently dropping this change.
+      markSheetSyncDirty(currentUserEmail, 'push already in flight');
+      return false;
+    }
     isPushingToSheetRef.current = true;
 
     let sheetToken = accessToken;
@@ -1388,6 +1489,9 @@ export default function App() {
 
     if (!hasGoogleSheetsToken) {
       if (!options.interactive) {
+        // Token not cached yet (e.g. right after boot). Keep the outbox dirty
+        // so the watchdog retries once the server-side token mint is ready.
+        markSheetSyncDirty(currentUserEmail, 'no google token yet');
         isPushingToSheetRef.current = false;
         return false;
       }
@@ -1411,6 +1515,7 @@ export default function App() {
     }
     
     // Always trigger visual sync indicator on header icon
+    noteSheetSyncAttempt(currentUserEmail);
     setIsSyncing(true);
     try {
       const currentLocalTxs = sanitizeTransactions(snapshot?.transactions ?? latestStateRef.current.transactions);
@@ -1437,6 +1542,7 @@ export default function App() {
         const dashMsg = dashErr?.message || 'Dashboard rebuild failed';
         // Always surface this — otherwise users only see Transactions update and think deploy failed.
         showNotification(`Transactions synced, but Dashboard failed: ${dashMsg}`, 'error');
+        markSheetSyncDirty(currentUserEmail, `dashboard failed: ${dashMsg}`);
         return false;
       }
 
@@ -1448,6 +1554,7 @@ export default function App() {
       suppressNextCloudSyncRef.current = true;
       setActiveSheet(updatedMeta);
 
+      clearSheetSyncDirty(currentUserEmail);
       if (!options.silent) {
         showNotification(`Synced ${currentLocalTxs.length} records with "${sheetToSync.name}"!`, 'success');
       }
@@ -1470,6 +1577,7 @@ export default function App() {
       } else if (!options.silent) {
         showNotification('Could not sync to Google Sheet: ' + (err.message || 'Network error'), 'error');
       }
+      markSheetSyncDirty(currentUserEmail, raw);
       return false;
     } finally {
       isPushingToSheetRef.current = false;
@@ -1479,6 +1587,12 @@ export default function App() {
 
   const sheetPushTimerRef = useRef<number | null>(null);
   const queueSheetPush = useCallback((snapshot?: { transactions: Transaction[]; lendItems: LendItem[] }) => {
+    // Mark the sheet dirty FIRST: even if this attempt is skipped (offline,
+    // another push in flight, throttled tab, cold token cache), the sync
+    // watchdog below will retry automatically until a push succeeds.
+    if (activeSheet && user?.email) {
+      markSheetSyncDirty(currentUserEmail, 'local change queued');
+    }
     // Only queue background Google Sheet push if user is signed in, online, and active sheet exists
     if (!activeSheet || !user?.email || !isOnline) return;
     if (sheetPushTimerRef.current) window.clearTimeout(sheetPushTimerRef.current);
@@ -1491,11 +1605,81 @@ export default function App() {
         console.warn('Background sheet push note:', err);
       });
     }, 1200);
-  }, [activeSheet, user?.email, isOnline, handlePushToSheet]);
+  }, [activeSheet, user?.email, isOnline, currentUserEmail, handlePushToSheet]);
 
   useEffect(() => {
     queueSheetPushRef.current = queueSheetPush;
   }, [queueSheetPush]);
+
+  // Sheet-sync watchdog: makes Google Sheet push "realtime-safe".
+  // Background tabs throttle timers (a 1.2s debounce can stretch to minutes),
+  // and any failed/skipped push used to be dropped until the next transaction.
+  // The outbox marks the sheet dirty; this watchdog flushes it on a backoff
+  // timer (5s → 15s → 45s → 2m → 5m cap) and instantly on every wake-up
+  // (tab focus, visibility, back online). Pushes are silent, and since every
+  // push is a full overwrite of the sheet, a duplicate retry is idempotent.
+  const pushToSheetRef = useRef(handlePushToSheet);
+  useEffect(() => {
+    pushToSheetRef.current = handlePushToSheet;
+  }, [handlePushToSheet]);
+
+  useEffect(() => {
+    if (!user?.email || !activeSheet) return;
+    let disposed = false;
+    let timer: number | null = null;
+
+    const scheduleNext = () => {
+      if (disposed || timer !== null) return;
+      const box = readSheetOutbox(currentUserEmail);
+      const delay = box.dirty
+        ? Math.min(Math.max(box.nextRetryAt - Date.now(), 5_000), SHEET_OUTBOX_MAX_BACKOFF_MS)
+        : 45_000; // idle poll: catches dirty marks made by any other path
+      timer = window.setTimeout(flush, delay);
+    };
+
+    const flush = () => {
+      if (disposed) return;
+      timer = null;
+      // Offline: stay quiet; the 'online' wake handler re-arms immediately.
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+      const box = readSheetOutbox(currentUserEmail);
+      if (!box.dirty || Date.now() < box.nextRetryAt) {
+        scheduleNext();
+        return;
+      }
+      void pushToSheetRef.current({ silent: true }).finally(() => {
+        if (!disposed) scheduleNext();
+      });
+    };
+
+    const wake = () => {
+      if (disposed) return;
+      if (document.visibilityState !== 'visible') return;
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+      const box = readSheetOutbox(currentUserEmail);
+      if (!box.dirty) return;
+      // User is looking at the app now: retry immediately, ignore backoff.
+      if (timer !== null) {
+        window.clearTimeout(timer);
+        timer = null;
+      }
+      flush();
+    };
+
+    document.addEventListener('visibilitychange', wake);
+    window.addEventListener('focus', wake);
+    window.addEventListener('online', wake);
+    // Boot: flush a pending outbox (e.g. browser was closed mid-outage).
+    scheduleNext();
+
+    return () => {
+      disposed = true;
+      if (timer !== null) window.clearTimeout(timer);
+      document.removeEventListener('visibilitychange', wake);
+      window.removeEventListener('focus', wake);
+      window.removeEventListener('online', wake);
+    };
+  }, [user?.email, currentUserEmail, activeSheet, isOnline]);
 
   // A sign-out workspace gets priority on the next login: after local/offline
   // data has been reconciled, overwrite the linked Google Sheet once. The
@@ -1602,6 +1786,17 @@ export default function App() {
 
     if (activeSheet) {
       queueSheetPush({ transactions: updatedTxs, lendItems });
+    }
+
+    // Out-of-wallet flow: when this save makes (or changes) an out-of-wallet
+    // amount, immediately ask whether it was borrowed so it can be recorded in
+    // the Borrowed list. Edits that leave the amount unchanged never re-ask.
+    const newOow = calculateRunningBalances(updatedTxs).get(recordedTx.id)?.outOfWallet ?? 0;
+    const prevOow = txData.id
+      ? calculateRunningBalances(transactions).get(txData.id)?.outOfWallet ?? 0
+      : 0;
+    if (newOow > 0 && newOow !== prevOow) {
+      setOowPrompt({ amount: newOow, date: recordedTx.date });
     }
   };
 
@@ -2104,6 +2299,36 @@ export default function App() {
         </div>
       )}
 
+      {/* Session Expired Banner: the sign-in session died (long idle, revoked
+          refresh token) so the app fell back to Local Mode. Say so honestly
+          instead of looking connected while nothing syncs. */}
+      {authStatus === 'expired' && !isSessionBannerDismissed && (
+        <div className="bg-amber-500/10 border-b border-amber-500/30 text-amber-800 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs sm:text-sm font-medium md:pl-[var(--sidebar-w)]">
+          <div className="flex items-center gap-2 min-w-0">
+            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span className="truncate">
+              Your sign-in session expired - running in Local Mode. Your data is safe on this device; sign in again to sync it back to the cloud.
+            </span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => { void handleSignIn(); }}
+              className="rounded-lg bg-amber-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-amber-700 cursor-pointer"
+            >
+              Sign in again
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsSessionBannerDismissed(true)}
+              className="text-[11px] font-bold text-amber-700 hover:underline cursor-pointer"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Dynamic Island Floating Pill Toast (Matching user reference screenshot) */}
       <AnimatePresence>
         {notification && (
@@ -2364,6 +2589,7 @@ export default function App() {
               }}
               initialSection={settingsSection}
               onNotification={showNotification}
+              onResetSignIn={handleResetSignIn}
             />
           )}
 
@@ -2596,6 +2822,26 @@ export default function App() {
         isDestructive={true}
         onConfirm={confirmDelete}
         onCancel={() => setDeleteCandidate(null)}
+      />
+
+      {/* Out of wallet → borrowed prompt (auto-records into Borrowed on save) */}
+      <OutOfWalletModal
+        isOpen={Boolean(oowPrompt)}
+        amount={oowPrompt?.amount ?? 0}
+        date={oowPrompt?.date ?? getLocalDateString()}
+        currency={currency}
+        onDismiss={() => setOowPrompt(null)}
+        onSaveBorrowed={(data) => {
+          handleAddLendItem({
+            personName: data.personName,
+            thingsOrReason: data.thingsOrReason,
+            amount: data.amount,
+            type: 'borrowed',
+            status: 'pending',
+            date: data.date,
+          });
+          setOowPrompt(null);
+        }}
       />
 
       {/* Google sign-in phase overlay: redirecting → exchanging → connected / error */}

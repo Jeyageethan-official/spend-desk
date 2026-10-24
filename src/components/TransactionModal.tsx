@@ -445,22 +445,22 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
             </div>
           )}
 
-          {/* 4. Date & Payment Mode Row (side by side on mobile & tablet too).
-              min-w-0 on both columns: mobile date inputs have a wide intrinsic
-              size that would otherwise overflow the 50% grid track and cover
-              the Cash/Card toggle. */}
-          <div className="grid grid-cols-2 gap-2">
+          {/* 4. Date & Payment Mode — one full-width row per control on mobile:
+              iOS Safari's native date input keeps a wide intrinsic size even with
+              min-w-0, so any shared row lets it cover the Cash/Card toggle.
+              Side by side again from the sm breakpoint, where there is room. */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-2">
             <div className="min-w-0">
               <label className="text-[10px] font-bold uppercase text-slate-400 block mb-1 md:text-xs">
                 Date
               </label>
-              <div className="relative">
+              <div className="relative min-w-0 overflow-hidden">
                 <Calendar className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type="date"
                   value={date}
                   onChange={(e) => setDate(e.target.value)}
-                  className="w-full min-w-0 pl-8 pr-2 py-2 text-xs text-left font-medium bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-hidden focus:bg-white md:text-sm md:pr-2.5"
+                  className="w-full min-w-0 max-w-full pl-8 pr-2 py-2 text-xs text-left font-medium bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-hidden focus:bg-white md:text-sm md:pr-2.5"
                 />
               </div>
             </div>

@@ -443,59 +443,50 @@ export const saveStoredTelegramAlertConfig = (config: TelegramAlertConfig, email
   }
 };
 
+/**
+ * The spreadsheet link is ACCOUNT-SCOPED.
+ *
+ * A device can hold several Google accounts and the spreadsheet belongs to the
+ * Google account that owns it - handing account A's spreadsheet to account B
+ * on the same device means B silently writes into A's file. So the scope
+ * decides, and nothing else does:
+ *
+ *   - <account email> -> ONLY that account's own key. No fallback, ever.
+ *   - 'guest' / null  -> the sheet that was connected while signed out.
+ *
+ * The old build additionally fell back to a device-wide "last connected sheet"
+ * pointer, which is exactly how one account ended up pushing into another
+ * account's spreadsheet after a sign-out / sign-in cycle. That pointer is now
+ * only written by the signed-out (guest) scope and is handed to the FIRST
+ * account that signs in on this device - see mergeGuestDataIntoUser.
+ */
 export const loadStoredSheetMeta = (email?: string | null): GoogleSheetMeta | null => {
   try {
-    // 1. Check account-scoped key
-    if (email && email !== 'guest') {
-      const key = getScopedKey(SHEET_META_KEY, email);
-      const raw = localStorage.getItem(key);
-      if (raw) return JSON.parse(raw);
+    const scope = (email || '').trim().toLowerCase();
+
+    // 1. Account scope: strictly this account's own sheet, nothing else.
+    if (scope && scope !== 'guest') {
+      const raw = localStorage.getItem(getScopedKey(SHEET_META_KEY, scope));
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      return parsed?.id ? parsed as GoogleSheetMeta : null;
     }
 
-    // 2. Check global last active sheet key (auto-connect last connected sheet across logins)
-    const globalRaw = localStorage.getItem(GLOBAL_LAST_ACTIVE_SHEET_KEY) || localStorage.getItem(SHEET_META_KEY);
-    if (globalRaw) {
-      const parsed = JSON.parse(globalRaw);
-      if (parsed?.id) {
-        if (email && email !== 'guest') {
-          try {
-            localStorage.setItem(getScopedKey(SHEET_META_KEY, email), globalRaw);
-          } catch {}
-        }
-        return parsed;
-      }
-    }
-
-    // 3. Check guest storage key
-    const guestKey = getScopedKey(SHEET_META_KEY, 'guest');
-    const guestRaw = localStorage.getItem(guestKey);
+    // 2. Guest scope: the sheet connected while signed out on this device.
+    const guestRaw = localStorage.getItem(getScopedKey(SHEET_META_KEY, 'guest'));
     if (guestRaw) {
       const parsed = JSON.parse(guestRaw);
-      if (parsed?.id) {
-        if (email && email !== 'guest') {
-          try {
-            localStorage.setItem(getScopedKey(SHEET_META_KEY, email), guestRaw);
-          } catch {}
-        }
-        return parsed;
-      }
+      if (parsed?.id) return parsed as GoogleSheetMeta;
+      return null;
     }
 
-    // 4. Check known spreadsheets registry
-    const knownSheets = loadKnownSpreadsheets(email).concat(loadKnownSpreadsheets(null));
-    if (knownSheets.length > 0 && knownSheets[0]?.id) {
-      const fallback: GoogleSheetMeta = {
-        id: knownSheets[0].id,
-        name: knownSheets[0].name || 'SpendDesk Spreadsheet',
-        url: knownSheets[0].url || `https://docs.google.com/spreadsheets/d/${knownSheets[0].id}/edit`,
-        lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      };
-      if (email && email !== 'guest') {
-        try {
-          localStorage.setItem(getScopedKey(SHEET_META_KEY, email), JSON.stringify(fallback));
-        } catch {}
-      }
-      return fallback;
+    // 3. Device scope: the legacy "last connected sheet" pointer, written
+    //    only by the signed-out scope. It exists so a sheet connected before
+    //    the very first sign-in is not lost.
+    const deviceRaw = localStorage.getItem(GLOBAL_LAST_ACTIVE_SHEET_KEY) || localStorage.getItem(SHEET_META_KEY);
+    if (deviceRaw) {
+      const parsed = JSON.parse(deviceRaw);
+      return parsed?.id ? parsed as GoogleSheetMeta : null;
     }
   } catch (e) {
     console.error('Failed to parse sheet meta:', e);
@@ -505,19 +496,25 @@ export const loadStoredSheetMeta = (email?: string | null): GoogleSheetMeta | nu
 
 export const saveStoredSheetMeta = (meta: GoogleSheetMeta | null, email?: string | null) => {
   try {
-    const key = getScopedKey(SHEET_META_KEY, email);
+    const scope = (email || '').trim().toLowerCase();
+    const isAccount = Boolean(scope) && scope !== 'guest';
+    const key = getScopedKey(SHEET_META_KEY, isAccount ? scope : 'guest');
     if (meta) {
       const serialized = JSON.stringify(meta);
       localStorage.setItem(key, serialized);
-      // Persist globally so any newly signed-in Google account automatically inherits this last connected sheet
-      localStorage.setItem(GLOBAL_LAST_ACTIVE_SHEET_KEY, serialized);
-      localStorage.setItem(SHEET_META_KEY, serialized);
-      saveKnownSpreadsheet(meta, email);
-      saveKnownSpreadsheet(meta, null);
+      if (!isAccount) {
+        // Connected while signed out: also keep the device-level pointer so
+        // the sheet can be claimed by the first account that signs in here.
+        localStorage.setItem(GLOBAL_LAST_ACTIVE_SHEET_KEY, serialized);
+        localStorage.setItem(SHEET_META_KEY, serialized);
+      }
+      saveKnownSpreadsheet(meta, isAccount ? scope : 'guest');
     } else {
       localStorage.removeItem(key);
-      localStorage.removeItem(GLOBAL_LAST_ACTIVE_SHEET_KEY);
-      localStorage.removeItem(SHEET_META_KEY);
+      if (!isAccount) {
+        localStorage.removeItem(GLOBAL_LAST_ACTIVE_SHEET_KEY);
+        localStorage.removeItem(SHEET_META_KEY);
+      }
     }
   } catch (e) {
     console.error('Failed to save sheet meta:', e);
@@ -529,12 +526,19 @@ export const mergeGuestDataIntoUser = (
 ): { txCount: number; lendCount: number; mergedTxs: Transaction[]; mergedLends: LendItem[] } => {
   if (!userEmail) return { txCount: 0, lendCount: 0, mergedTxs: [], mergedLends: [] };
   try {
-    // 1. Auto-connect guest sheet or device sheet to this user if not already set
+    // 1. Claim the sheet that was connected while signed out. This is the
+    //    ONE place where a sheet crosses a scope boundary, and it happens at
+    //    most once per device: the guest/device scope is emptied right
+    //    after, so a second Google account signing in on this device starts
+    //    clean instead of inheriting the first account's spreadsheet.
     const userSheet = loadStoredSheetMeta(userEmail);
     if (!userSheet) {
-      const fallbackSheet = loadStoredSheetMeta('guest') || loadStoredSheetMeta(null);
-      if (fallbackSheet) {
-        saveStoredSheetMeta(fallbackSheet, userEmail);
+      const claimable = loadStoredSheetMeta('guest') || loadStoredSheetMeta(null);
+      if (claimable) {
+        saveStoredSheetMeta(claimable, userEmail);
+        // The claimed sheet now belongs to this account - drop it from the
+        // guest/device scope so it can never leak into another account.
+        saveStoredSheetMeta(null, 'guest');
       }
     }
 
