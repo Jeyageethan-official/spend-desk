@@ -28,6 +28,7 @@ import {
   createMoneyTrackerSpreadsheet, 
   requestGoogleAccessToken,
   deleteUserSpreadsheet,
+  friendlySheetErrorMessage,
   DriveSpreadsheetItem,
   GOOGLE_APPS_SCRIPT_TEMPLATE
 } from '../lib/sheetsApi';
@@ -251,7 +252,8 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
       } else if (raw.includes('invalid_client') || raw.includes('401')) {
         setErrorMsg('Google Sign-In session expired or permission denied. Please sign in again.');
       } else {
-        setErrorMsg('Unable to connect to Google Sheets: ' + (err?.message || 'Please check connection.'));
+        // Classified human sentence - never the raw Google API error.
+        setErrorMsg(friendlySheetErrorMessage(err));
       }
     } finally {
       setIsCreating(false);

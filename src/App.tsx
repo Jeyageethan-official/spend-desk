@@ -76,13 +76,16 @@ import {
 import { 
   syncDashboardStats, 
   overwriteTransactionsInSheet, 
-  overwriteLendItemsInSheet,
-  fetchAllTransactionsFromSheet,
-  fetchAllLendItemsFromSheet,
-  listUserSpreadsheets,
+  overwriteLendItemsInSheet, 
+  fetchAllTransactionsFromSheet, 
+  fetchAllLendItemsFromSheet, 
+  listUserSpreadsheets, 
   requestGoogleAccessToken,
   fetchGoogleUserInfo,
-  syncViaWebhook
+  syncViaWebhook,
+  createMoneyTrackerSpreadsheet,
+  classifySheetError,
+  friendlySheetErrorMessage
 } from './lib/sheetsApi';
 import { generateTransactionSmsText, generateLendSmsText, generateLowBalanceSmsText, triggerDeviceSms } from './lib/smsAlert';
 import { 
@@ -132,6 +135,7 @@ import { AuthHelpModal } from './components/AuthHelpModal';
 import { AdjustBalanceModal } from './components/AdjustBalanceModal';
 import { OutOfWalletModal } from './components/OutOfWalletModal';
 import { SessionExpiredModal, SessionNoticeKind } from './components/SessionExpiredModal';
+import { SheetSetupModal, SheetSetupPhase } from './components/SheetSetupModal';
 import { BottomNav } from './components/BottomNav';
 import { Sidebar } from './components/Sidebar';
 import { AnalyticsView } from './components/AnalyticsView';
@@ -403,6 +407,10 @@ export default function App() {
   const [settingsSection, setSettingsSection] = useState<'main' | 'categories' | 'preferences' | 'budget' | 'cloud' | 'data' | 'about' | 'profile'>('main');
   const [deleteCandidate, setDeleteCandidate] = useState<Transaction | null>(null);
   const [selectedTransactionIds, setSelectedTransactionIds] = useState<string[]>([]);
+  // Friendly "set up your Google Sheet" popup. Replaces the raw Google API
+  // error a signed-in account with no sheet (or a dead sheet) used to hit.
+  const [sheetSetupPhase, setSheetSetupPhase] = useState<SheetSetupPhase | null>(null);
+  const [sheetSetupMessage, setSheetSetupMessage] = useState<string | undefined>(undefined);
 
   // Status & Syncing
   const [isSyncing, setIsSyncing] = useState(false);
@@ -1232,6 +1240,67 @@ export default function App() {
     }
   };
 
+  // ─── FRIENDLY GOOGLE SHEET SETUP ────────────────────────────────────────────
+  // A signed-in account is expected to sync into a sheet. When it has never
+  // had one, or the sheet was deleted / lost its permission, the user gets a
+  // professional setup popup - never a raw Google API error.
+  const hasConnectedSheet = (): boolean =>
+    Boolean(activeSheet?.id || loadStoredSheetMeta(currentUserEmail)?.id);
+
+  const needsSheetSetup = (): boolean =>
+    Boolean(user?.email) && isOnline && !hasConnectedSheet();
+
+  const openSheetSetup = (phase: SheetSetupPhase, message?: string) => {
+    setSheetSetupMessage(message);
+    setSheetSetupPhase(phase);
+  };
+
+  const closeSheetSetup = () => {
+    setSheetSetupMessage(undefined);
+    setSheetSetupPhase(null);
+  };
+
+  // The same creation ladder the Google Sheets Manager runs: usable token ->
+  // create -> one consent retry -> connect to this account -> push whatever the
+  // ledger already holds, so the transaction that triggered setup is synced
+  // without the user re-entering or re-saving anything.
+  const handleSheetSetupCreate = async () => {
+    setSheetSetupMessage(undefined);
+    setSheetSetupPhase('creating');
+    try {
+      let token = accessToken;
+      if (!token || token === 'local_token' || token.startsWith('eyJ') || token.length < 30) {
+        token = await requestGoogleAccessToken(true, 'sheet_setup_create');
+      }
+      const title = 'SpendDesk - Cash & Card';
+      let created;
+      try {
+        created = await createMoneyTrackerSpreadsheet(token, title);
+      } catch (err) {
+        const raw = String((err as { message?: string })?.message || err);
+        if (!/401|403|UNAUTHENTICATED|PERMISSION_DENIED|INSUFFICIENT|invalid_client/.test(raw)) throw err;
+        try { localStorage.removeItem('money_tracker_access_token'); } catch {}
+        token = await requestGoogleAccessToken(true, 'sheet_setup_create_retry');
+        created = await createMoneyTrackerSpreadsheet(token, title);
+      }
+      const meta: GoogleSheetMeta = {
+        id: created.id,
+        name: created.name,
+        url: created.url,
+        lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }),
+      };
+      saveKnownSpreadsheet(meta, currentUserEmail);
+      handleSetActiveSheet(meta);
+      setSheetSetupPhase('success');
+    } catch (err) {
+      // The raw error stays in the console for debugging; the popup only ever
+      // shows the classified, human sentence.
+      console.error('Google Sheet setup failed:', err);
+      setSheetSetupMessage(friendlySheetErrorMessage(err));
+      setSheetSetupPhase('error');
+    }
+  };
+
   // Pull Data from Connected Google Sheet - ONLY show records from this connected sheet!
   const handlePullFromSheet = useCallback(async (
     targetSheetId?: string,
@@ -1354,9 +1423,13 @@ export default function App() {
         }
       }
       if (!options.silent) {
+        if (!is401 && classifySheetError(err) === 'missing' && user?.email) {
+          openSheetSetup('needed');
+          return;
+        }
         const friendlyMsg = is401
           ? 'Google session expired. Tap to reconnect your Google account.'
-          : (err?.message || 'Could not pull records from Google Sheet.');
+          : friendlySheetErrorMessage(err);
         showNotification(friendlyMsg, 'error');
       }
     } finally {
@@ -1412,11 +1485,15 @@ export default function App() {
 
   const dispatchTransactionDeletedTelegram = (deletedTxs: Transaction[], remaining: Transaction[]) => {
     if (!telegramSendActive || deletedTxs.length === 0) return;
-    const walletSum = calculateSummary(remaining, remaining);
+    // The balance reported is the one on screen right after the delete - the
+    // same filter-driven figure the header shows - so the alert can never
+    // disagree with the app. (An all-time sum would also double-count every
+    // historical carry-forward row.)
+    const afterDelete = calculateSummary(remaining, filterTransactions(remaining, headerDateFilter));
     const payload =
       deletedTxs.length === 1
-        ? generateDeletedTransactionTelegramAlert(deletedTxs[0], currency, walletSum.currentCashBalance)
-        : generateBulkDeletedTransactionsTelegramAlert(deletedTxs, currency, walletSum.currentCashBalance);
+        ? generateDeletedTransactionTelegramAlert(deletedTxs[0], currency, afterDelete.currentCashBalance)
+        : generateBulkDeletedTransactionsTelegramAlert(deletedTxs, currency, afterDelete.currentCashBalance);
     void sendTelegramAlert({ ...payload, chatId: telegramAlertConfig.chatId })
       .then((res) => {
         if (res.queued) {
@@ -1578,7 +1655,13 @@ export default function App() {
     }
     if (!sheetToSync) {
       if (!options.silent) {
-        showNotification('No Google Sheet connected. Go to Settings > Google Sheet to connect a sheet.', 'info');
+        // Signed in with no sheet yet: offer the setup popup instead of a toast
+        // that sends the user hunting through Settings.
+        if (needsSheetSetup()) {
+          openSheetSetup('needed');
+        } else {
+          showNotification('No Google Sheet connected. Go to Settings > Google Sheet to connect a sheet.', 'info');
+        }
       }
       return false;
     }
@@ -1681,7 +1764,8 @@ export default function App() {
         console.error('Dashboard sync failed:', dashErr);
         const dashMsg = dashErr?.message || 'Dashboard rebuild failed';
         // Always surface this — otherwise users only see Transactions update and think deploy failed.
-        showNotification(`Transactions synced, but Dashboard failed: ${dashMsg}`, 'error');
+        // The sentence is classified, never the raw API error itself.
+        showNotification(friendlySheetErrorMessage(dashErr), 'error');
         markSheetSyncDirty(currentUserEmail, `dashboard failed: ${dashMsg}`);
         return false;
       }
@@ -1716,7 +1800,16 @@ export default function App() {
           showNotification('Google login session expired. Please sign in to reconnect & sync.', 'error');
         }
       } else if (!options.silent) {
-        showNotification('Could not sync to Google Sheet: ' + (err.message || 'Network error'), 'error');
+        const kind = classifySheetError(err);
+        if (kind === 'missing' && user?.email) {
+          // The sheet was deleted (or never finished being created) - setup it
+          // again rather than repeating a technical failure on every sync.
+          openSheetSetup('needed');
+        } else if ((kind === 'permission' || kind === 'api_disabled') && user?.email) {
+          openSheetSetup('error', friendlySheetErrorMessage(err));
+        } else {
+          showNotification(friendlySheetErrorMessage(err), 'error');
+        }
       }
       markSheetSyncDirty(currentUserEmail, raw);
       return false;
@@ -1967,6 +2060,14 @@ export default function App() {
 
     if (activeSheet) {
       queueSheetPush({ transactions: updatedTxs, lendItems });
+    }
+
+    // A signed-in account with no sheet: the record is already safe in local
+    // storage, so offer the friendly setup popup instead of letting the next
+    // sync fail with a raw Google error. This is the "new Google user adds a
+    // transaction" entry point.
+    if (isNewTransaction && !sheetSetupPhase && needsSheetSetup()) {
+      openSheetSetup('needed');
     }
 
     // Out-of-wallet flow: when this save makes (or changes) an out-of-wallet
@@ -2348,19 +2449,36 @@ export default function App() {
   // The OFFER is purely mathematical - it stays alive after a dismissal so the
   // Cash In flow can still offer it. Whether the ALERT fires is gated
   // separately by hasCarryPromptFor, which is what makes it once-only.
-  const carryDay = useMemo(() => {
-    const f = headerFilter;
-    const singleDay = f.startDate && f.startDate === f.endDate ? f.startDate : '';
-    return singleDay === getLocalDateString() ? singleDay : null;
-  }, [headerFilter]);
+  const carryDay = getLocalDateString();
 
+  // THE DAY THAT RECEIVES THE CARRY is the real calendar today, computed from
+  // the clock instead of from whichever date the header happens to be
+  // browsing. Tying it to the header filter is exactly what made the popup and
+  // the Cash In "Continue" button vanish whenever the header sat on a range or
+  // on another day.
   const carryOption = useMemo(
-    () => (carryDay ? evaluateCarryForward({ transactions, today: carryDay, email: currentStorageScope }) : null),
+    () => evaluateCarryForward({ transactions, today: carryDay, email: currentStorageScope }),
     [transactions, carryDay, currentStorageScope]
   );
 
-  const showCarryAlert = Boolean(carryOption && carryDay) &&
-    !hasCarryPromptFor(carryDay || '', currentStorageScope) &&
+  // The ALERT still only fires while the balance on screen IS today's: a row
+  // dated today cannot fix a view showing some other day. On the normal open
+  // (header defaults to today) this is precisely when it fires.
+  const headerShowsCarryDay =
+    headerFilter.startDate === carryDay && headerFilter.endDate === carryDay;
+
+  // The Cash In form saves on the header's pinned day, else on today. Its
+  // Continue button may only appear when that date IS the day the carry would
+  // be written to, so the row always lands on the day the form is editing.
+  const txModalDate =
+    headerFilter.startDate && headerFilter.startDate === headerFilter.endDate
+      ? headerFilter.startDate
+      : carryDay;
+  const carryForModal = txModalDate === carryDay ? carryOption : null;
+
+  const showCarryAlert = Boolean(carryOption) &&
+    headerShowsCarryDay &&
+    !hasCarryPromptFor(carryDay, currentStorageScope) &&
     // Never compete with the connection-lost alert or an in-flight sign-in
     // exchange: a modal stacked on a modal is noise. Both are transient, and
     // authPhaseState is reactive now, so the popup reappears the moment the
@@ -2403,7 +2521,6 @@ export default function App() {
   };
 
   const handleAcceptCarryForward = (offer: CarryForwardOffer) => {
-    if (!carryDay) return;
     persistCarryForward(offer, carryDay);
   };
 
@@ -2411,7 +2528,7 @@ export default function App() {
   // An explicit "Not now" is respected - no silent carry later that day. The
   // same option stays reachable from the Cash In flow afterwards.
   const handleDismissCarryForward = () => {
-    if (carryDay) markCarryPromptShown(carryDay, currentStorageScope);
+    markCarryPromptShown(carryDay, currentStorageScope);
     setCarryOffer(null);
   };
 
@@ -2425,7 +2542,9 @@ export default function App() {
   // row both opt out, so this can never override a decline, and it never
   // fires while the popup is still able to show.
   useEffect(() => {
-    if (!carryDay || !carryOption) return;
+    if (!carryOption) return;
+    // Only meaningful when today's balance is what the screen is showing.
+    if (!headerShowsCarryDay) return;
     if (hasCarryPromptFor(carryDay, currentStorageScope)) return;
     if (findTodayCarryForward(transactions, carryDay)) return;
     const popupSuppressed =
@@ -2434,7 +2553,7 @@ export default function App() {
     if (popupSuppressed && userStartedToday) {
       persistCarryForward(carryOption, carryDay);
     }
-  }, [carryDay, carryOption, connectionNotice, authPhaseState, transactions, currentStorageScope]);
+  }, [carryDay, carryOption, headerShowsCarryDay, connectionNotice, authPhaseState, transactions, currentStorageScope]);
 
   const todayStr = currentDateStr;
 
@@ -3097,14 +3216,14 @@ export default function App() {
             ? headerFilter.startDate
             : null
         }
-        carryForward={carryOption}
+        carryForward={carryForModal}
         isApplyingCarry={isApplyingCarry}
         onContinueYesterdayBalance={() => {
-          if (!carryOption || !carryDay) {
+          if (!carryForModal) {
             showNotification('No yesterday balance to continue.', 'error');
             return false;
           }
-          return persistCarryForward(carryOption, carryDay);
+          return persistCarryForward(carryForModal, carryDay);
         }}
         currency={currency}
         onOpenSmsReader={() => setIsSmsModalOpen(true)}
@@ -3176,6 +3295,16 @@ export default function App() {
           });
           setOowPrompt(null);
         }}
+      />
+
+      {/* Google Sheet setup - the friendly replacement for a raw sync error
+          when a signed-in account has no sheet (or lost access to one). */}
+      <SheetSetupModal
+        phase={sheetSetupPhase}
+        errorMessage={sheetSetupMessage}
+        onCreate={() => { void handleSheetSetupCreate(); }}
+        onDismiss={closeSheetSetup}
+        onContinue={closeSheetSetup}
       />
 
       {/* Google sign-in phase overlay: redirecting → exchanging → connected / error */}

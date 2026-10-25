@@ -189,6 +189,19 @@ export const calculateRunningBalances = (
   return result;
 };
 
+/**
+ * Is this row the auto-generated opening balance rather than real new money?
+ *
+ * Recognised from the flag written at save time, or - for a row that came back
+ * from a Google Sheet with the flag stripped - from its fixed note text.
+ */
+const CARRY_NOTE_PATTERN = /yesterday balance continued/i;
+export const isCarryForwardTransaction = (tx?: Transaction | null): boolean => {
+  if (!tx || tx.type !== 'cash_added') return false;
+  if (tx.isCarryForward) return true;
+  return CARRY_NOTE_PATTERN.test(tx.notes || '');
+};
+
 export const calculateSummary = (
   allTransactions: Transaction[] = [],
   filteredTransactions: Transaction[] = []
@@ -202,8 +215,16 @@ export const calculateSummary = (
   // Chronological running balances across ALL transactions keep the out-of-wallet
   // history accurate (an expense earlier in the month still counts even when the
   // date filter only shows today).
-  const runningBalances = calculateRunningBalances(allTxs);
-  const sortedAll = sortTransactionsChronological(allTxs);
+  //
+  // A carry-forward row is EXCLUDED from that history pass: it re-opens a day
+  // with money the ledger already counted on the day it first arrived. Counting
+  // it again would double every all-time balance and would also make the wallet
+  // look richer than it is (hiding real out-of-wallet overspending). Inside a
+  // single day the very same row IS the opening balance and must be counted -
+  // that is the filtered pass further down.
+  const historyTxs = allTxs.filter((tx) => !isCarryForwardTransaction(tx));
+  const runningBalances = calculateRunningBalances(historyTxs);
+  const sortedAll = sortTransactionsChronological(historyTxs);
 
   let totalOutOfWalletAll = 0;
   for (const tx of sortedAll) {
@@ -218,9 +239,10 @@ export const calculateSummary = (
   // period (e.g. a future date with no transactions correctly shows 0 instead of
   // the all-time balance).
   const isUnfiltered = filtTxs.length === allTxs.length;
+  const balanceTxs = isUnfiltered ? historyTxs : filtTxs;
   const balanceRunning = isUnfiltered ? runningBalances : calculateRunningBalances(filtTxs);
   let finalCashBalance = 0;
-  for (const tx of sortTransactionsChronological(filtTxs)) {
+  for (const tx of sortTransactionsChronological(balanceTxs)) {
     const rb = balanceRunning.get(tx.id);
     if (rb) finalCashBalance = rb.balance;
   }

@@ -51,7 +51,7 @@ export const SheetSetupModal: React.FC<SheetSetupModalProps> = ({
               </svg>
             </div>
             <p id="sheet-setup-title" className="text-[16px] font-semibold text-slate-900 tracking-[-0.02em]">
-              Google Sheet created
+              Google Sheet Created Successfully!
             </p>
             <p id="sheet-setup-message" className="mt-1.5 text-[13px] leading-snug text-slate-500">
               You can now start saving your transactions.
@@ -67,12 +67,12 @@ export const SheetSetupModal: React.FC<SheetSetupModalProps> = ({
         ) : (
           <>
             <p id="sheet-setup-title" className="text-[16px] font-semibold text-slate-900 tracking-[-0.02em]">
-              Set up your Google Sheet
+              Welcome! Set up your Google Sheet
             </p>
             <p id="sheet-setup-message" className="mt-1.5 text-[13px] leading-snug text-slate-500">
               {phase === 'error'
                 ? errorMessage || 'Could not create a Google Sheet. You can try again.'
-                : 'Create a Google Sheet to securely save and manage your transactions.'}
+                : 'Your Google Sheet is not ready yet. Create a Google Sheet to securely save and manage your transactions.'}
             </p>
             <div className="mt-6 flex flex-col gap-1.5">
               <button

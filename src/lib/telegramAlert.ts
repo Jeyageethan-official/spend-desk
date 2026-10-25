@@ -242,6 +242,11 @@ const removeFromOutbox = (id?: string): void => {
 // used to both read the same pending list and both send it, doubling alerts.
 let flushInFlight: Promise<number> | null = null;
 
+// The same guard, one level down: an alert that is being sent RIGHT NOW by
+// sendTelegramAlert sits in the outbox until the server confirms it, so a flush
+// starting in that window must skip it or the user gets the message twice.
+const inFlightIds = new Set<string>();
+
 export const flushPendingTelegramAlerts = (): Promise<number> => {
   if (flushInFlight) return flushInFlight;
 
@@ -252,6 +257,9 @@ export const flushPendingTelegramAlerts = (): Promise<number> => {
 
     let sentCount = 0;
     for (const alert of pending) {
+      const alertId = alert.id;
+      if (alertId && inFlightIds.has(alertId)) continue; // already being sent
+      if (alertId) inFlightIds.add(alertId);
       try {
         const { error } = await getSupabase().functions.invoke('telegram-alert', {
           body: alert,
@@ -264,6 +272,8 @@ export const flushPendingTelegramAlerts = (): Promise<number> => {
         }
       } catch {
         // Leave it queued for the next flush.
+      } finally {
+        if (alertId) inFlightIds.delete(alertId);
       }
     }
 
@@ -312,6 +322,10 @@ export const sendTelegramAlert = async (
     return { delivered: false, queued: true };
   }
 
+  // Claim the id for the duration of the call so a concurrent flush (the
+  // 'online' handler firing while this request is still in the air) skips it
+  // instead of delivering the same alert a second time.
+  inFlightIds.add(cleanPayload.id!);
   try {
     const { error } = await getSupabase().functions.invoke('telegram-alert', {
       body: cleanPayload,
@@ -323,5 +337,7 @@ export const sendTelegramAlert = async (
     return { delivered: true, queued: false };
   } catch {
     return { delivered: false, queued: true };
+  } finally {
+    inFlightIds.delete(cleanPayload.id!);
   }
 };
