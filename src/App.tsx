@@ -100,6 +100,8 @@ import {
   failAuthPhase,
   finishOAuthConnected,
   getAuthPhase,
+  isAuthPhaseActive,
+  isAuthPhaseInFlight,
   restorePersistedPhase,
   subscribeAuthPhase,
 } from './lib/authPhase';
@@ -459,12 +461,10 @@ export default function App() {
       const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
       const oauthError = searchParams.get('error') || hashParams.get('error');
       if (oauthError && awaitingRedirectSignIn) {
-        const description =
-          searchParams.get('error_description') || hashParams.get('error_description') || oauthError;
         failAuthPhase(
           oauthError === 'access_denied'
-            ? 'Google sign-in was cancelled. Your local data is untouched - retry anytime.'
-            : `Google sign-in failed: ${description}`
+            ? 'Sign-in was cancelled. You can try again whenever you’re ready.'
+            : 'We couldn’t complete Google sign-in. Please try again.'
         );
         awaitingRedirectSignIn = false;
         try {
@@ -1434,20 +1434,18 @@ export default function App() {
   // Unified Single Sign-In with Google via Supabase OAuth: Single redirect to Gmail account chooser.
   // The AuthProgressOverlay (not a toast) now carries the "Redirecting →
   // Completing → Signed in / error" story, with this caller as the cause.
-  const handleSignIn = async () => {
+  const handleSignIn = async (caller?: unknown) => {
+    if (isAuthPhaseInFlight()) return;
+    const cause = typeof caller === 'string' && caller ? caller : 'Sign-in button';
     try {
-      const res = await signInWithGoogleSupabase('Sign-in button');
+      const res = await signInWithGoogleSupabase(cause);
       if (!res.success && res.errorMessage) {
         failAuthPhase(res.errorMessage);
-        showNotification('Google Sign-In notice: ' + res.errorMessage, 'error');
       }
     } catch (err: any) {
       console.warn('Google Sign-In Exception:', err);
       const msg = String(err?.message || err);
-      if (!msg.includes('closed') && !msg.includes('cancelled')) {
-        failAuthPhase(msg);
-        showNotification('Google Sign-In notice: ' + msg, 'error');
-      }
+      failAuthPhase(msg);
     }
   };
 
@@ -2572,13 +2570,14 @@ export default function App() {
           once per genuine loss of sync (session revoked, or the Google grant
           is gone), never on an intentional sign-out. */}
       <SessionExpiredModal
-        kind={connectionNotice}
+        kind={isAuthPhaseActive(authPhaseState.phase) ? null : connectionNotice}
         isSigningIn={isReconnecting}
         onSignIn={() => {
           setIsReconnecting(true);
-          // On success this navigates away to Google; on failure handleSignIn
-          // surfaces the reason and we drop back to the modal.
-          void handleSignIn().finally(() => setIsReconnecting(false));
+          const caller = connectionNotice === 'google' ? 'Reconnect Google' : 'Sign in again';
+          // On success this navigates away to Google; on failure the auth
+          // overlay surfaces a friendly retry. Hide this alert while that runs.
+          void handleSignIn(caller).finally(() => setIsReconnecting(false));
         }}
         onDismiss={() => setConnectionNotice(null)}
       />
@@ -3121,7 +3120,7 @@ export default function App() {
       />
 
       {/* Google sign-in phase overlay: redirecting → exchanging → connected / error */}
-      <AuthProgressOverlay onRetry={() => { void handleSignIn(); }} />
+      <AuthProgressOverlay onRetry={() => { void handleSignIn('Sign-in button'); }} />
     </div>
   );
 }

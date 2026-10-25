@@ -195,7 +195,56 @@ const parseGoogleApiError = (status: number, errorText: string, defaultContext: 
     return new Error('GOOGLE_DRIVE_API_DISABLED: Google Drive API is not enabled in your Google Cloud Console project.');
   }
 
+  if (
+    status === 404 ||
+    message.includes('notFound') ||
+    message.includes('Requested entity was not found') ||
+    message.includes('Unable to parse range')
+  ) {
+    return new Error('SHEET_NOT_READY: The Google Sheet is missing or is not set up yet.');
+  }
+
   return new Error(`${defaultContext}: (${status}) ${message}`);
+};
+
+export type SheetErrorKind = 'missing' | 'permission' | 'api_disabled' | 'auth' | 'other';
+
+export const classifySheetError = (err: unknown): SheetErrorKind => {
+  const raw = String((err as { message?: string })?.message || err || '');
+  if (
+    raw.includes('SHEET_NOT_READY') ||
+    raw.includes('Dashboard tab not found') ||
+    raw.includes('notFound') ||
+    raw.includes('Requested entity was not found') ||
+    raw.includes('Unable to parse range') ||
+    raw.includes('404')
+  ) {
+    return 'missing';
+  }
+  if (raw.includes('GOOGLE_SHEETS_API_DISABLED') || raw.includes('GOOGLE_DRIVE_API_DISABLED') || raw.includes('SERVICE_DISABLED')) {
+    return 'api_disabled';
+  }
+  if (
+    raw.includes('401') ||
+    raw.includes('UNAUTHENTICATED') ||
+    raw.includes('session expired') ||
+    raw.includes('invalid_credentials')
+  ) {
+    return 'auth';
+  }
+  if (raw.includes('403') || raw.includes('PERMISSION_DENIED') || raw.includes('INSUFFICIENT')) {
+    return 'permission';
+  }
+  return 'other';
+};
+
+export const friendlySheetErrorMessage = (err: unknown): string => {
+  const kind = classifySheetError(err);
+  if (kind === 'missing') return 'Your Google Sheet is not ready yet. Create one to save transactions.';
+  if (kind === 'api_disabled') return 'Google Sheets access is not enabled for this account yet.';
+  if (kind === 'auth') return 'Google access expired. Reconnect to continue syncing.';
+  if (kind === 'permission') return 'SpendDesk needs permission to create and update your Google Sheet.';
+  return 'Could not reach Google Sheets. Please try again.';
 };
 
 export interface DriveSpreadsheetItem {
@@ -1159,6 +1208,7 @@ export const fetchAllTransactionsFromSheet = async (
       paymentMethod: paymentMethod as any,
       notes,
       createdAt,
+      isCarryForward: type === 'cash_added' && /yesterday balance continued/i.test(notes) ? true : undefined,
     });
   });
 

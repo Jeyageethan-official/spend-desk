@@ -6,17 +6,102 @@ import {
   subscribeAuthPhase,
 } from '../lib/authPhase';
 
+const EXCHANGE_TIMEOUT_MS = 25000;
+const SUCCESS_DISMISS_MS = 1600;
+
+const friendlyAuthMessage = (raw?: string): string => {
+  const msg = (raw || '').toLowerCase();
+  if (!raw) return 'We couldn’t connect to Google. Please try again.';
+  if (
+    msg.includes('cancelled') ||
+    msg.includes('canceled') ||
+    msg.includes('access_denied') ||
+    msg.includes('closed')
+  ) {
+    return 'Sign-in was cancelled. You can try again whenever you’re ready.';
+  }
+  if (msg.includes('taking too long') || msg.includes('timeout')) {
+    return 'This is taking longer than expected. Please try again.';
+  }
+  if (msg.includes('gesture') || msg.includes('tap inside') || msg.includes('tap "connect')) {
+    return 'Tap Sign in with Google to continue.';
+  }
+  if (msg.includes('network') || msg.includes('failed to fetch') || msg.includes('offline')) {
+    return 'Check your connection and try again.';
+  }
+  if (
+    msg.includes('oauth') ||
+    msg.includes('supabase') ||
+    msg.includes('provider') ||
+    msg.includes('invalid') ||
+    msg.includes('exception') ||
+    msg.includes('failed to initialize')
+  ) {
+    return 'We couldn’t complete Google sign-in. Please try again.';
+  }
+  if (raw.length > 140) return 'We couldn’t connect to Google. Please try again.';
+  return raw;
+};
+
+const copyFor = (state: AuthPhaseState): { title: string; subtitle: string } => {
+  const cause = (state.cause || '').toLowerCase();
+  const reconnect = /reconnect|connect google|session|sign in again|expired/.test(cause);
+
+  switch (state.phase) {
+    case 'redirecting':
+      return reconnect
+        ? { title: 'Reconnecting Google', subtitle: 'Securely restoring your account…' }
+        : { title: 'Connecting to Google', subtitle: 'Securely connecting your account…' };
+    case 'exchanging':
+      return reconnect
+        ? { title: 'Reconnecting', subtitle: 'Finishing a secure connection…' }
+        : { title: 'Signing you in', subtitle: 'Finishing a secure connection…' };
+    case 'connected':
+      return {
+        title: 'You’re signed in',
+        subtitle: state.email || 'Your account is ready.',
+      };
+    case 'error':
+      return { title: 'Couldn’t connect', subtitle: friendlyAuthMessage(state.message) };
+    default:
+      return { title: '', subtitle: '' };
+  }
+};
+
+const AuthSpinner: React.FC = () => (
+  <div className="auth-spinner" aria-hidden="true" />
+);
+
+const AuthMark: React.FC<{ kind: 'success' | 'error' }> = ({ kind }) => (
+  <div className={`auth-mark auth-mark--${kind}`} aria-hidden="true">
+    {kind === 'success' ? (
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+        <path
+          d="M4 9.2 7.2 12.4 14 5.4"
+          stroke="currentColor"
+          strokeWidth="1.7"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    ) : (
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+        <path
+          d="M5 5l8 8M13 5l-8 8"
+          stroke="currentColor"
+          strokeWidth="1.7"
+          strokeLinecap="round"
+        />
+      </svg>
+    )}
+  </div>
+);
+
 /**
- * Full-screen sign-in progress overlay.
+ * Compact SpendDesk Google authentication modal.
  *
- * Makes every phase of the Google round-trip visible:
- *  - redirecting: "Redirecting to Google…" + who started it (cause)
- *  - exchanging:  "Completing sign-in…" while Supabase swaps the code
- *  - connected:   green confirmation with the account, auto-dismisses
- *  - error:       what went wrong + Try again / Continue without signing in
- *
- * A stuck exchange (user closed Google's window, network died) surfaces as a
- * timeout error after 25s instead of leaving a silently half-booted screen.
+ * Phases are owned by authPhase.ts; this component only presents them.
+ * In-flight states time out after 25s so the overlay cannot stick forever.
  */
 export const AuthProgressOverlay: React.FC<{ onRetry?: () => void }> = ({ onRetry }) => {
   const [state, setState] = React.useState<AuthPhaseState | null>(null);
@@ -24,7 +109,6 @@ export const AuthProgressOverlay: React.FC<{ onRetry?: () => void }> = ({ onRetr
 
   React.useEffect(() => subscribeAuthPhase(setState), []);
 
-  // Exchange watchdog: in-flight phases must land within 25 seconds.
   useEffect(() => {
     if (timerRef.current) {
       window.clearTimeout(timerRef.current);
@@ -33,101 +117,82 @@ export const AuthProgressOverlay: React.FC<{ onRetry?: () => void }> = ({ onRetr
     if (state?.phase === 'exchanging' || state?.phase === 'redirecting') {
       timerRef.current = window.setTimeout(() => {
         failAuthPhase(
-          'Sign-in is taking too long - it may have been cancelled or closed at Google. Try again.'
+          'Sign-in is taking too long — it may have been cancelled. Try again.'
         );
-      }, 25000);
+      }, EXCHANGE_TIMEOUT_MS);
     }
     return () => {
       if (timerRef.current) window.clearTimeout(timerRef.current);
     };
   }, [state?.phase, state?.at]);
 
-  // "Connected" confirmation auto-clears back to the app.
   useEffect(() => {
     if (state?.phase !== 'connected') return;
-    const t = window.setTimeout(() => clearAuthPhase(), 1800);
+    const t = window.setTimeout(() => clearAuthPhase(), SUCCESS_DISMISS_MS);
     return () => window.clearTimeout(t);
   }, [state?.phase, state?.at]);
 
   if (!state || state.phase === 'idle') return null;
 
-  const cause = state.cause ? state.cause : '';
+  const copy = copyFor(state);
+  const busy = state.phase === 'redirecting' || state.phase === 'exchanging';
+  const statusLabel =
+    state.phase === 'connected'
+      ? 'Signed in'
+      : state.phase === 'error'
+        ? 'Sign-in did not finish'
+        : copy.title;
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/60 backdrop-blur-xs px-4"
-      role="dialog"
-      aria-modal="true"
-      aria-live="polite"
+      className="auth-overlay"
+      role="presentation"
+      onClick={(e) => {
+        if (e.target === e.currentTarget && state.phase === 'error') clearAuthPhase();
+      }}
     >
-      <div className="w-full max-w-sm bg-white rounded-3xl shadow-2xl border border-slate-200 p-6 text-center">
-        {state.phase === 'redirecting' && (
-          <>
-            <div className="mx-auto mb-4 h-10 w-10 rounded-full border-[3px] border-slate-200 border-t-slate-900 animate-spin" />
-            <h3 className="text-sm font-bold text-slate-900">Redirecting to Google…</h3>
-            <p className="mt-1.5 text-xs text-slate-500">
-              Google's sign-in page will open. You'll come right back here.
-            </p>
-            {cause && (
-              <p className="mt-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                Started by: {cause}
-              </p>
-            )}
-          </>
-        )}
+      <div
+        className="auth-card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="auth-progress-title"
+        aria-describedby="auth-progress-message"
+        aria-live="polite"
+        aria-busy={busy}
+        aria-label={statusLabel}
+      >
+        <div className="auth-card__glyph">
+          {busy && <AuthSpinner />}
+          {state.phase === 'connected' && <AuthMark kind="success" />}
+          {state.phase === 'error' && <AuthMark kind="error" />}
+        </div>
 
-        {state.phase === 'exchanging' && (
-          <>
-            <div className="mx-auto mb-4 h-10 w-10 rounded-full border-[3px] border-slate-200 border-t-emerald-600 animate-spin" />
-            <h3 className="text-sm font-bold text-slate-900">Completing sign-in…</h3>
-            <p className="mt-1.5 text-xs text-slate-500">
-              Securely finishing the Google handshake. One moment.
-            </p>
-            {cause && (
-              <p className="mt-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                Started by: {cause}
-              </p>
-            )}
-          </>
-        )}
-
-        {state.phase === 'connected' && (
-          <>
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-2xl">
-              ✓
-            </div>
-            <h3 className="text-sm font-bold text-slate-900">Signed in</h3>
-            {state.email && <p className="mt-1 text-xs text-slate-500">{state.email}</p>}
-          </>
-        )}
+        <p id="auth-progress-title" className="auth-card__title">
+          {copy.title}
+        </p>
+        <p id="auth-progress-message" className="auth-card__subtitle">
+          {copy.subtitle}
+        </p>
 
         {state.phase === 'error' && (
-          <>
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-100 text-xl text-red-600">
-              !
-            </div>
-            <h3 className="text-sm font-bold text-slate-900">Sign-in didn't finish</h3>
-            <p className="mt-1.5 text-xs text-slate-500">{state.message || 'Something went wrong.'}</p>
-            <div className="mt-5 flex gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  clearAuthPhase();
-                  if (onRetry) onRetry();
-                }}
-                className="flex-1 rounded-xl bg-slate-900 px-3 py-2.5 text-xs font-bold text-white cursor-pointer hover:bg-slate-800"
-              >
-                Try again
-              </button>
-              <button
-                type="button"
-                onClick={() => clearAuthPhase()}
-                className="flex-1 rounded-xl border border-slate-200 px-3 py-2.5 text-xs font-bold text-slate-600 cursor-pointer hover:bg-slate-50"
-              >
-                Continue
-              </button>
-            </div>
-          </>
+          <div className="auth-card__actions">
+            <button
+              type="button"
+              className="auth-card__primary"
+              onClick={() => {
+                if (onRetry) onRetry();
+              }}
+            >
+              Retry
+            </button>
+            <button
+              type="button"
+              className="auth-card__secondary"
+              onClick={() => clearAuthPhase()}
+            >
+              Not now
+            </button>
+          </div>
         )}
       </div>
     </div>

@@ -1,6 +1,9 @@
 import { getLocalDateString } from './calculations';
 import { Transaction } from '../types/finance';
 
+const CARRY_NOTE_PATTERN = /yesterday balance continued/i;
+const AMOUNT_LOCK_KEY = 'spenddesk_carry_amount_v1';
+
 /**
  * Daily balance carry-forward.
  *
@@ -79,7 +82,46 @@ export const formatDayLabel = (dateStr: string): string => {
   }
 };
 
-/** The wallet balance as of the last transaction dated on or before `throughDay`. */
+const isCashPayment = (method?: string) => !method || method.toLowerCase() === 'cash';
+
+/** That calendar day's own wallet close — never a sum of older days. */
+export const closingBalanceForDay = (
+  transactions: Transaction[],
+  day: string
+): number => {
+  const dayTxs = (Array.isArray(transactions) ? transactions : []).filter(
+    (tx) => tx && tx.date === day
+  );
+  if (dayTxs.length === 0) return 0;
+
+  const sorted = [...dayTxs].sort((a, b) => {
+    const ta = a.time || '00:00';
+    const tb = b.time || '00:00';
+    if (ta !== tb) return ta.localeCompare(tb);
+    return (a.createdAt || 0) - (b.createdAt || 0);
+  });
+
+  let balance = 0;
+  for (const tx of sorted) {
+    const amt = Math.abs(tx.amount || 0);
+    if (tx.type === 'cash_added') {
+      balance += amt;
+    } else if (tx.type === 'cash_expense' && isCashPayment(tx.paymentMethod)) {
+      balance = Math.max(0, balance - amt);
+    }
+  }
+  return Math.round(balance * 100) / 100;
+};
+
+/**
+ * Closing cash as of 23:59:59 on `throughDay`.
+ *
+ * The daily ledger already encodes prior days inside that day's carry-forward
+ * row. Summing every historical cash_added (including older carry-forwards)
+ * double-counts those openings. So we take ONLY the immediately previous
+ * calendar day's own close; if that day has no rows, walk back to the most
+ * recent earlier day that does.
+ */
 export const closingBalanceThrough = (
   transactions: Transaction[],
   throughDay: string
@@ -89,27 +131,40 @@ export const closingBalanceThrough = (
   );
   if (eligible.length === 0) return 0;
 
-  const sorted = [...eligible].sort((a, b) => {
-    if (a.date !== b.date) return a.date.localeCompare(b.date);
-    const ta = a.time || '00:00';
-    const tb = b.time || '00:00';
-    if (ta !== tb) return ta.localeCompare(tb);
-    return (a.createdAt || 0) - (b.createdAt || 0);
-  });
-
-  // Mirror calculateRunningBalances exactly: cash_added adds, cash payments
-  // subtract (never below zero), card spend leaves the cash drawer untouched.
-  let balance = 0;
-  const isCashPayment = (method?: string) => !method || method.toLowerCase() === 'cash';
-  for (const tx of sorted) {
-    const amt = Math.abs(tx.amount || 0);
-    if (tx.type === 'cash_added') {
-      balance += amt;
-    } else if (tx.type === 'cash_expense' && isCashPayment(tx.paymentMethod)) {
-      balance = Math.max(0, balance - amt);
+  const days = Array.from(new Set(eligible.map((tx) => tx.date))).sort();
+  for (let i = days.length - 1; i >= 0; i -= 1) {
+    const day = days[i];
+    if (day > throughDay) continue;
+    const close = closingBalanceForDay(eligible, day);
+    if (close > 0 || eligible.some((tx) => tx.date === day)) {
+      return close;
     }
   }
-  return balance;
+  return 0;
+};
+
+const amountLockKey = (day: string, email?: string | null) =>
+  `${AMOUNT_LOCK_KEY}_${(email || 'guest').trim().toLowerCase()}_${day}`;
+
+const readFrozenCarryAmount = (day: string, email?: string | null): number | null => {
+  try {
+    const raw = localStorage.getItem(amountLockKey(day, email));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { amount?: number };
+    return typeof parsed?.amount === 'number' && parsed.amount > 0 ? parsed.amount : null;
+  } catch {
+    return null;
+  }
+};
+
+const freezeCarryAmount = (day: string, amount: number, email?: string | null): void => {
+  if (!(amount > 0)) return;
+  try {
+    localStorage.setItem(
+      amountLockKey(day, email),
+      JSON.stringify({ amount, at: Date.now() })
+    );
+  } catch {}
 };
 
 export interface CarryForwardOffer {
@@ -125,6 +180,8 @@ export interface EvaluateCarryArgs {
   transactions: Transaction[];
   /** The calendar day being evaluated (defaults to today, local time). */
   today?: string;
+  /** Account scope for the once-per-day frozen continue amount. */
+  email?: string | null;
 }
 
 /**
@@ -136,39 +193,30 @@ export interface EvaluateCarryArgs {
  *   - the same option must stay reachable from Cash In after a dismissal.
  * Folding the prompt guard in here would silently kill that escape hatch.
  *
- * Returns null when there is nothing to carry: no history before today, rows
- * already recorded today (the balance on screen is then meaningful and a
- * carry-forward would double-count), or a zero closing balance.
+ * Returns null when there is nothing to carry: no history on or before
+ * yesterday, a zero previous-day close, or a carry-forward already saved
+ * today. Today's new / edited / deleted rows must never change the amount
+ * and must never hide the offer — that amount is yesterday's close only.
  */
 export const evaluateCarryForward = ({
   transactions,
   today = getLocalDateString(),
+  email = null,
 }: EvaluateCarryArgs): CarryForwardOffer | null => {
   if (!Array.isArray(transactions) || transactions.length === 0) return null;
 
   const yesterday = getYesterdayString(new Date(`${today}T12:00:00`));
-  // Need at least one row before today to carry anything from.
   const hasHistory = transactions.some((tx) => tx && tx.date && tx.date <= yesterday);
   if (!hasHistory) return null;
 
-  // Today already has a MANUAL Cash Added row: that row IS today's opening
-  // float, so carrying yesterday's close on top of it would double-count.
-  //
-  // Expenses (or any other non-opening row) do NOT block the offer: today's
-  // spend simply comes out of yesterday's close. Blocking on "any row today"
-  // is what made the carry silently vanish when the popup missed the very
-  // first records of a new day - the balance then showed Rs 0 all day with no
-  // popup and no row, which is the bug users reported.
-  const hasManualOpening = transactions.some(
-    (tx) => tx && tx.date === today && tx.type === 'cash_added' && !tx.isCarryForward
-  );
-  if (hasManualOpening) return null;
-
-  // Already carried in today -> nothing left to offer.
   if (findTodayCarryForward(transactions, today)) return null;
 
-  const amount = Math.round(closingBalanceThrough(transactions, yesterday) * 100) / 100;
+  const frozen = typeof localStorage !== 'undefined' ? readFrozenCarryAmount(today, email) : null;
+  const live = Math.round(closingBalanceThrough(transactions, yesterday) * 100) / 100;
+  const amount = frozen && frozen > 0 ? frozen : live;
   if (!(amount > 0)) return null;
+
+  if (!frozen) freezeCarryAmount(today, amount, email);
 
   return { amount, fromDay: yesterday, fromLabel: formatDayLabel(yesterday) };
 };
@@ -199,8 +247,11 @@ export const buildCarryForwardTransaction = (
 };
 
 /** Is this row the auto-generated opening balance rather than real new money? */
-export const isCarryForwardTx = (tx?: Transaction | null): boolean =>
-  Boolean(tx && tx.isCarryForward && tx.type === 'cash_added');
+export const isCarryForwardTx = (tx?: Transaction | null): boolean => {
+  if (!tx || tx.type !== 'cash_added') return false;
+  if (tx.isCarryForward) return true;
+  return CARRY_NOTE_PATTERN.test(tx.notes || '');
+};
 
 /** Today's carry-forward row for this scope, if one exists. */
 export const findTodayCarryForward = (

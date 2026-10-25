@@ -199,6 +199,10 @@ export const clearAuthPhase = (): void => {
 export const isAuthPhaseActive = (p: AuthPhase = state.phase): boolean =>
   p === 'redirecting' || p === 'exchanging' || p === 'connected' || p === 'error';
 
+/** True while a Google round-trip is already in flight — ignore extra taps. */
+export const isAuthPhaseInFlight = (p: AuthPhase = state.phase): boolean =>
+  p === 'redirecting' || p === 'exchanging';
+
 /**
  * Console diagnostics: type `__spenddeskAuth.trace()` in DevTools to read the
  * redirect-cause breadcrumbs, or `.phase()` for the current state. This is the
@@ -212,6 +216,8 @@ declare global {
       exchanging: typeof beginOAuthExchange;
       fail: typeof failAuthPhase;
       clear: typeof clearAuthPhase;
+      start: typeof beginGoogleRedirect;
+      done: typeof finishOAuthConnected;
       /** Added by the app: wipe the sign-in state of THIS device (data kept). */
       reset?: () => void;
       /** Added by the app: what this device currently believes about the sign-in. */
@@ -227,5 +233,7 @@ if (typeof window !== 'undefined') {
     exchanging: beginOAuthExchange,
     fail: failAuthPhase,
     clear: clearAuthPhase,
+    start: beginGoogleRedirect,
+    done: finishOAuthConnected,
   };
 }

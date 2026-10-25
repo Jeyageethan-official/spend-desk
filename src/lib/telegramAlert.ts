@@ -1,6 +1,12 @@
 import { Transaction, LendItem } from '../types/finance';
-import { formatCurrency } from './calculations';
+import { formatCurrency, formatDateToDisplayHeader } from './calculations';
 import { getSupabase } from './supabase';
+
+const cashTypeLabel = (tx: Pick<Transaction, 'type'>): string =>
+  tx.type === 'cash_added' ? 'Cash In' : 'Cash Out';
+
+const txDescription = (tx: Pick<Transaction, 'notes' | 'category'>): string =>
+  (tx.notes || '').trim() || tx.category || 'No description';
 
 export interface TelegramAlertPayload {
   chatId: string;
@@ -60,6 +66,64 @@ export const generateTransactionTelegramAlert = (
 
   if (typeof currentBalance === 'number') {
     lines.push(`Current Balance: ${formatCurrency(currentBalance, currency)}`);
+  }
+
+  return {
+    chatId: '',
+    title: '[SpendDesk Alert]',
+    message: lines.join('\n'),
+    createdAt: Date.now(),
+  };
+};
+
+export const generateDeletedTransactionTelegramAlert = (
+  tx: Transaction,
+  currency: string = 'Rs',
+  updatedBalance?: number
+): TelegramAlertPayload => {
+  const lines = [
+    'TRANSACTION DELETED',
+    '',
+    `Type: ${cashTypeLabel(tx)}`,
+    `Deleted Amount: ${formatCurrency(tx.amount, currency)}`,
+    `Date: ${formatDateToDisplayHeader(tx.date || '')}`,
+    `Description: ${txDescription(tx)}`,
+  ];
+  if (typeof updatedBalance === 'number') {
+    lines.push(`Updated Balance: ${formatCurrency(updatedBalance, currency)}`);
+  }
+
+  return {
+    chatId: '',
+    title: '[SpendDesk Alert]',
+    message: lines.join('\n'),
+    createdAt: Date.now(),
+  };
+};
+
+export const generateBulkDeletedTransactionsTelegramAlert = (
+  txs: Transaction[],
+  currency: string = 'Rs',
+  updatedBalance?: number
+): TelegramAlertPayload => {
+  const count = txs.length;
+  const total = txs.reduce((sum, tx) => sum + Math.abs(tx.amount || 0), 0);
+  const lines = [
+    'TRANSACTIONS DELETED',
+    '',
+    `Deleted: ${count} transaction${count === 1 ? '' : 's'}`,
+    `Deleted Amount: ${formatCurrency(total, currency)}`,
+  ];
+  txs.slice(0, 8).forEach((tx) => {
+    lines.push(
+      `• ${cashTypeLabel(tx)} ${formatCurrency(tx.amount, currency)} — ${txDescription(tx)}`
+    );
+  });
+  if (txs.length > 8) {
+    lines.push(`• …and ${txs.length - 8} more`);
+  }
+  if (typeof updatedBalance === 'number') {
+    lines.push(`Updated Balance: ${formatCurrency(updatedBalance, currency)}`);
   }
 
   return {

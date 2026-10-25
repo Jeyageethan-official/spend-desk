@@ -1,6 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { GOOGLE_GESTURE_BLOCKED_MESSAGE, hasFreshUserGesture } from './userGesture';
-import { beginGoogleRedirect, pushAuthTrace } from './authPhase';
+import { beginGoogleRedirect, failAuthPhase, isAuthPhaseInFlight, pushAuthTrace } from './authPhase';
 
 const SUPABASE_URL_KEY = 'spenddesk_supabase_url';
 const SUPABASE_ANON_KEY = 'spenddesk_supabase_anon_key';
@@ -94,12 +94,20 @@ export const signInWithGoogleSupabase = async (caller = 'Sign-in button'): Promi
     pushAuthTrace('oauth_blocked_no_gesture', { caller });
     return { success: false, errorMessage: GOOGLE_GESTURE_BLOCKED_MESSAGE };
   }
+  if (isAuthPhaseInFlight()) {
+    pushAuthTrace('oauth_ignored_duplicate', { caller });
+    return { success: true };
+  }
   try {
     const supabase = getSupabase();
     // Dynamic redirect URL to ensure user stays on the exact current website domain (Live site vs Localhost)
     const currentOrigin = window.location.origin;
     const cleanPath = window.location.pathname.replace(/\/?[^/]*\.[^/]+$/, '');
     const redirectUrl = `${currentOrigin}${cleanPath}`.replace(/\/+$/, '') + '/';
+
+    // Show the connecting overlay immediately — before Google's URL is ready —
+    // so the tap is acknowledged. OAuth options below are unchanged.
+    beginGoogleRedirect(caller);
 
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
@@ -126,6 +134,7 @@ export const signInWithGoogleSupabase = async (caller = 'Sign-in button'): Promi
 
     if (error) {
       console.error('Supabase OAuth Error:', error);
+      failAuthPhase(error.message);
       return {
         success: false,
         errorMessage: error.message,
@@ -133,20 +142,20 @@ export const signInWithGoogleSupabase = async (caller = 'Sign-in button'): Promi
     }
 
     if (data?.url) {
-      // Mark the round-trip in-flight BEFORE leaving: the overlay shows
-      // "Redirecting to Google…" with the caller as the cause, and the return
-      // trip flips straight into "Completing sign-in…" instead of a blank boot.
-      beginGoogleRedirect(caller);
       pushAuthTrace('oauth_navigate', { caller });
       window.location.href = data.url;
+      return { success: true };
     }
 
-    return { success: true };
+    failAuthPhase('We could not open Google sign-in. Please try again.');
+    return { success: false, errorMessage: 'We could not open Google sign-in. Please try again.' };
   } catch (err: any) {
     console.error('Supabase Sign-In Exception:', err);
+    const errorMessage = err?.message || 'Failed to initialize Supabase Google Sign-In';
+    failAuthPhase(errorMessage);
     return {
       success: false,
-      errorMessage: err?.message || 'Failed to initialize Supabase Google Sign-In',
+      errorMessage,
     };
   }
 };

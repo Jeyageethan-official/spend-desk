@@ -46,7 +46,7 @@ export const SessionExpiredModal: React.FC<SessionExpiredModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-150"
+      className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/20 backdrop-blur-[5px] animate-in fade-in duration-150"
       role="presentation"
       onClick={(e) => {
         if (e.target === e.currentTarget && !isSigningIn) onDismiss();
@@ -74,7 +74,7 @@ export const SessionExpiredModal: React.FC<SessionExpiredModalProps> = ({
             type="button"
             onClick={onSignIn}
             disabled={isSigningIn}
-            className="w-full h-9 rounded-full bg-slate-900 text-white text-[14px] font-medium flex items-center justify-center gap-1.5 hover:bg-slate-800 active:scale-[0.98] transition cursor-pointer disabled:opacity-60"
+            className="w-full h-9 rounded-full bg-slate-900 text-white text-[14px] font-medium flex items-center justify-center gap-1.5 hover:bg-slate-800 active:scale-[0.97] transition cursor-pointer disabled:opacity-60"
           >
             {isSigningIn ? (
               <>
