@@ -244,7 +244,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
     setCategory('Cash Added');
     setPaymentMethod('Cash');
     setIsCarryForwardTx(true);
-    setNotes(`Opening balance carried from ${carryForward.fromLabel}`);
+    setNotes(`Yesterday balance continued from ${carryForward.fromLabel}`);
   };
 
   const handleQuickAdd = (addVal: number) => {
@@ -368,7 +368,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
             >
               <div className="min-w-0">
                 <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  {isCarryForwardTx ? 'Opening balance' : `From ${carryForward.fromLabel}`}
+                  {isCarryForwardTx ? 'Yesterday balance' : `From ${carryForward.fromLabel}`}
                 </p>
                 <p className="text-xs text-slate-600 truncate mt-0.5">
                   {isCarryForwardTx

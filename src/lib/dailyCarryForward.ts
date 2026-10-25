@@ -15,10 +15,15 @@ import { Transaction } from '../types/finance';
  * balance is right AND the history shows where it came from - no hidden
  * running total that could never be reconciled against the sheet.
  *
+ * The row's note deliberately reads "Yesterday balance continued ..." so the
+ * ledger itself says where the money came from instead of pretending new
+ * income arrived.
+ *
  * Once-only by construction: the prompt is recorded per account scope the
  * moment it is offered, so dismissing it never brings it back later the same
- * day. The Cash In flow offers the same carry-forward as a button afterwards,
- * which is the escape hatch for someone who dismissed the popup.
+ * day (an explicit "Not now" is respected - no silent carry afterwards). The
+ * Cash In flow offers the same carry-forward as a button afterwards, which is
+ * the escape hatch for someone who dismissed the popup.
  */
 
 const PROMPT_KEY = 'spenddesk_carry_prompt_v1';
@@ -146,10 +151,18 @@ export const evaluateCarryForward = ({
   const hasHistory = transactions.some((tx) => tx && tx.date && tx.date <= yesterday);
   if (!hasHistory) return null;
 
-  // Today already has rows: the balance on screen is meaningful, and adding a
-  // carry-forward now would double-count.
-  const hasRowsToday = transactions.some((tx) => tx && tx.date === today);
-  if (hasRowsToday) return null;
+  // Today already has a MANUAL Cash Added row: that row IS today's opening
+  // float, so carrying yesterday's close on top of it would double-count.
+  //
+  // Expenses (or any other non-opening row) do NOT block the offer: today's
+  // spend simply comes out of yesterday's close. Blocking on "any row today"
+  // is what made the carry silently vanish when the popup missed the very
+  // first records of a new day - the balance then showed Rs 0 all day with no
+  // popup and no row, which is the bug users reported.
+  const hasManualOpening = transactions.some(
+    (tx) => tx && tx.date === today && tx.type === 'cash_added' && !tx.isCarryForward
+  );
+  if (hasManualOpening) return null;
 
   // Already carried in today -> nothing left to offer.
   if (findTodayCarryForward(transactions, today)) return null;
@@ -160,21 +173,27 @@ export const evaluateCarryForward = ({
   return { amount, fromDay: yesterday, fromLabel: formatDayLabel(yesterday) };
 };
 
-/** The ledger row an accepted carry-forward becomes. */
+/**
+ * The ledger row an accepted carry-forward becomes.
+ *
+ * Dated at 00:00 on purpose: this is an OPENING balance, so it must sort
+ * before every other row of the day. Timestamping it with the moment it was
+ * accepted made any transaction recorded earlier the same day run first -
+ * against an empty drawer that clamps to Rs 0 - so the carried money never
+ * paid for it and the balance read wrong.
+ */
 export const buildCarryForwardTransaction = (
   offer: CarryForwardOffer,
   today: string = getLocalDateString()
 ): Omit<Transaction, 'id' | 'createdAt'> => {
-  const now = new Date();
-  const pad = (n: number) => String(n).padStart(2, '0');
   return {
     date: today,
-    time: `${pad(now.getHours())}:${pad(now.getMinutes())}`,
+    time: '00:00',
     type: 'cash_added',
     category: 'Cash Added',
     amount: offer.amount,
     paymentMethod: 'Cash',
-    notes: `Opening balance carried from ${offer.fromLabel}`,
+    notes: `Yesterday balance continued from ${offer.fromLabel}`,
     isCarryForward: true,
   };
 };

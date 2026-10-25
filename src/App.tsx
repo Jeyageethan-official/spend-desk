@@ -86,6 +86,7 @@ import {
 } from './lib/sheetsApi';
 import { generateTransactionSmsText, generateLendSmsText, generateLowBalanceSmsText, triggerDeviceSms } from './lib/smsAlert';
 import { 
+  cancelPendingTelegramAlertsForTx,
   generateTransactionTelegramAlert, 
   generateLendTelegramAlert, 
   generateLowBalanceTelegramAlert, 
@@ -101,6 +102,7 @@ import {
   finishOAuthConnected,
   getAuthPhase,
   restorePersistedPhase,
+  subscribeAuthPhase,
 } from './lib/authPhase';
 import { clearPendingSync, hasPendingSync, loadPendingSync, markLendDelete, markLendUpsert, markSettingsDirty, markTransactionDelete, markTransactionUpsert, mergePendingWorkspace, stageWorkspaceForReplay } from './lib/pendingSync';
 import { clearSheetSyncDirty, markSheetSyncDirty, noteSheetSyncAttempt, readSheetOutbox, SHEET_OUTBOX_MAX_BACKOFF_MS } from './lib/sheetOutbox';
@@ -109,6 +111,7 @@ import {
   buildCarryForwardTransaction,
   CarryForwardOffer,
   evaluateCarryForward,
+  findTodayCarryForward,
   hasCarryPromptFor,
   markCarryPromptShown,
 } from './lib/dailyCarryForward';
@@ -187,6 +190,12 @@ export default function App() {
   // retry tick, and an intentional sign-out never raises it at all.
   const [connectionNotice, setConnectionNotice] = useState<SessionNoticeKind | null>(null);
   const [isReconnecting, setIsReconnecting] = useState(false);
+  // Live mirror of the auth phase. App used to read getAuthPhase() only during
+  // render, so an exchange that finished without another state change left the
+  // screen believing it was still in flight - which held the daily carry
+  // popup hostage (never shown, never added, balance Rs 0 all day).
+  const [authPhaseState, setAuthPhaseState] = useState(() => getAuthPhase());
+  useEffect(() => subscribeAuthPhase(setAuthPhaseState), []);
   const lastConnectionNoticeAtRef = useRef(0);
   const noTokenPushStreakRef = useRef(0);
   // Daily balance carry-forward. Offered once per day per account: yesterday's
@@ -1411,6 +1420,9 @@ export default function App() {
       saveSheetTransactions(activeSheet.id, updated);
     }
     setSelectedTransactionIds([]);
+    // Retract any not-yet-delivered alerts for the deleted rows: the record
+    // is gone, so the next flush must not announce it.
+    cancelPendingTelegramAlertsForTx(txIds);
     if (user?.email) {
       const nextWs = buildCloudWorkspace(Date.now() + 50);
       nextWs.transactions = updated;
@@ -1878,7 +1890,7 @@ export default function App() {
       const todayTxs = updatedTxs.filter((t) => t && t.date === todayStr);
       const todaySum = calculateSummary(updatedTxs, todayTxs);
       const telegramAlert = generateTransactionTelegramAlert(recordedTx, currency, todaySum.currentCashBalance);
-      void sendTelegramAlert({ ...telegramAlert, chatId: telegramAlertConfig.chatId })
+      void sendTelegramAlert({ ...telegramAlert, chatId: telegramAlertConfig.chatId, txId: recordedTx.id })
         .then((res) => {
           if (res.queued) {
             showNotification('Offline: Telegram alert queued, will send when online.', 'info');
@@ -1975,6 +1987,10 @@ export default function App() {
       saveSheetTransactions(activeSheet.id, remaining);
     }
     setDeleteCandidate(null);
+    // Retract any not-yet-delivered alert for the deleted row: the record is
+    // gone, so the next flush (or the next time we come back online) must not
+    // announce it.
+    cancelPendingTelegramAlertsForTx([delId]);
     showNotification('Transaction deleted.', 'info');
 
     if (user?.email) {
@@ -2271,45 +2287,73 @@ export default function App() {
     };
   }, [dailyRefresh]);
 
+  // HOME RETURNS TO TODAY. The header date - and therefore the Home
+  // transaction log - is a Home-page concept: leaving Home resets it, so
+  // coming back (or reopening the app) always starts on Today instead of
+  // whatever date was last browsed. Other sections keep their own filters.
+  useEffect(() => {
+    if (activeTab === 'dashboard') return;
+    setHeaderFilter((f) => (f === DEFAULT_FILTER ? f : DEFAULT_FILTER));
+    setSectionFilters((prev) =>
+      prev.dashboard === DEFAULT_FILTER ? prev : { ...prev, dashboard: DEFAULT_FILTER }
+    );
+  }, [activeTab, DEFAULT_FILTER]);
+
   // DAILY BALANCE CARRY-FORWARD
   //
-  // The wallet balance follows the active date filter, and the header defaults
+  // The wallet balance follows the header date filter, and the header defaults
   // to "today", so the first open of a new day reads Rs 0.00 even though the
   // user finished yesterday holding cash. Offer yesterday's closing balance as
-  // today's opening balance - ONCE per day per account, and only while today
-  // has no rows yet (once they start recording, the on-screen balance is
-  // meaningful and a carry-forward would double-count).
+  // today's opening balance - ONCE per day per account.
   //
-  // Re-evaluated whenever the ledger or scope changes, and again when the
-  // daily-refresh rollover moves the app onto a new calendar day.
+  // The day that RECEIVES the carry is the day the BALANCE is showing, never
+  // the separate currentDateStr state: those two can diverge (frozen date,
+  // daily refresh off), and a row dated a day the header is not showing lands
+  // nowhere - Rs 0 on screen with no popup and no row. Only a single-day view
+  // of the real calendar today can receive a carry; a range or a historical
+  // day already carries its own history.
+  //
+  // Re-evaluated whenever the ledger, the header filter or the scope changes,
+  // and again when the daily-refresh rollover moves the app onto a new day.
   //
   // The OFFER is purely mathematical - it stays alive after a dismissal so the
   // Cash In flow can still offer it. Whether the ALERT fires is gated
   // separately by hasCarryPromptFor, which is what makes it once-only.
+  const carryDay = useMemo(() => {
+    const f = headerFilter;
+    const singleDay = f.startDate && f.startDate === f.endDate ? f.startDate : '';
+    return singleDay === getLocalDateString() ? singleDay : null;
+  }, [headerFilter]);
+
   const carryOption = useMemo(
-    () => evaluateCarryForward({ transactions, today: currentDateStr }),
-    [transactions, currentDateStr]
+    () => (carryDay ? evaluateCarryForward({ transactions, today: carryDay }) : null),
+    [transactions, carryDay]
   );
 
-  const showCarryAlert = Boolean(carryOption) &&
-    !hasCarryPromptFor(currentDateStr, currentStorageScope) &&
+  const showCarryAlert = Boolean(carryOption && carryDay) &&
+    !hasCarryPromptFor(carryDay || '', currentStorageScope) &&
     // Never compete with the connection-lost alert or an in-flight sign-in
-    // exchange: a modal stacked on a modal is noise.
+    // exchange: a modal stacked on a modal is noise. Both are transient, and
+    // authPhaseState is reactive now, so the popup reappears the moment the
+    // exchange lands instead of waiting for an unrelated re-render.
     !connectionNotice &&
-    !getAuthPhase().phase.startsWith('exchang');
+    !authPhaseState.phase.startsWith('exchang');
 
   useEffect(() => {
     setCarryOffer(showCarryAlert ? carryOption : null);
   }, [carryOption, showCarryAlert]);
 
-  // Accept: write a real ledger row dated today flagged as a carry-forward.
-  // It counts towards the wallet balance but is excluded from the Cash In KPI,
-  // so the figure on screen is right without pretending new money arrived.
+  // Accept: write a real ledger row dated the displayed day, flagged as a
+  // carry-forward. It counts towards the wallet balance but is excluded from
+  // the Cash In KPI, so the figure on screen is right without pretending new
+  // money arrived. The note says "Yesterday balance continued ..." so the
+  // ledger itself explains where the money came from.
   const handleAcceptCarryForward = (offer: CarryForwardOffer) => {
-    markCarryPromptShown(currentDateStr, currentStorageScope);
+    if (!carryDay) return;
+    markCarryPromptShown(carryDay, currentStorageScope);
     setIsApplyingCarry(true);
     try {
-      handleSaveTransaction(buildCarryForwardTransaction(offer, currentDateStr));
+      handleSaveTransaction(buildCarryForwardTransaction(offer, carryDay));
       showNotification(`Balance of ${formatCurrency(offer.amount, currency)} carried into today.`, 'success');
     } finally {
       setIsApplyingCarry(false);
@@ -2318,11 +2362,38 @@ export default function App() {
   };
 
   // Dismiss: record the day so the prompt does not come back on every reload.
-  // The same option stays reachable from the Cash In flow afterwards.
+  // An explicit "Not now" is respected - no silent carry later that day. The
+  // same option stays reachable from the Cash In flow afterwards.
   const handleDismissCarryForward = () => {
-    markCarryPromptShown(currentDateStr, currentStorageScope);
+    if (carryDay) markCarryPromptShown(carryDay, currentStorageScope);
     setCarryOffer(null);
   };
+
+  // SAFETY NET - "the popup never appeared, but the balance must still be
+  // right." While the connection-lost alert or the sign-in exchange owns the
+  // screen the popup is deliberately suppressed; if the user starts recording
+  // the new day anyway (stale phase, a modal that never re-rendered), carry
+  // silently instead of leaving Rs 0 on screen all day.
+  //
+  // An explicit "Not now" (the per-day prompt marker) or an already-accepted
+  // row both opt out, so this can never override a decline, and it never
+  // fires while the popup is still able to show.
+  useEffect(() => {
+    if (!carryDay || !carryOption) return;
+    if (hasCarryPromptFor(carryDay, currentStorageScope)) return;
+    if (findTodayCarryForward(transactions, carryDay)) return;
+    const popupSuppressed =
+      Boolean(connectionNotice) || authPhaseState.phase.startsWith('exchang');
+    const userStartedToday = transactions.some((tx) => tx && tx.date === carryDay);
+    if (popupSuppressed && userStartedToday) {
+      markCarryPromptShown(carryDay, currentStorageScope);
+      handleSaveTransaction(buildCarryForwardTransaction(carryOption, carryDay));
+      showNotification(
+        `Yesterday's balance of ${formatCurrency(carryOption.amount, currency)} continued into today.`,
+        'info'
+      );
+    }
+  }, [carryDay, carryOption, connectionNotice, authPhaseState, transactions, currentStorageScope]);
 
   const todayStr = currentDateStr;
 
@@ -2440,10 +2511,23 @@ export default function App() {
         <Header
           user={user}
           pageTitle={pageMeta.title}
-          pageSubtitle={pageMeta.subtitle}
-          dateFilter={headerFilter}
-          onDateFilterChange={setHeaderFilter}
-          headerDate={currentDateStr}
+          pageSubtitle={pageMeta.subtitle}            dateFilter={headerFilter}
+            onDateFilterChange={(next) => {
+              setHeaderFilter(next);
+              // HOME ONLY: the Home transaction log follows the header date.
+              // Every other section keeps its own filter, so moving the header
+              // calendar changes what Home shows and nothing else.
+              setSectionFilters((prev) => ({
+                ...prev,
+                dashboard: {
+                  ...prev.dashboard,
+                  type: next.type,
+                  startDate: next.startDate,
+                  endDate: next.endDate,
+                },
+              }));
+            }}
+            headerDate={currentDateStr}
           showCash={activeTab !== 'dashboard'}
           userProfile={userProfile}
           storageEmail={currentUserEmail}

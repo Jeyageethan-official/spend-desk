@@ -13,6 +13,12 @@ export interface TelegramAlertPayload {
    * delivery, and a retry never duplicates it.
    */
   id?: string;
+  /**
+   * The transaction that produced this alert. Deleting that row must delete
+   * its still-unsent alert too - otherwise an offline save followed by a
+   * delete would announce a record that no longer exists on the next flush.
+   */
+  txId?: string;
 }
 
 export const generateTransactionTelegramAlert = (
@@ -157,6 +163,34 @@ const removeFromOutbox = (id?: string): void => {
       localStorage.setItem(PENDING_TELEGRAM_ALERTS_KEY, JSON.stringify(remaining));
     }
   } catch {}
+};
+
+/**
+ * Cancel every still-unsent alert belonging to the given transactions.
+ *
+ * Called from the delete flows: the row is gone, so announcing it on the next
+ * flush (or after coming back online) would be a lie. Alerts already accepted
+ * by the server are obviously gone from the outbox - what this retracts is the
+ * write-ahead copy that offline mode / a failed send left behind.
+ *
+ * Returns how many pending alerts were cancelled.
+ */
+export const cancelPendingTelegramAlertsForTx = (txIds: string[]): number => {
+  if (!Array.isArray(txIds) || txIds.length === 0) return 0;
+  try {
+    const pending = getPendingTelegramAlerts();
+    const remaining = pending.filter((a) => !a.txId || !txIds.includes(a.txId));
+    const cancelled = pending.length - remaining.length;
+    if (cancelled === 0) return 0;
+    if (remaining.length === 0) {
+      localStorage.removeItem(PENDING_TELEGRAM_ALERTS_KEY);
+    } else {
+      localStorage.setItem(PENDING_TELEGRAM_ALERTS_KEY, JSON.stringify(remaining));
+    }
+    return cancelled;
+  } catch {
+    return 0;
+  }
 };
 
 // Serialises flushes. Two overlapping flushes (boot + the 'online' handler)

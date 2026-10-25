@@ -108,7 +108,16 @@ export const signInWithGoogleSupabase = async (caller = 'Sign-in button'): Promi
         redirectTo: redirectUrl,
         queryParams: {
           access_type: 'offline',
-          prompt: 'select_account',
+          // `consent` is REQUIRED for this app to stay signed in. Google only
+          // issues an offline refresh token when it shows the consent screen;
+          // with select_account alone, an already-granted account silently
+          // approves WITHOUT one, so nothing could be stored in
+          // google_refresh_tokens and the server mint ran dry ~1h later -
+          // every sign-in bought only an hour before "Reconnect Google"
+          // reappeared. The space-delimited list keeps the account chooser and
+          // forces the consent that produces the refresh token, which is what
+          // makes "sign in once, stay connected for months" possible.
+          prompt: 'consent select_account',
           enable_granular_consent: 'false',
           include_granted_scopes: 'true',
         },
