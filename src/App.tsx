@@ -86,7 +86,6 @@ import {
 } from './lib/sheetsApi';
 import { generateTransactionSmsText, generateLendSmsText, generateLowBalanceSmsText, triggerDeviceSms } from './lib/smsAlert';
 import { 
-  cancelPendingTelegramAlertsForTx,
   generateTransactionTelegramAlert, 
   generateLendTelegramAlert, 
   generateLowBalanceTelegramAlert, 
@@ -1420,9 +1419,6 @@ export default function App() {
       saveSheetTransactions(activeSheet.id, updated);
     }
     setSelectedTransactionIds([]);
-    // Retract any not-yet-delivered alerts for the deleted rows: the record
-    // is gone, so the next flush must not announce it.
-    cancelPendingTelegramAlertsForTx(txIds);
     if (user?.email) {
       const nextWs = buildCloudWorkspace(Date.now() + 50);
       nextWs.transactions = updated;
@@ -1987,10 +1983,6 @@ export default function App() {
       saveSheetTransactions(activeSheet.id, remaining);
     }
     setDeleteCandidate(null);
-    // Retract any not-yet-delivered alert for the deleted row: the record is
-    // gone, so the next flush (or the next time we come back online) must not
-    // announce it.
-    cancelPendingTelegramAlertsForTx([delId]);
     showNotification('Transaction deleted.', 'info');
 
     if (user?.email) {
@@ -3048,6 +3040,13 @@ export default function App() {
         editingTransaction={editingTransaction}
         defaultType={modalDefaultType}
         defaultAlertPhone={alertPhone}
+        // When the header is pinned to a single day, new records default to
+        // that day (not "today"); ranges fall back to today.
+        defaultDate={
+          headerFilter.startDate && headerFilter.startDate === headerFilter.endDate
+            ? headerFilter.startDate
+            : null
+        }
         carryForward={carryOption}
         currency={currency}
         onOpenSmsReader={() => setIsSmsModalOpen(true)}

@@ -21,7 +21,7 @@ import {
   Settings as SettingsIcon
 } from 'lucide-react';
 import { Transaction, TransactionType, Category, PaymentMethod } from '../types/finance';
-import { formatCurrency } from '../lib/calculations';
+import { formatCurrency, getLocalDateString } from '../lib/calculations';
 import { CarryForwardOffer } from '../lib/dailyCarryForward';
 import { 
   loadStoredCategoryDefs, 
@@ -41,6 +41,14 @@ interface TransactionModalProps {
   onOpenSettingsCategories?: () => void;
   storageEmail?: string | null;
   /**
+   * The calendar day the user is currently looking at in the header (passed
+   * only for a single-day view). A new record defaults to THAT day instead of
+   * "now", so adding a transaction while viewing another date saves it on that
+   * date rather than silently moving it to the current date. Ranges fall back
+   * to today; the date field stays editable either way.
+   */
+  defaultDate?: string | null;
+  /**
    * Yesterday's closing balance, when there is one to carry into today.
    * Offered as a one-tap button inside the Cash In flow - the escape hatch
    * for someone who dismissed the daily carry-forward alert.
@@ -58,6 +66,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   defaultAlertPhone = '',
   onOpenSettingsCategories,
   storageEmail,
+  defaultDate = null,
   carryForward = null,
   currency = 'Rs',
 }) => {
@@ -148,8 +157,10 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
     } else {
       setType(defaultType);
       setAmountStr('');
-      const now = new Date();
-      setDate(now.toISOString().split('T')[0]);
+      // Default to the day being viewed (single-day header), else today's
+      // LOCAL calendar day - toISOString() is UTC and stamped IST users'
+      // after-midnight records with yesterday's date.
+      setDate(defaultDate || getLocalDateString());
       setNotes('');
       setReceiptImage(undefined);
 
@@ -164,7 +175,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
         setPaymentMethod('Cash');
       }
     }
-  }, [editingTransaction, defaultType, isOpen]);
+  }, [editingTransaction, defaultType, defaultDate, isOpen]);
 
   // Focus the amount field when the modal opens. `autoFocus` on the input
   // handles the common case (mount happens inside the user's tap, so mobile
@@ -259,7 +270,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       return;
     }
 
-    const txDate = date || new Date().toISOString().split('T')[0];
+    const txDate = date || defaultDate || getLocalDateString();
     const nowTime = new Date().toTimeString().substring(0, 5);
 
     triggerFeedback('success');
