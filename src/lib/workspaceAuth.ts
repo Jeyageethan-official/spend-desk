@@ -186,13 +186,21 @@ export const refreshGoogleTokenSilently = async (
     if (cached && !isGoogleTokenExpired()) return cached;
 
     // 2. Supabase keeps the Google provider token from the sign-in exchange.
+    //    ONLY while it is still inside its stamp window: Supabase never
+    //    renews this token, so it dies ~1h after the exchange. Re-stamping it
+    //    as fresh (the old behaviour) handed Google an expired token for
+    //    another hour, every call 401'd, and the streak raised "Reconnect
+    //    Google" while the real fix - the server mint below - never got a
+    //    chance to run.
     try {
-      const supabase = getSupabase();
-      const { data: { session } } = await supabase.auth.getSession();
-      const providerToken = session?.provider_token;
-      if (providerToken && !providerToken.startsWith('eyJ') && providerToken.length > 20) {
-        setCachedWorkspaceToken(providerToken, undefined, account);
-        return providerToken;
+      if (!isGoogleTokenExpired()) {
+        const supabase = getSupabase();
+        const { data: { session } } = await supabase.auth.getSession();
+        const providerToken = session?.provider_token;
+        if (providerToken && !providerToken.startsWith('eyJ') && providerToken.length > 20) {
+          setCachedWorkspaceToken(providerToken, undefined, account);
+          return providerToken;
+        }
       }
     } catch {}
 
