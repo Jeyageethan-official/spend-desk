@@ -18,6 +18,7 @@ import {
   Camera,
   Paperclip,
   CheckCircle2,
+  Loader2,
   Settings as SettingsIcon
 } from 'lucide-react';
 import { Transaction, TransactionType, Category, PaymentMethod } from '../types/finance';
@@ -54,6 +55,9 @@ interface TransactionModalProps {
    * for someone who dismissed the daily carry-forward alert.
    */
   carryForward?: CarryForwardOffer | null;
+  isApplyingCarry?: boolean;
+  /** Saves the carry-forward immediately. Return false to keep the button for retry. */
+  onContinueYesterdayBalance?: () => boolean;
   currency?: string;
 }
 
@@ -68,6 +72,8 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   storageEmail,
   defaultDate = null,
   carryForward = null,
+  isApplyingCarry = false,
+  onContinueYesterdayBalance,
   currency = 'Rs',
 }) => {
   const [type, setType] = useState<TransactionType>(defaultType);
@@ -247,15 +253,23 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
     }
   };
 
-  // One-tap carry-forward inside Cash In: fills the amount and marks the row so
-  // it is saved as an opening balance rather than real new money.
+  // One-tap carry-forward inside Cash In: save immediately. Do not wait for
+  // the normal Save Transaction button — Continue is the save.
   const applyCarryForward = () => {
-    if (!carryForward) return;
-    setAmountStr(String(carryForward.amount));
-    setCategory('Cash Added');
-    setPaymentMethod('Cash');
-    setIsCarryForwardTx(true);
-    setNotes(`Yesterday balance continued from ${carryForward.fromLabel}`);
+    if (!carryForward || isApplyingCarry) return;
+    triggerFeedback('success');
+    const saved = onContinueYesterdayBalance ? onContinueYesterdayBalance() : false;
+    if (saved) {
+      onClose();
+      return;
+    }
+    if (!onContinueYesterdayBalance) {
+      setAmountStr(String(carryForward.amount));
+      setCategory('Cash Added');
+      setPaymentMethod('Cash');
+      setIsCarryForwardTx(true);
+      setNotes(`Yesterday balance continued from ${carryForward.fromLabel}`);
+    }
   };
 
   const handleQuickAdd = (addVal: number) => {
@@ -370,33 +384,29 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
           {/* Carry-forward shortcut: only meaningful on a fresh Cash In, never
               while editing an existing row (which may already be one). */}
           {type === 'cash_added' && carryForward && !editingTransaction && (
-            <div
-              className={`rounded-2xl border px-3.5 py-2.5 flex items-center justify-between gap-3 transition-colors ${
-                isCarryForwardTx
-                  ? 'bg-emerald-50 border-emerald-200'
-                  : 'bg-slate-50 border-slate-200/90'
-              }`}
-            >
+            <div className="rounded-2xl border px-3.5 py-2.5 flex items-center justify-between gap-3 bg-slate-50 border-slate-200/90">
               <div className="min-w-0">
                 <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  {isCarryForwardTx ? 'Yesterday balance' : `From ${carryForward.fromLabel}`}
+                  From {carryForward.fromLabel}
                 </p>
                 <p className="text-xs text-slate-600 truncate mt-0.5">
-                  {isCarryForwardTx
-                    ? 'Counts as balance, not new income.'
-                    : `You closed that day with ${formatCurrency(carryForward.amount, currency)}`}
+                  Continue saves {formatCurrency(carryForward.amount, currency)} as today&apos;s opening balance.
                 </p>
               </div>
               <button
                 type="button"
-                onClick={isCarryForwardTx ? () => setIsCarryForwardTx(false) : applyCarryForward}
-                className={`shrink-0 px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all cursor-pointer ${
-                  isCarryForwardTx
-                    ? 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-                    : 'bg-slate-900 text-white hover:bg-slate-800 active:scale-95'
-                }`}
+                onClick={applyCarryForward}
+                disabled={isApplyingCarry}
+                className="shrink-0 px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all cursor-pointer bg-slate-900 text-white hover:bg-slate-800 active:scale-95 disabled:opacity-60 disabled:pointer-events-none inline-flex items-center gap-1.5"
               >
-                {isCarryForwardTx ? 'Undo' : 'Continue'}
+                {isApplyingCarry ? (
+                  <>
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    Saving…
+                  </>
+                ) : (
+                  'Continue'
+                )}
               </button>
             </div>
           )}

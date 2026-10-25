@@ -5,6 +5,7 @@ import {
   failAuthPhase,
   subscribeAuthPhase,
 } from '../lib/authPhase';
+import { SpendDeskLogo } from './SpendDeskLogo';
 
 const EXCHANGE_TIMEOUT_MS = 25000;
 const SUCCESS_DISMISS_MS = 1600;
@@ -68,18 +69,6 @@ const copyFor = (state: AuthPhaseState): { title: string; subtitle: string } => 
   }
 };
 
-const WalletMark: React.FC = () => (
-  <svg width="22" height="22" viewBox="0 0 22 22" fill="none" aria-hidden="true">
-    <rect x="1.5" y="6.5" width="19" height="13" rx="3.25" fill="#116b4e" />
-    <path
-      d="M3.2 8.4V7.1C3.2 5.4 4.6 4 6.4 4h7.2c1.1 0 2.1.7 2.5 1.7L17.4 8.4"
-      fill="#188663"
-    />
-    <rect x="14.2" y="11.1" width="6.3" height="5.2" rx="1.6" fill="#0d5940" />
-    <circle cx="16.2" cy="13.7" r="1.15" fill="#eaf5f0" />
-  </svg>
-);
-
 const GoogleMark: React.FC = () => (
   <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
     <path
@@ -103,8 +92,8 @@ const GoogleMark: React.FC = () => (
 
 const AuthLink: React.FC<{ status: 'connecting' | 'success' | 'error' }> = ({ status }) => (
   <div className={`auth-link auth-link--${status}`} aria-hidden="true">
-    <span className="auth-link__mark">
-      <WalletMark />
+    <span className="auth-link__mark auth-link__mark--logo">
+      <SpendDeskLogo variant="icon" size="sm" />
     </span>
     <span className="auth-link__line">
       <span className="auth-link__fill" />

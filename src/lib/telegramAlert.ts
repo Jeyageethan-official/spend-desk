@@ -2,8 +2,11 @@ import { Transaction, LendItem } from '../types/finance';
 import { formatCurrency, formatDateToDisplayHeader } from './calculations';
 import { getSupabase } from './supabase';
 
-const cashTypeLabel = (tx: Pick<Transaction, 'type'>): string =>
-  tx.type === 'cash_added' ? 'Cash In' : 'Cash Out';
+const cashTypeLabel = (tx: Pick<Transaction, 'type'>): string => {
+  if (tx.type === 'cash_added') return 'Cash In';
+  if (tx.type === 'card_expense') return 'Card Spend';
+  return 'Cash Out';
+};
 
 const txDescription = (tx: Pick<Transaction, 'notes' | 'category'>): string =>
   (tx.notes || '').trim() || tx.category || 'No description';
@@ -82,7 +85,7 @@ export const generateDeletedTransactionTelegramAlert = (
   updatedBalance?: number
 ): TelegramAlertPayload => {
   const lines = [
-    'TRANSACTION DELETED',
+    '🗑️ TRANSACTION DELETED',
     '',
     `Type: ${cashTypeLabel(tx)}`,
     `Deleted Amount: ${formatCurrency(tx.amount, currency)}`,
@@ -109,7 +112,7 @@ export const generateBulkDeletedTransactionsTelegramAlert = (
   const count = txs.length;
   const total = txs.reduce((sum, tx) => sum + Math.abs(tx.amount || 0), 0);
   const lines = [
-    'TRANSACTIONS DELETED',
+    '🗑️ TRANSACTIONS DELETED',
     '',
     `Deleted: ${count} transaction${count === 1 ? '' : 's'}`,
     `Deleted Amount: ${formatCurrency(total, currency)}`,

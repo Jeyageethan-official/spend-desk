@@ -33,7 +33,7 @@ export const AuthHelpModal: React.FC<AuthHelpModalProps> = ({
                 Help &amp; Account Guide
               </h2>
               <p className="text-xs text-slate-500 md:text-sm">
-                How SpendDesk keeps your financial records safe
+                How your financial records stay safe
               </p>
             </div>
           </div>
@@ -56,7 +56,7 @@ export const AuthHelpModal: React.FC<AuthHelpModalProps> = ({
               <span>100% Free &amp; Private — No Sign-In Required</span>
             </div>
             <p className="text-xs text-slate-700 leading-relaxed md:text-sm">
-              SpendDesk is designed to work completely offline on your device. Every transaction, cash balance, category, and lend/borrow record is saved directly to your private browser storage. You can use all features freely without signing in.
+              This app is designed to work completely offline on your device. Every transaction, cash balance, category, and lend/borrow record is saved directly to your private browser storage. You can use all features freely without signing in.
             </p>
           </div>
 
@@ -76,7 +76,7 @@ export const AuthHelpModal: React.FC<AuthHelpModalProps> = ({
                   &bull; Why did Google show an authorization prompt or warning?
                 </span>
                 <span className="text-slate-600 text-[11px] block leading-normal md:text-xs">
-                  Because Google Sheets and Drive permissions allow creating and updating spreadsheets, Google requires authorization. If your account is not authorized or cloud sync is unavailable, you can use SpendDesk fully in offline mode with complete safety.
+                  Because Google Sheets and Drive permissions allow creating and updating spreadsheets, Google requires authorization. If your account is not authorized or cloud sync is unavailable, you can use the app fully in offline mode with complete safety.
                 </span>
               </div>
 

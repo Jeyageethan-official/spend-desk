@@ -1541,7 +1541,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     <div>
                       <h3 className="text-sm font-bold text-slate-900 dark:text-white">Automatic Alerts</h3>
                       <p className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-400 mt-1 md:text-xs">
-                        Get instant Telegram notifications whenever you save a transaction.
+                        Get instant Telegram notifications whenever you save or delete a transaction.
                       </p>
                     </div>
                   </div>

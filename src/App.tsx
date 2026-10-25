@@ -86,7 +86,9 @@ import {
 } from './lib/sheetsApi';
 import { generateTransactionSmsText, generateLendSmsText, generateLowBalanceSmsText, triggerDeviceSms } from './lib/smsAlert';
 import { 
-  generateTransactionTelegramAlert, 
+  generateTransactionTelegramAlert,
+  generateDeletedTransactionTelegramAlert,
+  generateBulkDeletedTransactionsTelegramAlert,
   generateLendTelegramAlert, 
   generateLowBalanceTelegramAlert, 
   sendTelegramAlert, 
@@ -203,6 +205,7 @@ export default function App() {
   // closing balance becomes today's opening balance as a real ledger row.
   const [carryOffer, setCarryOffer] = useState<CarryForwardOffer | null>(null);
   const [isApplyingCarry, setIsApplyingCarry] = useState(false);
+  const carryPersistLockRef = useRef(false);
   // After sign-out, keep the last account's offline workspace visible. This is
   // intentionally persisted so a refresh also retains the user's local ledger.
   // A later Google sign-in always replaces it with that Google account's scope.
@@ -531,7 +534,6 @@ export default function App() {
 
         if (awaitingRedirectSignIn) {
           awaitingRedirectSignIn = false;
-          showNotification(`Signed in as ${key}`, 'success');
         }
 
         // Auto-connect THIS account's own sheet - never another account's.
@@ -1408,10 +1410,34 @@ export default function App() {
     [activeSheet, accessToken, currentUserEmail, activeTab, handlePullFromSheet],
   );
 
+  const dispatchTransactionDeletedTelegram = (deletedTxs: Transaction[], remaining: Transaction[]) => {
+    if (!telegramSendActive || deletedTxs.length === 0) return;
+    const walletSum = calculateSummary(remaining, remaining);
+    const payload =
+      deletedTxs.length === 1
+        ? generateDeletedTransactionTelegramAlert(deletedTxs[0], currency, walletSum.currentCashBalance)
+        : generateBulkDeletedTransactionsTelegramAlert(deletedTxs, currency, walletSum.currentCashBalance);
+    void sendTelegramAlert({ ...payload, chatId: telegramAlertConfig.chatId })
+      .then((res) => {
+        if (res.queued) {
+          showNotification('Offline: Telegram delete alert queued, will send when online.', 'info');
+        } else {
+          showNotification('Telegram delete alert delivered.', 'success');
+        }
+      })
+      .catch((error) => {
+        console.error('Telegram delete alert failed:', error);
+      });
+  };
+
   const handleBulkDeleteTransactions = (txIds: string[]) => {
-    markTxIdsDeleted(txIds, currentUserEmail);
-    txIds.forEach((id) => markTransactionDelete(id, currentUserEmail));
-    const updated = transactions.filter((t) => !txIds.includes(t.id));
+    if (!txIds.length) return;
+    const uniqueIds = Array.from(new Set(txIds));
+    const deletedTxs = transactions.filter((t) => uniqueIds.includes(t.id));
+    if (deletedTxs.length === 0) return;
+    markTxIdsDeleted(uniqueIds, currentUserEmail);
+    uniqueIds.forEach((id) => markTransactionDelete(id, currentUserEmail));
+    const updated = transactions.filter((t) => !uniqueIds.includes(t.id));
     latestStateRef.current.transactions = updated;
     setTransactions(updated);
     saveStoredTransactions(updated, currentUserEmail);
@@ -1428,7 +1454,8 @@ export default function App() {
     if (activeSheet) {
       void handlePushToSheet({ silent: true }, { transactions: updated, lendItems });
     }
-    showNotification(`Deleted ${txIds.length} transactions.`, 'info');
+    showNotification(`Deleted ${deletedTxs.length} transaction${deletedTxs.length === 1 ? '' : 's'}.`, 'info');
+    dispatchTransactionDeletedTelegram(deletedTxs, updated);
   };
 
   // Unified Single Sign-In with Google via Supabase OAuth: Single redirect to Gmail account chooser.
@@ -1834,6 +1861,11 @@ export default function App() {
   const handleSaveTransaction = (data: Omit<Transaction, 'id' | 'createdAt'> & { id?: string; sendSmsTo?: string }) => {
     const { sendSmsTo, ...txData } = data;
     const isNewTransaction = !txData.id;
+    const carryDayForSave = txData.date || getLocalDateString();
+    if (isNewTransaction && txData.isCarryForward && findTodayCarryForward(latestStateRef.current.transactions, carryDayForSave)) {
+      showNotification("Yesterday's balance is already continued.", 'info');
+      return;
+    }
     let updatedTxs: Transaction[];
     let recordedTx: Transaction;
 
@@ -1866,7 +1898,12 @@ export default function App() {
         saveSheetTransactions(activeSheet.id, updatedTxs);
       }
       setTransactions(updatedTxs);
-      showNotification('Transaction recorded.', 'success');
+      showNotification(
+        recordedTx.isCarryForward
+          ? `Yesterday's balance of ${formatCurrency(recordedTx.amount, currency)} continued.`
+          : 'Transaction recorded.',
+        'success'
+      );
     }
 
     // TELEGRAM ALERTS ARE PERSISTED SYNCHRONOUSLY, before this handler returns.
@@ -1980,8 +2017,10 @@ export default function App() {
     if (activeSheet?.id) {
       saveSheetTransactions(activeSheet.id, remaining);
     }
+    const deletedTx = deleteCandidate;
     setDeleteCandidate(null);
     showNotification('Transaction deleted.', 'info');
+    dispatchTransactionDeletedTelegram([deletedTx], remaining);
 
     if (user?.email) {
       const nextWs = buildCloudWorkspace(Date.now() + 50);
@@ -2316,8 +2355,8 @@ export default function App() {
   }, [headerFilter]);
 
   const carryOption = useMemo(
-    () => (carryDay ? evaluateCarryForward({ transactions, today: carryDay }) : null),
-    [transactions, carryDay]
+    () => (carryDay ? evaluateCarryForward({ transactions, today: carryDay, email: currentStorageScope }) : null),
+    [transactions, carryDay, currentStorageScope]
   );
 
   const showCarryAlert = Boolean(carryOption && carryDay) &&
@@ -2338,17 +2377,34 @@ export default function App() {
   // the Cash In KPI, so the figure on screen is right without pretending new
   // money arrived. The note says "Yesterday balance continued ..." so the
   // ledger itself explains where the money came from.
-  const handleAcceptCarryForward = (offer: CarryForwardOffer) => {
-    if (!carryDay) return;
-    markCarryPromptShown(carryDay, currentStorageScope);
+  const persistCarryForward = (offer: CarryForwardOffer, day: string): boolean => {
+    if (carryPersistLockRef.current) return false;
+    if (findTodayCarryForward(latestStateRef.current.transactions, day)) {
+      markCarryPromptShown(day, currentStorageScope);
+      setCarryOffer(null);
+      showNotification("Yesterday's balance is already continued.", 'info');
+      return true;
+    }
+    carryPersistLockRef.current = true;
     setIsApplyingCarry(true);
     try {
-      handleSaveTransaction(buildCarryForwardTransaction(offer, carryDay));
-      showNotification(`Balance of ${formatCurrency(offer.amount, currency)} carried into today.`, 'success');
-    } finally {
-      setIsApplyingCarry(false);
+      markCarryPromptShown(day, currentStorageScope);
+      handleSaveTransaction(buildCarryForwardTransaction(offer, day));
       setCarryOffer(null);
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not continue yesterday's balance. Try again.";
+      showNotification(message, 'error');
+      return false;
+    } finally {
+      carryPersistLockRef.current = false;
+      setIsApplyingCarry(false);
     }
+  };
+
+  const handleAcceptCarryForward = (offer: CarryForwardOffer) => {
+    if (!carryDay) return;
+    persistCarryForward(offer, carryDay);
   };
 
   // Dismiss: record the day so the prompt does not come back on every reload.
@@ -2376,12 +2432,7 @@ export default function App() {
       Boolean(connectionNotice) || authPhaseState.phase.startsWith('exchang');
     const userStartedToday = transactions.some((tx) => tx && tx.date === carryDay);
     if (popupSuppressed && userStartedToday) {
-      markCarryPromptShown(carryDay, currentStorageScope);
-      handleSaveTransaction(buildCarryForwardTransaction(carryOption, carryDay));
-      showNotification(
-        `Yesterday's balance of ${formatCurrency(carryOption.amount, currency)} continued into today.`,
-        'info'
-      );
+      persistCarryForward(carryOption, carryDay);
     }
   }, [carryDay, carryOption, connectionNotice, authPhaseState, transactions, currentStorageScope]);
 
@@ -3047,6 +3098,14 @@ export default function App() {
             : null
         }
         carryForward={carryOption}
+        isApplyingCarry={isApplyingCarry}
+        onContinueYesterdayBalance={() => {
+          if (!carryOption || !carryDay) {
+            showNotification('No yesterday balance to continue.', 'error');
+            return false;
+          }
+          return persistCarryForward(carryOption, carryDay);
+        }}
         currency={currency}
         onOpenSmsReader={() => setIsSmsModalOpen(true)}
         onOpenSettingsCategories={() => {

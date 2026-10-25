@@ -174,7 +174,7 @@ export const restorePersistedPhase = (): AuthPhaseState => {
   return state;
 };
 
-/** Session landed - overlay shows "Signed in as ..." briefly, then clears. */
+/** Session landed - overlay shows the signed-in confirmation, then clears. */
 export const finishOAuthConnected = (email?: string): void => {
   if (state.phase !== 'exchanging' && state.phase !== 'redirecting') return;
   setAuthPhase('connected', { email });

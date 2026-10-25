@@ -54,7 +54,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    height: 32px;
+    height: 36px;
     margin-bottom: 1rem;
   }
 
@@ -70,9 +70,19 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 22px;
-    height: 22px;
+    width: 28px;
+    height: 28px;
     flex-shrink: 0;
+  }
+
+  .auth-link__mark--logo {
+    width: 28px;
+    height: 28px;
+  }
+
+  .auth-link__mark--logo > div {
+    width: 28px;
+    height: 28px;
   }
 
   .auth-link__line {
@@ -245,4 +255,17 @@
     opacity: 1;
     transform: scale(1);
   }
+}
+
+/* Google Identity / FedCM "Signed in as" chip injected at the bottom of the page. */
+#credential_picker_container,
+#credential_picker_iframe,
+div[id^="gsi_"],
+iframe[src*="accounts.google.com/gsi/"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }

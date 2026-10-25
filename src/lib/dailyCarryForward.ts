@@ -193,10 +193,10 @@ export interface EvaluateCarryArgs {
  *   - the same option must stay reachable from Cash In after a dismissal.
  * Folding the prompt guard in here would silently kill that escape hatch.
  *
- * Returns null when there is nothing to carry: no history on or before
- * yesterday, a zero previous-day close, or a carry-forward already saved
- * today. Today's new / edited / deleted rows must never change the amount
- * and must never hide the offer — that amount is yesterday's close only.
+ * Returns null when there is nothing to carry: yesterday has no close,
+ * yesterday closed at zero, or a carry-forward is already saved today.
+ * Today's new / edited / deleted rows must never change the amount and
+ * must never hide the offer — that amount is yesterday's own close only.
  */
 export const evaluateCarryForward = ({
   transactions,
@@ -212,7 +212,8 @@ export const evaluateCarryForward = ({
   if (findTodayCarryForward(transactions, today)) return null;
 
   const frozen = typeof localStorage !== 'undefined' ? readFrozenCarryAmount(today, email) : null;
-  const live = Math.round(closingBalanceThrough(transactions, yesterday) * 100) / 100;
+  // Only the immediately previous calendar day — never skip back over an empty day.
+  const live = Math.round(closingBalanceForDay(transactions, yesterday) * 100) / 100;
   const amount = frozen && frozen > 0 ? frozen : live;
   if (!(amount > 0)) return null;
 
