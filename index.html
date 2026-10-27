@@ -17,23 +17,12 @@
     <meta property="og:description" content="Professional Cash Wallet and Card Spend Tracker synced with Google Sheets, featuring real-time category analytics and transaction management." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
-    <script>
-      // Clear legacy service worker caches that broke Safari/Chrome normal mode
-      try {
-        if ('serviceWorker' in navigator) {
-          navigator.serviceWorker.getRegistrations().then(function(regs) {
-            regs.forEach(function(r) { r.unregister(); });
-          }).catch(function() {});
-        }
-        if ('caches' in window) {
-          caches.keys().then(function(keys) {
-            keys.forEach(function(k) { caches.delete(k); });
-          }).catch(function() {});
-        }
-      } catch (e) {}
-    </script>
-    <script type="module" crossorigin src="./assets/index-DOPAygKz.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-tRBjDpkc.css">
+    <!-- Caching is owned by public/sw.js (registered from main.tsx): the
+         interface is stored in the browser so it reopens with no network.
+         Do NOT unregister workers or delete caches here — that purge is what
+         made every offline open lose the UI. -->
+    <script type="module" crossorigin src="./assets/index-CrmzDuoI.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-Da0WB_-N.css">
   </head>
   <body>
     <div id="root"></div>
