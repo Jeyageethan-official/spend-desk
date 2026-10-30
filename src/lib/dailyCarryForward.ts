@@ -1,8 +1,6 @@
 import { getLocalDateString, isCarryForwardTransaction } from './calculations';
 import { Transaction } from '../types/finance';
 
-const AMOUNT_LOCK_KEY = 'spenddesk_carry_amount_v1';
-
 /**
  * Daily balance carry-forward.
  *
@@ -21,11 +19,15 @@ const AMOUNT_LOCK_KEY = 'spenddesk_carry_amount_v1';
  * ledger itself says where the money came from instead of pretending new
  * income arrived.
  *
- * Once-only by construction: the prompt is recorded per account scope the
- * moment it is offered, so dismissing it never brings it back later the same
- * day (an explicit "Not now" is respected - no silent carry afterwards). The
- * Cash In flow offers the same carry-forward as a button afterwards, which is
- * the escape hatch for someone who dismissed the popup.
+ * OFFERED ON EVERY OPEN: the popup appears whenever the offer exists —
+ * closing the app, reopening it or refreshing asks again while today still has
+ * no carry row of its own. The recorded prompt marker (markCarryPromptShown /
+ * hasCarryPromptFor) no longer gates showing it; it only stops the silent
+ * auto-carry in App from overriding an explicit "Not now" in that visit.
+ * Accepting is safe by construction: evaluateCarryForward returns null as
+ * soon as today's carry row exists, so the money can never be added twice,
+ * and a mid-session "Not now" still closes the popup until the next load. The
+ * Cash In flow offers the same carry-forward as the escape hatch.
  */
 
 const PROMPT_KEY = 'spenddesk_carry_prompt_v1';
@@ -112,79 +114,69 @@ export const closingBalanceForDay = (
   return Math.round(balance * 100) / 100;
 };
 
+/** Does this row touch the physical cash drawer on its day? */
+const isCashDrawerRow = (tx?: Transaction | null): boolean => {
+  if (!tx) return false;
+  if (tx.type === 'cash_added') return true;
+  return tx.type === 'cash_expense' && isCashPayment(tx.paymentMethod);
+};
+
+/** The calendar day before `dateStr` as local YYYY-MM-DD. */
+const previousDayString = (dateStr: string): string => {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(y, (m || 1) - 1, d || 1);
+  dt.setDate(dt.getDate() - 1);
+  return getLocalDateString(dt);
+};
+
 /**
- * Closing cash as of 23:59:59 on `throughDay`.
+ * Closing cash as of 23:59:59 on `throughDay` — THE PREVIOUS DAY'S OWN
+ * DISPLAYED CLOSE, never a sum of older days.
  *
- * THE RULE: the wallet holds what every real Cash In minus every real cash
- * Expense added up to by the end of that day. Carry-forward rows are skipped
- * because they only re-open a later day with money already counted here -
- * adding them back is exactly how yesterday's balance used to come out as
- * Rs 4,000 instead of Rs 3,000.
+ * THE RULE (the one the whole feature exists to honour): today's offer is
+ * exactly the balance the app showed as yesterday's closing balance. It is
+ * computed by looking at that ONE day: its carry-forward row (if one was
+ * accepted) is that day's opening balance, its own Cash Ins add, its own
+ * cash Expenses subtract. Older days are never re-walked, so no carried amount
+ * can ever be counted twice and no ledger history can leak into the offer -
+ * Rs 500 closing on the 25th and Rs 800 on the 26th means the 27th offers
+ * Rs 800, never Rs 1,300/1,400.
  *
- * It also deliberately walks back over days that hold no rows at all. An empty
- * day does not change the wallet, so its closing balance is the last real
- * close before it - that is what makes "5 Oct closed at 1,500, 6 Oct had no
- * transactions" still offer 1,500 on 7 Oct instead of nothing.
+ * Days that do NOT close the wallet are stepped over rather than summed:
+ * an empty day and a card-only day leave the cash drawer untouched, so the
+ * walk keeps going back until it finds the most recent day that actually
+ * moved cash. That preserves "5 Oct closed at 1,500, 6 Oct had no
+ * transactions" → 7 Oct still offers 1,500.
  */
 export const closingBalanceThrough = (
   transactions: Transaction[],
   throughDay: string
 ): number => {
-  const eligible = (Array.isArray(transactions) ? transactions : []).filter(
-    (tx) =>
-      tx &&
-      tx.date &&
-      tx.date <= throughDay &&
-      tx.type !== 'card_expense' &&
-      !isCarryForwardTransaction(tx)
+  const txs = (Array.isArray(transactions) ? transactions : []).filter(
+    (tx) => tx && tx.date
   );
-  if (eligible.length === 0) return 0;
+  if (txs.length === 0) return 0;
 
-  const isCashPayment = (method?: string) => !method || method.toLowerCase() === 'cash';
-  const sorted = [...eligible].sort((a, b) => {
-    const da = a.date || '';
-    const db = b.date || '';
-    if (da !== db) return da.localeCompare(db);
-    const ta = a.time || '00:00';
-    const tb = b.time || '00:00';
-    if (ta !== tb) return ta.localeCompare(tb);
-    return (a.createdAt || 0) - (b.createdAt || 0);
-  });
+  // Earliest day in the ledger bounds the walk-back.
+  let earliest = throughDay;
+  for (const tx of txs) {
+    if (tx.date && tx.date < earliest) earliest = tx.date;
+  }
 
-  let balance = 0;
-  for (const tx of sorted) {
-    const amt = Math.abs(tx.amount || 0);
-    if (tx.type === 'cash_added') {
-      balance += amt;
-    } else if (tx.type === 'cash_expense' && isCashPayment(tx.paymentMethod)) {
-      balance = Math.max(0, balance - amt);
+  let day = throughDay;
+  while (day >= earliest) {
+    const dayTxs = txs.filter((tx) => tx.date === day);
+    const closedCash = dayTxs.some(isCashDrawerRow);
+    if (closedCash) {
+      // That day's own close: the carry row (00:00) opens it, the day's real
+      // rows move it. Exactly what the single-day balance view displayed.
+      return closingBalanceForDay(txs, day);
     }
+    // Empty day or card-only day: the wallet did not move — step back.
+    if (day === earliest) break;
+    day = previousDayString(day);
   }
-  return Math.round(balance * 100) / 100;
-};
-
-const amountLockKey = (day: string, email?: string | null) =>
-  `${AMOUNT_LOCK_KEY}_${(email || 'guest').trim().toLowerCase()}_${day}`;
-
-const readFrozenCarryAmount = (day: string, email?: string | null): number | null => {
-  try {
-    const raw = localStorage.getItem(amountLockKey(day, email));
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as { amount?: number };
-    return typeof parsed?.amount === 'number' && parsed.amount > 0 ? parsed.amount : null;
-  } catch {
-    return null;
-  }
-};
-
-const freezeCarryAmount = (day: string, amount: number, email?: string | null): void => {
-  if (!(amount > 0)) return;
-  try {
-    localStorage.setItem(
-      amountLockKey(day, email),
-      JSON.stringify({ amount, at: Date.now() })
-    );
-  } catch {}
+  return 0;
 };
 
 export interface CarryForwardOffer {
@@ -200,7 +192,7 @@ export interface EvaluateCarryArgs {
   transactions: Transaction[];
   /** The calendar day being evaluated (defaults to today, local time). */
   today?: string;
-  /** Account scope for the once-per-day frozen continue amount. */
+  /** Account scope (unused for the amount itself, kept for call-site clarity). */
   email?: string | null;
 }
 
@@ -209,9 +201,11 @@ export interface EvaluateCarryArgs {
  *
  * Note this deliberately does NOT consider whether the popup was already
  * shown. Two different things need the answer:
- *   - the popup must fire at most once per day (gated by `hasCarryPromptFor`),
+ *   - the popup shows whenever this returns an offer (each fresh open too),
  *   - the same option must stay reachable from Cash In after a dismissal.
- * Folding the prompt guard in here would silently kill that escape hatch.
+ * Folding a prompt guard in here would silently kill that escape hatch — and
+ * returning null once today's carry row exists is what makes repeating the
+ * popup impossible to double-count.
  *
  * Returns null when there is nothing to carry: no history on or before
  * yesterday, yesterday closed at zero, or a carry-forward is already saved
@@ -231,14 +225,15 @@ export const evaluateCarryForward = ({
 
   if (findTodayCarryForward(transactions, today)) return null;
 
-  const frozen = typeof localStorage !== 'undefined' ? readFrozenCarryAmount(today, email) : null;
-  // End of the immediately previous calendar day — real cash only, carries
-  // excluded, empty days naturally inherited from the last real close.
-  const live = Math.round(closingBalanceThrough(transactions, yesterday) * 100) / 100;
-  const amount = frozen && frozen > 0 ? frozen : live;
+  // ALWAYS the live close of yesterday — never a figure frozen at the first
+  // evaluation of the day. Freezing meant any later correction to yesterday's
+  // rows (or rows that simply arrived afterwards from the Sheet / cloud) left
+  // the popup and the Cash In button offering a stale amount forever. This is
+  // a useMemo over `transactions`, so the offer now changes in real time with
+  // every save — and it can only ever move with YESTERDAY's data, because the
+  // walk below never reads a day after `yesterday`.
+  const amount = Math.round(closingBalanceThrough(transactions, yesterday) * 100) / 100;
   if (!(amount > 0)) return null;
-
-  if (!frozen) freezeCarryAmount(today, amount, email);
 
   return { amount, fromDay: yesterday, fromLabel: formatDayLabel(yesterday) };
 };

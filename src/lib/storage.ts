@@ -36,18 +36,37 @@ export const loadStoredProfile = (email?: string | null): UserProfile => {
     const avatarKey = getScopedKey(CUSTOM_AVATAR_KEY, cleanEmail);
     const emailKey = getScopedKey(PROFILE_EMAIL_KEY, cleanEmail);
 
-    // One-time migration of the legacy GLOBAL profile keys (written by the
-    // pre-per-account versions): the FIRST account to use this browser claims
-    // them exactly once. Every other account starts clean, so signing in with
-    // a second Gmail can never inherit the first account's custom name/avatar.
-    if (cleanEmail && !localStorage.getItem(PROFILE_OWNER_KEY)) {
+    // One-time adoption of the legacy GLOBAL profile keys (written by the
+    // pre-per-account versions, when every account on a device read the same
+    // name/avatar/email).
+    //
+    // It only ever adopts them for the account the legacy profile SAYS it
+    // belongs to (money_tracker_profile_email), and only into a slot that is
+    // still empty. Once adopted the global keys are consumed, so no later
+    // account can pick them up. An account that does not match - or a legacy
+    // profile that recorded no owner at all - starts clean instead: inheriting
+    // someone else's name is precisely the bug this guard exists to stop.
+    if (cleanEmail) {
       const legacyName = localStorage.getItem(PROFILE_NAME_KEY);
       const legacyAvatar = localStorage.getItem(CUSTOM_AVATAR_KEY);
-      const legacyEmail = localStorage.getItem(PROFILE_EMAIL_KEY);
-      if (legacyName && legacyName.trim()) localStorage.setItem(nameKey, legacyName);
-      if (legacyAvatar) localStorage.setItem(avatarKey, legacyAvatar);
-      if (legacyEmail) localStorage.setItem(emailKey, legacyEmail);
-      localStorage.setItem(PROFILE_OWNER_KEY, cleanEmail);
+      const legacyEmail = (localStorage.getItem(PROFILE_EMAIL_KEY) || '').trim().toLowerCase();
+      const isLegacyOwner = legacyEmail !== '' && legacyEmail === cleanEmail;
+      if (isLegacyOwner) {
+        if (legacyName && legacyName.trim() && !localStorage.getItem(nameKey)) {
+          localStorage.setItem(nameKey, legacyName);
+        }
+        if (legacyAvatar && !localStorage.getItem(avatarKey)) {
+          localStorage.setItem(avatarKey, legacyAvatar);
+        }
+        if (!localStorage.getItem(emailKey)) {
+          localStorage.setItem(emailKey, legacyEmail);
+        }
+        // Consume them: the globals are gone for good after this.
+        localStorage.removeItem(PROFILE_NAME_KEY);
+        localStorage.removeItem(CUSTOM_AVATAR_KEY);
+        localStorage.removeItem(PROFILE_EMAIL_KEY);
+        localStorage.setItem(PROFILE_OWNER_KEY, cleanEmail);
+      }
     }
 
     // Strictly account-scoped reads - NO fallback to the global keys, so

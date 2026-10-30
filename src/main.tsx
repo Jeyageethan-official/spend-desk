@@ -26,15 +26,24 @@ try {
   }
 } catch (e) {}
 
-// Remove all legacy service workers and CacheStorage to guarantee fresh bundles
+// THE UI IS STORED IN THE BROWSER, ON PURPOSE.
+// public/sw.js caches the app shell so a later open - with no wifi, no data,
+// or a dead tab - paints the same interface instead of a blank page, and the
+// ledger keeps running on local storage until the connection returns.
+// Navigations are network-first inside the worker, so a fresh deploy is still
+// picked up straight away. Development never registers it: the dev server
+// must never be answered from a cache, and any stale worker is dropped.
 try {
-  if (typeof caches !== 'undefined' && caches.keys) {
-    caches.keys().then((keys) => Promise.all(keys.map((key) => caches.delete(key)))).catch(() => {});
-  }
   if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
-    navigator.serviceWorker.getRegistrations?.().then((registrations) =>
-      Promise.all(registrations.map((r) => r.unregister()))
-    ).catch(() => {});
+    if (import.meta.env.PROD) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(() => {});
+      });
+    } else {
+      navigator.serviceWorker.getRegistrations?.().then((registrations) =>
+        Promise.all(registrations.map((r) => r.unregister()))
+      ).catch(() => {});
+    }
   }
 } catch (e) {}
 

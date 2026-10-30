@@ -2,7 +2,12 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { 
   initAuthListener,
   signInWithGoogleSupabase,
+  signInWithPasswordSupabase,
+  signUpWithPasswordSupabase,
+  sendPasswordResetSupabase,
+  setNewPasswordSupabase,
   readAuthStatus,
+  peekAuthStatus,
   writeAuthStatus,
   AuthStatus,
 } from './lib/supabase';
@@ -71,7 +76,8 @@ import {
   filterTransactions,
   formatCurrency,
   sanitizeTransactions,
-  getLocalDateString
+  getLocalDateString,
+  isCarryForwardTransaction
 } from './lib/calculations';
 import { 
   syncDashboardStats, 
@@ -97,7 +103,7 @@ import {
   sendTelegramAlert, 
   flushPendingTelegramAlerts 
 } from './lib/telegramAlert';
-import { getTelegramLinkStatus, TelegramLinkStatus } from './lib/telegramConnect';
+import { createTelegramLink, getTelegramLinkStatus, TelegramLinkStatus } from './lib/telegramConnect';
 import { CloudWorkspace, fetchCloudWorkspace, saveCloudWorkspace, subscribeToCloudWorkspace, unsubscribeFromCloudWorkspace } from './lib/cloudWorkspace';
 import { AuthProgressOverlay } from './components/AuthProgressOverlay';
 import {
@@ -130,12 +136,15 @@ import { TransactionTable } from './components/TransactionTable';
 import { TransactionModal } from './components/TransactionModal';
 import { SheetManagerView } from './components/SheetManagerView';
 import { ConfirmModal } from './components/ConfirmModal';
+import { SetNewPasswordModal } from './components/SetNewPasswordModal';
 import { SmsParserModal } from './components/SmsParserModal';
 import { AuthHelpModal } from './components/AuthHelpModal';
 import { AdjustBalanceModal } from './components/AdjustBalanceModal';
 import { OutOfWalletModal } from './components/OutOfWalletModal';
 import { SessionExpiredModal, SessionNoticeKind } from './components/SessionExpiredModal';
 import { SheetSetupModal, SheetSetupPhase } from './components/SheetSetupModal';
+import { SplashScreen } from './components/SplashScreen';
+import { SignInScreen } from './components/SignInScreen';
 import { BottomNav } from './components/BottomNav';
 import { Sidebar } from './components/Sidebar';
 import { AnalyticsView } from './components/AnalyticsView';
@@ -148,7 +157,6 @@ import {
   Download,
   Sparkles,
   HandCoins,
-  WifiOff,
   Home,
   Receipt,
   BarChart2,
@@ -191,7 +199,9 @@ export default function App() {
   //   signed_out - the user signed out on purpose (local mode, no nagging),
   //   expired    - the session died while the app was closed (local mode, and
   //                the one moment where the app says so out loud).
-  const [authStatus, setAuthStatus] = useState<AuthStatus>(() => readAuthStatus());
+  // null = first visit on this device (never signed in, never signed out):
+  // the sign-in page shows no notice at all in that case.
+  const [authStatus, setAuthStatus] = useState<AuthStatus | null>(() => peekAuthStatus());
   // The connection-lost alert. A lost session or a revoked Google grant is
   // announced exactly once by a modal; a cooldown stops it nagging on every
   // retry tick, and an intentional sign-out never raises it at all.
@@ -203,6 +213,11 @@ export default function App() {
   // popup hostage (never shown, never added, balance Rs 0 all day).
   const [authPhaseState, setAuthPhaseState] = useState(() => getAuthPhase());
   useEffect(() => subscribeAuthPhase(setAuthPhaseState), []);
+  // Keep the verified sign-in state visible briefly before revealing the
+  // dashboard. This makes the final handoff feel deliberate rather than a
+  // flash from the login form straight into data.
+  const [isSignInProcessing, setIsSignInProcessing] = useState(false);
+  const signInProcessingTimerRef = useRef<number | null>(null);
   const lastConnectionNoticeAtRef = useRef(0);
   const noTokenPushStreakRef = useRef(0);
   // Daily balance carry-forward. Offered once per day per account: yesterday's
@@ -210,6 +225,13 @@ export default function App() {
   const [carryOffer, setCarryOffer] = useState<CarryForwardOffer | null>(null);
   const [isApplyingCarry, setIsApplyingCarry] = useState(false);
   const carryPersistLockRef = useRef(false);
+  // SESSION-ONLY DISMISSAL. The popup is no longer once-per-day: closing the
+  // app, reopening it or refreshing brings it back for as long as today still
+  // has no carry row of its own. "Not now" only silences it for the current
+  // session (a save mid-session must not re-nag), and it can never double-add
+  // money because evaluateCarryForward returns null the moment today's carry
+  // row exists — accept once and the offer, and therefore the popup, is gone.
+  const carryDismissedRef = useRef<{ day: string; scope: string } | null>(null);
   // After sign-out, keep the last account's offline workspace visible. This is
   // intentionally persisted so a refresh also retains the user's local ledger.
   // A later Google sign-in always replaces it with that Google account's scope.
@@ -316,7 +338,11 @@ export default function App() {
   };
   const [userProfile, setUserProfile] = useState<UserProfile>(() => loadStoredProfile());
 
-  const overallSummary = useMemo(() => calculateSummary(transactions, transactions), [transactions]);
+  // NOTE: the header, the wallet card, Settings and the Google Sheets page all
+  // read the SAME figure (`summary` below) - the balance for the date the
+  // header is showing. An all-time variant used to feed Settings and the Sheets
+  // page, which is why those two screens showed a different cash number from
+  // everywhere else.
 
   // Default Filter State - always starts on TODAY (the current date), on every
   // app open. Never defaults to the all-time view; the midnight rollover above
@@ -404,6 +430,9 @@ export default function App() {
   const [isSmsModalOpen, setIsSmsModalOpen] = useState(false);
   const [isAuthHelpOpen, setIsAuthHelpOpen] = useState(false);
   const [isSignOutConfirmOpen, setIsSignOutConfirmOpen] = useState(false);
+  // The emailed password-reset link returns here with a short recovery
+  // session — this card is where the new password is chosen.
+  const [isRecoveryOpen, setIsRecoveryOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<'main' | 'categories' | 'preferences' | 'budget' | 'cloud' | 'data' | 'about' | 'profile'>('main');
   const [deleteCandidate, setDeleteCandidate] = useState<Transaction | null>(null);
   const [selectedTransactionIds, setSelectedTransactionIds] = useState<string[]>([]);
@@ -411,6 +440,19 @@ export default function App() {
   // error a signed-in account with no sheet (or a dead sheet) used to hit.
   const [sheetSetupPhase, setSheetSetupPhase] = useState<SheetSetupPhase | null>(null);
   const [sheetSetupMessage, setSheetSetupMessage] = useState<string | undefined>(undefined);
+
+  // Branded splash — EVERY load and every refresh, then gone again. It used to
+  // be gated by a sessionStorage flag, so only the first visit of a tab ever
+  // saw it; a reload dropped straight into the dashboard with no beat.
+  const [splashVisible, setSplashVisible] = useState<boolean>(true);
+
+  useEffect(() => {
+    if (!splashVisible) return;
+    const timer = window.setTimeout(() => {
+      setSplashVisible(false);
+    }, 1900);
+    return () => window.clearTimeout(timer);
+  }, [splashVisible]);
 
   // Status & Syncing
   const [isSyncing, setIsSyncing] = useState(false);
@@ -427,10 +469,14 @@ export default function App() {
   const suppressNextCloudSyncRef = useRef(false);
 
   const showNotification = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
-    setNotification({ message, type });
+    // Premium toast rules: one compact message at a time, never the same
+    // one stacked twice, quick dismissal for ordinary confirmations and a
+    // longer life for errors the user still has to read.
+    setNotification((curr) => (curr && curr.message === message ? curr : { message, type }));
+    const visibleFor = type === 'error' ? 5000 : type === 'info' ? 3500 : 2600;
     setTimeout(() => {
       setNotification((curr) => (curr?.message === message ? null : curr));
-    }, 4000);
+    }, visibleFor);
   };
 
   // Raise the connection-lost popup for a genuine loss of sync capability.
@@ -441,6 +487,11 @@ export default function App() {
   const reportConnectionLost = (kind: SessionNoticeKind) => {
     const now = Date.now();
     if (now - lastConnectionNoticeAtRef.current < 10 * 60 * 1000) return;
+    // OFFLINE IS NOT A LOST CONNECTION. With no network the session cannot be
+    // refreshed, so the device carries on in its own local workspace (see the
+    // sign-in gate below) — the offline toast already says what is happening,
+    // and a "session expired" modal over it would be a lie.
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
     lastConnectionNoticeAtRef.current = now;
     // A beat after paint so the app is on screen first when this fires at boot.
     window.setTimeout(() => setConnectionNotice(kind), kind === 'session' ? 700 : 0);
@@ -513,6 +564,14 @@ export default function App() {
 
         // Session landed while the overlay was showing a phase → show "Signed in".
         finishOAuthConnected(account.email);
+        if (signInProcessingTimerRef.current !== null) {
+          window.clearTimeout(signInProcessingTimerRef.current);
+        }
+        setIsSignInProcessing(true);
+        signInProcessingTimerRef.current = window.setTimeout(() => {
+          setIsSignInProcessing(false);
+          signInProcessingTimerRef.current = null;
+        }, 1800);
         setUser({
           id: account.id,
           displayName: account.name,
@@ -594,6 +653,11 @@ export default function App() {
         }
         // The session is gone (signed out on purpose, or revoked/expired).
         setUser(null);
+        if (signInProcessingTimerRef.current !== null) {
+          window.clearTimeout(signInProcessingTimerRef.current);
+          signInProcessingTimerRef.current = null;
+        }
+        setIsSignInProcessing(false);
         setAccessToken(null);
         // The Google credentials die with the session: a token without a
         // session is exactly the "looks connected, syncs nothing" state.
@@ -615,7 +679,12 @@ export default function App() {
       },
     });
 
-    return unsubAuth;
+    return () => {
+      unsubAuth();
+      if (signInProcessingTimerRef.current !== null) {
+        window.clearTimeout(signInProcessingTimerRef.current);
+      }
+    };
   }, []);
 
   // Stale-version self-heal: GitHub Pages caches index.html for ~10 minutes,
@@ -680,6 +749,18 @@ export default function App() {
     try {
       const hash = window.location.hash.replace(/^#/, '');
       const params = new URLSearchParams(hash);
+
+      // Password recovery: the link from the reset email lands here with a
+      // RECOVERY session. Show the "new password" card rather than treating
+      // it as a normal OAuth return.
+      if (params.get('type') === 'recovery') {
+        setIsRecoveryOpen(true);
+        if (window.history && window.history.replaceState) {
+          window.history.replaceState(null, '', window.location.pathname + window.location.search);
+        }
+        return;
+      }
+
       const errorParam = params.get('error_description') || params.get('error');
       if (errorParam) {
         showNotification(`Sign-in notice: ${decodeURIComponent(errorParam)}`, 'error');
@@ -774,8 +855,14 @@ export default function App() {
     const sanitized = sanitizeTransactions(rawStored);
     if (sanitized.length !== rawStored.length) {
       setTransactions(sanitized);
+      // Save ONLY into the signed-in account's own scope. This used to mirror
+      // the cleaned list into the guest scope too, which quietly put account
+      // A's cash into the shared guest bucket - and the next Google sign-in on
+      // this device merged that bucket straight into account B (see
+      // mergeGuestDataIntoUser), so B opened the dashboard showing A's money.
+      // When nobody is signed in, currentUserEmail is null and this key IS the
+      // guest key already, so signed-out behaviour is unchanged.
       saveStoredTransactions(sanitized, currentUserEmail);
-      saveStoredTransactions(sanitized, 'guest');
       if (activeSheet?.id) {
         saveSheetTransactions(activeSheet.id, sanitized);
       }
@@ -791,12 +878,9 @@ export default function App() {
   useEffect(() => {
     const handleOnline = () => {
       setIsOnline(true);
-      // Auto-flush any queued offline Telegram alerts when connection restores
-      void flushPendingTelegramAlerts().then((count) => {
-        if (count > 0) {
-          showNotification(`Delivered ${count} queued Telegram alert${count > 1 ? 's' : ''}.`, 'success');
-        }
-      }).catch(console.warn);
+      // Auto-flush any queued offline Telegram alerts when connection
+      // restores — silently: routine background sync is not an event.
+      void flushPendingTelegramAlerts().catch(console.warn);
 
       // Automatically push pending offline updates to cloud workspace & connected Google Sheet
       if (currentUserEmail) {
@@ -812,6 +896,8 @@ export default function App() {
 
     const handleOffline = () => {
       setIsOnline(false);
+      // One quiet toast instead of a permanent banner across the top.
+      showNotification("You're offline. Changes will sync later.", 'info');
     };
 
     window.addEventListener('online', handleOnline);
@@ -819,11 +905,7 @@ export default function App() {
 
     // Initial check on mount: if online, flush any pending alerts from prior offline sessions
     if (typeof navigator !== 'undefined' && navigator.onLine) {
-      void flushPendingTelegramAlerts().then((count) => {
-        if (count > 0) {
-          showNotification(`Delivered ${count} queued Telegram alert${count > 1 ? 's' : ''}.`, 'success');
-        }
-      }).catch(console.warn);
+      void flushPendingTelegramAlerts().catch(console.warn);
     }
 
     return () => {
@@ -984,6 +1066,7 @@ export default function App() {
       // never re-applied from a device that still holds the old record.
       deletedTxIds: Array.from(loadDeletedTxIds(s.currentUserEmail)),
       deletedLendIds: Array.from(loadLendDeletedIds(s.currentUserEmail)),
+      owner: s.currentUserEmail || '',
     };
   }, []);
 
@@ -999,6 +1082,17 @@ export default function App() {
 
   const applyCloudWorkspace = useCallback((workspace: CloudWorkspace) => {
     if (!workspace || workspace.version !== 1 || !Number.isFinite(workspace.updatedAt)) return;
+    // OWNERSHIP GUARD. Never apply another account's snapshot to this one.
+    // The realtime/local broadcast channels are shared, so a push from account
+    // A can arrive while account B is signed in; taking it would replace B's
+    // transactions AND B's profile with A's. Only a mismatching, present owner
+    // is rejected - ownerless snapshots from older builds are still accepted.
+    const owner = String(workspace.owner || '').trim().toLowerCase();
+    const scopeNow = String(currentUserEmail || '').trim().toLowerCase();
+    if (owner && scopeNow && owner !== scopeNow) {
+      console.warn('Ignored cloud workspace owned by a different account.');
+      return;
+    }
     // CRITICAL: Reject any remote workspace that is older than or equal to our local version!
     if (workspace.updatedAt <= cloudVersionRef.current) return;
     suppressNextCloudSyncRef.current = true;
@@ -1250,6 +1344,30 @@ export default function App() {
   const needsSheetSetup = (): boolean =>
     Boolean(user?.email) && isOnline && !hasConnectedSheet();
 
+  // MANDATORY SETUP — the moment a signed-in account that has never
+  // connected a sheet lands on the dashboard, the onboarding opens. Gated
+  // per scope so dismissing it does not make it reappear on every render;
+  // it comes back on the next sign-in, reload, or save attempt.
+  const setupPromptedScopeRef = useRef<string | null>(null);
+  // Re-entry lock for sheet creation: a double tap (or a retried promise)
+  // must never produce two Google Sheets.
+  const sheetCreatingRef = useRef(false);
+  useEffect(() => {
+    if (!needsSheetSetup()) {
+      setupPromptedScopeRef.current = null;
+      return;
+    }
+    if (loadedStorageScope !== currentStorageScope) return;
+    if (setupPromptedScopeRef.current === currentStorageScope) return;
+    if (sheetSetupPhase) {
+      setupPromptedScopeRef.current = currentStorageScope;
+      return;
+    }
+    setupPromptedScopeRef.current = currentStorageScope;
+    openSheetSetup('needed');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.email, isOnline, activeSheet?.id, loadedStorageScope, currentStorageScope]);
+
   const openSheetSetup = (phase: SheetSetupPhase, message?: string) => {
     setSheetSetupMessage(message);
     setSheetSetupPhase(phase);
@@ -1265,6 +1383,8 @@ export default function App() {
   // ledger already holds, so the transaction that triggered setup is synced
   // without the user re-entering or re-saving anything.
   const handleSheetSetupCreate = async () => {
+    if (sheetCreatingRef.current) return;
+    sheetCreatingRef.current = true;
     setSheetSetupMessage(undefined);
     setSheetSetupPhase('creating');
     try {
@@ -1298,6 +1418,8 @@ export default function App() {
       console.error('Google Sheet setup failed:', err);
       setSheetSetupMessage(friendlySheetErrorMessage(err));
       setSheetSetupPhase('error');
+    } finally {
+      sheetCreatingRef.current = false;
     }
   };
 
@@ -1498,8 +1620,6 @@ export default function App() {
       .then((res) => {
         if (res.queued) {
           showNotification('Offline: Telegram delete alert queued, will send when online.', 'info');
-        } else {
-          showNotification('Telegram delete alert delivered.', 'success');
         }
       })
       .catch((error) => {
@@ -1509,6 +1629,12 @@ export default function App() {
 
   const handleBulkDeleteTransactions = (txIds: string[]) => {
     if (!txIds.length) return;
+    // Deleting is a transaction action too: without a connected sheet there
+    // is nowhere to sync the removal, so setup comes first.
+    if (needsSheetSetup()) {
+      openSheetSetup('needed');
+      return;
+    }
     const uniqueIds = Array.from(new Set(txIds));
     const deletedTxs = transactions.filter((t) => uniqueIds.includes(t.id));
     if (deletedTxs.length === 0) return;
@@ -1531,13 +1657,80 @@ export default function App() {
     if (activeSheet) {
       void handlePushToSheet({ silent: true }, { transactions: updated, lendItems });
     }
-    showNotification(`Deleted ${deletedTxs.length} transaction${deletedTxs.length === 1 ? '' : 's'}.`, 'info');
+    showNotification(`Deleted ${deletedTxs.length} transaction${deletedTxs.length === 1 ? '' : 's'}.`, 'success');
     dispatchTransactionDeletedTelegram(deletedTxs, updated);
   };
 
   // Unified Single Sign-In with Google via Supabase OAuth: Single redirect to Gmail account chooser.
   // The AuthProgressOverlay (not a toast) now carries the "Redirecting →
   // Completing → Signed in / error" story, with this caller as the cause.
+  // TELEGRAM ALERT — the one-tap connect behind the wallet card's "Connect"
+  // button. Same server-side deep-link flow as Settings › Automatic Alerts:
+  // the browser only ever requests a one-time link, opens it in a new tab,
+  // then polls until the user presses Start in Telegram. Chat IDs never reach
+  // this code — the status response only ever carries a masked value.
+  const [isConnectingTelegramCard, setIsConnectingTelegramCard] = useState(false);
+  const telegramPollTimerRef = useRef<number | null>(null);
+
+  // One poll chain at a time: a second Connect tap must not double the timer.
+  const pollTelegramUntilConnected = () => {
+    if (telegramPollTimerRef.current !== null) return;
+    const startedAt = Date.now();
+    const tick = async () => {
+      telegramPollTimerRef.current = null;
+      try {
+        const status = await getTelegramLinkStatus();
+        if (status?.connected) {
+          setTelegramLinkStatus(status);
+          showNotification('Telegram connected successfully.', 'success');
+          return;
+        }
+      } catch {
+        /* network blip — keep polling until the deadline */
+      }
+      if (Date.now() - startedAt < 210000) {
+        telegramPollTimerRef.current = window.setTimeout(() => void tick(), 3500);
+      } else {
+        showNotification('Still waiting — tap Connect to try again.', 'info');
+      }
+    };
+    telegramPollTimerRef.current = window.setTimeout(() => void tick(), 2500);
+  };
+
+  useEffect(() => () => {
+    if (telegramPollTimerRef.current !== null) window.clearTimeout(telegramPollTimerRef.current);
+  }, []);
+
+  const handleConnectTelegramCard = async () => {
+    if (isConnectingTelegramCard) return;
+    if (!user?.email) {
+      showNotification('Sign in with Google to connect Telegram alerts.', 'info');
+      return;
+    }
+    setIsConnectingTelegramCard(true);
+    try {
+      const ticket = await createTelegramLink();
+      const opened = window.open(ticket.deepLink, '_blank', 'noopener,noreferrer');
+      if (!opened) {
+        showNotification('Pop-up blocked — allow pop-ups for this site, then tap Connect again.', 'error');
+        return;
+      }
+      setTelegramLinkStatus((prev) => ({
+        connected: false,
+        pending: true,
+        alertsEnabled: prev?.alertsEnabled ?? true,
+        chatIdMasked: prev?.chatIdMasked ?? null,
+        linkedAt: prev?.linkedAt ?? null,
+      }));
+      showNotification('Waiting for you to press Start in Telegram…', 'info');
+      pollTelegramUntilConnected();
+    } catch (error: any) {
+      showNotification(error?.message || 'Could not start the Telegram connection. Try again.', 'error');
+    } finally {
+      setIsConnectingTelegramCard(false);
+    }
+  };
+
   const handleSignIn = async (caller?: unknown) => {
     if (isAuthPhaseInFlight()) return;
     const cause = typeof caller === 'string' && caller ? caller : 'Sign-in button';
@@ -1551,6 +1744,25 @@ export default function App() {
       const msg = String(err?.message || err);
       failAuthPhase(msg);
     }
+  };
+
+  // ── Email + password auth: the second door (account creation + recovery).
+  // A successful password sign-in opens the app through the same auth
+  // listener Google uses, so nothing else here has to react to it.
+  const handlePasswordSignIn = (email: string, password: string) =>
+    signInWithPasswordSupabase(email, password);
+
+  const handleCreateAccount = (email: string, password: string, fullName: string) =>
+    signUpWithPasswordSupabase(email, password, fullName);
+
+  const handleForgotPassword = (email: string) => sendPasswordResetSupabase(email);
+
+  const handleSetNewPassword = async (password: string) => {
+    const res = await setNewPasswordSupabase(password);
+    if (res.success) {
+      showNotification('Your new password is saved — you are signed in.', 'info');
+    }
+    return res;
   };
 
   const handleSignOut = async () => {
@@ -1951,7 +2163,26 @@ export default function App() {
   }, [isPendingSignedOutReplay, user?.email, accessToken, activeSheet, isOnline, handlePushToSheet]);
 
   // Add / Edit Transaction Handler with SMS Notification
-  const handleSaveTransaction = (data: Omit<Transaction, 'id' | 'createdAt'> & { id?: string; sendSmsTo?: string }) => {
+  const handleSaveTransaction = (data: Omit<Transaction, 'id' | 'createdAt'> & { id?: string; sendSmsTo?: string }): boolean => {
+    // MANDATORY GOOGLE SHEET SETUP — enforced inside the save logic itself,
+    // not just in the UI. A signed-in account with no valid connected sheet
+    // cannot add, edit or save anything: the setup onboarding opens instead
+    // and the caller keeps its form data (the modal stays open, nothing is
+    // written locally, so no half-saved record can ever exist).
+    if (needsSheetSetup()) {
+      openSheetSetup('needed');
+      return false;
+    }
+    try {
+      return recordTransaction(data);
+    } catch (err) {
+      console.error('Transaction save failed:', err);
+      showNotification("Couldn't save transaction", 'error');
+      return false;
+    }
+  };
+
+  const recordTransaction = (data: Omit<Transaction, 'id' | 'createdAt'> & { id?: string; sendSmsTo?: string }): boolean => {
     const { sendSmsTo, ...txData } = data;
     const isNewTransaction = !txData.id;
     const carryDayForSave = txData.date || getLocalDateString();
@@ -1994,7 +2225,7 @@ export default function App() {
       showNotification(
         recordedTx.isCarryForward
           ? `Yesterday's balance of ${formatCurrency(recordedTx.amount, currency)} continued.`
-          : 'Transaction recorded.',
+          : 'Transaction added.',
         'success'
       );
     }
@@ -2016,10 +2247,10 @@ export default function App() {
       const telegramAlert = generateTransactionTelegramAlert(recordedTx, currency, todaySum.currentCashBalance);
       void sendTelegramAlert({ ...telegramAlert, chatId: telegramAlertConfig.chatId, txId: recordedTx.id })
         .then((res) => {
+          // Only a delayed delivery is worth interrupting for — a delivered
+          // alert is normal background sync and gets no toast.
           if (res.queued) {
             showNotification('Offline: Telegram alert queued, will send when online.', 'info');
-          } else {
-            showNotification('Telegram alert delivered.', 'success');
           }
         })
         .catch((error) => {
@@ -2062,24 +2293,28 @@ export default function App() {
       queueSheetPush({ transactions: updatedTxs, lendItems });
     }
 
-    // A signed-in account with no sheet: the record is already safe in local
-    // storage, so offer the friendly setup popup instead of letting the next
-    // sync fail with a raw Google error. This is the "new Google user adds a
-    // transaction" entry point.
-    if (isNewTransaction && !sheetSetupPhase && needsSheetSetup()) {
-      openSheetSetup('needed');
-    }
+    // A signed-in account with no sheet never reaches here — the gate at the
+    // top of handleSaveTransaction opens the setup onboarding first.
 
     // Out-of-wallet flow: when this save makes (or changes) an out-of-wallet
     // amount, immediately ask whether it was borrowed so it can be recorded in
     // the Borrowed list. Edits that leave the amount unchanged never re-ask.
-    const newOow = calculateRunningBalances(updatedTxs).get(recordedTx.id)?.outOfWallet ?? 0;
+    //
+    // The walk is handed every row, carry-forwards included: it seeds each
+    // carried day with its opening balance instead of adding it, so this
+    // prompt now reads exactly the same maths as the badge on the wallet card
+    // (the old "skip the carry rows" filter is what let a Rs 870 wallet book a
+    // Rs 1,000 shortfall out of a Rs 130 overspend). A carried save itself
+    // never carries out-of-wallet, so it yields 0 and skips the prompt.
+    const newOow =
+      calculateRunningBalances(updatedTxs).get(recordedTx.id)?.outOfWallet ?? 0;
     const prevOow = txData.id
       ? calculateRunningBalances(transactions).get(txData.id)?.outOfWallet ?? 0
       : 0;
     if (newOow > 0 && newOow !== prevOow) {
       setOowPrompt({ amount: newOow, date: recordedTx.date });
     }
+    return true;
   };
 
   const handleConfirmBalanceAdjustment = (actualCashAmount: number, difference: number) => {
@@ -2108,6 +2343,12 @@ export default function App() {
 
   const confirmDelete = () => {
     if (!deleteCandidate) return;
+    // Setup-first, same as saving: the confirmation stays on screen behind
+    // the onboarding, so the intent and the row both survive the detour.
+    if (needsSheetSetup()) {
+      openSheetSetup('needed');
+      return;
+    }
     const delId = deleteCandidate.id;
     markTxIdDeleted(delId, currentUserEmail);
     markTransactionDelete(delId, currentUserEmail);
@@ -2120,7 +2361,7 @@ export default function App() {
     }
     const deletedTx = deleteCandidate;
     setDeleteCandidate(null);
-    showNotification('Transaction deleted.', 'info');
+    showNotification('Transaction deleted.', 'success');
     dispatchTransactionDeletedTelegram([deletedTx], remaining);
 
     if (user?.email) {
@@ -2168,8 +2409,8 @@ export default function App() {
       const lendAlert = generateLendTelegramAlert(newItem, currency, todaySum.currentCashBalance);
       void sendTelegramAlert({ ...lendAlert, chatId: telegramAlertConfig.chatId })
         .then((res) => {
-          if (!res.queued) {
-            showNotification('Telegram alert delivered.', 'success');
+          if (res.queued) {
+            showNotification('Offline: Telegram alert queued, will send when online.', 'info');
           }
         })
         .catch(console.warn);
@@ -2447,8 +2688,10 @@ export default function App() {
   // and again when the daily-refresh rollover moves the app onto a new day.
   //
   // The OFFER is purely mathematical - it stays alive after a dismissal so the
-  // Cash In flow can still offer it. Whether the ALERT fires is gated
-  // separately by hasCarryPromptFor, which is what makes it once-only.
+  // Cash In flow can still offer it. The ALERT shows whenever the offer exists,
+  // apart from an explicit "Not now" in THIS session: every fresh open or
+  // refresh asks again (the once-per-day flag now only stops the silent
+  // auto-carry below from overriding a decline).
   const carryDay = getLocalDateString();
 
   // THE DAY THAT RECEIVES THE CARRY is the real calendar today, computed from
@@ -2468,17 +2711,31 @@ export default function App() {
     headerFilter.startDate === carryDay && headerFilter.endDate === carryDay;
 
   // The Cash In form saves on the header's pinned day, else on today. Its
-  // Continue button may only appear when that date IS the day the carry would
-  // be written to, so the row always lands on the day the form is editing.
+  // Continue card follows THAT date: whenever the day being edited has a
+  // previous-day close and no carry-forward of its own yet, the offer is
+  // shown — and it stays shown until it is actually continued (dismissing the
+  // daily popup never hides it, and no timing gate can make it vanish).
+  // Accepting writes the row on the very date the form is editing.
   const txModalDate =
     headerFilter.startDate && headerFilter.startDate === headerFilter.endDate
       ? headerFilter.startDate
       : carryDay;
-  const carryForModal = txModalDate === carryDay ? carryOption : null;
+  const carryForModal = useMemo(
+    () => evaluateCarryForward({ transactions, today: txModalDate, email: currentStorageScope }),
+    [transactions, txModalDate, currentStorageScope]
+  );
+
+  const carryDismissedThisSession = Boolean(
+    carryDismissedRef.current &&
+      carryDismissedRef.current.day === carryDay &&
+      carryDismissedRef.current.scope === currentStorageScope
+  );
 
   const showCarryAlert = Boolean(carryOption) &&
     headerShowsCarryDay &&
-    !hasCarryPromptFor(carryDay, currentStorageScope) &&
+    // "Not now" closes it for this visit only — the next open, refresh or
+    // account switch offers it again.
+    !carryDismissedThisSession &&
     // Never compete with the connection-lost alert or an in-flight sign-in
     // exchange: a modal stacked on a modal is noise. Both are transient, and
     // authPhaseState is reactive now, so the popup reappears the moment the
@@ -2506,8 +2763,15 @@ export default function App() {
     carryPersistLockRef.current = true;
     setIsApplyingCarry(true);
     try {
+      const saved = handleSaveTransaction(buildCarryForwardTransaction(offer, day));
+      if (!saved) {
+        // The save gate (setup required) or a write failure refused it: leave
+        // the offer standing so the same Continue can simply be tapped again —
+        // and never record the prompt as answered.
+        return false;
+      }
       markCarryPromptShown(day, currentStorageScope);
-      handleSaveTransaction(buildCarryForwardTransaction(offer, day));
+      carryDismissedRef.current = null;
       setCarryOffer(null);
       return true;
     } catch (error) {
@@ -2524,11 +2788,14 @@ export default function App() {
     persistCarryForward(offer, carryDay);
   };
 
-  // Dismiss: record the day so the prompt does not come back on every reload.
-  // An explicit "Not now" is respected - no silent carry later that day. The
-  // same option stays reachable from the Cash In flow afterwards.
+  // Dismiss: close it for THIS session only. The once-per-day flag is still
+  // recorded so the silent auto-carry below never overrides an explicit "Not
+  // now", but the popup itself comes back on the next open or refresh — asking
+  // again is the whole point of the request, and it stays safe because the
+  // offer itself disappears the moment today's carry row exists.
   const handleDismissCarryForward = () => {
     markCarryPromptShown(carryDay, currentStorageScope);
+    carryDismissedRef.current = { day: carryDay, scope: currentStorageScope };
     setCarryOffer(null);
   };
 
@@ -2574,9 +2841,24 @@ export default function App() {
     return calculateCategoryBreakdown(filteredTransactions, categories);
   }, [filteredTransactions, categories]);
 
+  // The Spending Trend shows ONE real week: the Monday–Sunday week that
+  // contains the date the Analytics filter points at (today when it has no
+  // end date, e.g. "All" / "This month"). It reads the section's non-date
+  // refinements over ALL transactions, so a single-day date filter no longer
+  // zeroes out the other six bars of the chart.
   const { trendItems } = useMemo(() => {
-    return calculateWeeklyDailyTrend(filteredTransactions);
-  }, [filteredTransactions]);
+    const analyticsFilter = sectionFilters.analytics;
+    const anchor =
+      analyticsFilter.endDate && analyticsFilter.endDate <= todayStr
+        ? analyticsFilter.endDate
+        : todayStr;
+    const base = filterTransactions(transactions, {
+      ...analyticsFilter,
+      startDate: '',
+      endDate: '',
+    });
+    return calculateWeeklyDailyTrend(base, anchor);
+  }, [transactions, sectionFilters, todayStr]);
 
   const pendingLendCount = useMemo(() => {
     return lendItems.filter((i) => i.status === 'pending').length;
@@ -2634,6 +2916,55 @@ export default function App() {
       return next;
     });
   };
+
+  // ── THE SIGN-IN GATE ──────────────────────────────────────────────────
+  // The app opens with splash → this page → Google sign-in → the three-step
+  // Google Sheet onboarding → dashboard, and signing out lands back here
+  // instead of dropping into an anonymous local mode.
+  //
+  // OFFLINE IS NOT A SIGN-OUT: with the network gone the session cannot be
+  // refreshed, so a device that still remembers its account opens straight
+  // into that account's own local workspace — identity kept, records intact,
+  // sync paused until the connection returns. The moment the connection comes
+  // back the gate re-evaluates, so a genuinely dead session still ends up on
+  // the sign-in page rather than pretending to be connected.
+  const offlineResume =
+    !isOnline && authStatus !== 'signed_out' && Boolean(loadLastOfflineWorkspace());
+  const showSignInGate = (!user && !offlineResume) || isSignInProcessing;
+
+  if (showSignInGate) {
+    return (
+      <div className="min-h-screen bg-white text-slate-900 font-sans antialiased">
+        <SignInScreen
+          onSignIn={() => void handleSignIn('Sign-in page')}
+          isBusy={isAuthPhaseInFlight(authPhaseState.phase) || isSignInProcessing}
+          isFinalizing={isSignInProcessing}
+          isOffline={!isOnline}
+          notice={
+            authStatus === 'expired'
+              ? 'session'
+              : authStatus === 'signed_out'
+                ? 'signed_out'
+                : null
+          }
+          onPasswordSignIn={handlePasswordSignIn}
+          onCreateAccount={handleCreateAccount}
+          onForgotPassword={handleForgotPassword}
+        />
+        {/* Google sign-in phases (redirecting → exchanging → done/error) stay
+            visible above the gate, which is where the round-trip starts. */}
+        <AuthProgressOverlay onRetry={() => void handleSignIn('Sign-in page')} />
+        {/* Password-reset link opened from the inbox (recovery session) */}
+        <SetNewPasswordModal
+          isOpen={isRecoveryOpen}
+          onClose={() => setIsRecoveryOpen(false)}
+          onSave={handleSetNewPassword}
+        />
+        {/* The splash is the first paint of every load, gate or not. */}
+        {splashVisible && <SplashScreen />}
+      </div>
+    );
+  }
 
   return (
     <div
@@ -2726,13 +3057,8 @@ export default function App() {
         />
       )}
 
-      {/* Offline Status Warning Banner */}
-      {!isOnline && (
-        <div className="bg-amber-500/10 border-b border-amber-500/20 text-amber-700 px-4 py-2 flex items-center justify-center gap-2 text-xs sm:text-sm font-medium md:pl-[var(--sidebar-w)]">
-          <WifiOff className="w-4 h-4 text-amber-600 animate-pulse" />
-          <span>You are offline. Operating seamlessly in Local Storage mode. Data will auto-sync when online.</span>
-        </div>
-      )}
+      {/* Offline is announced once by a toast (see handleOffline) instead of
+          a permanent amber banner — fewer competing surfaces per screen. */}
 
       {/* Connection-lost ALERT - the single surface for a lost sign-in. The
           amber banner that used to sit above it was removed: two warnings for
@@ -2778,10 +3104,10 @@ export default function App() {
             >
               <div
                 onClick={() => setNotification(null)}
-                className="group flex items-center gap-2.5 px-5 py-2.5 sm:py-3 rounded-full bg-[#090d16]/95 backdrop-blur-md text-white border border-slate-700/60 ring-1 ring-white/10 shadow-[0_16px_36px_-6px_rgba(0,0,0,0.65)] hover:bg-[#0e1524] transition-colors cursor-pointer max-w-sm sm:max-w-md select-none"
+                className="group flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-slate-900/95 backdrop-blur-[5px] text-white border border-white/10 shadow-[0_16px_36px_-10px_rgba(15,23,42,0.55)] hover:bg-slate-800 transition-colors cursor-pointer max-w-[19rem] sm:max-w-sm select-none"
               >
                 {notification.type === 'error' ? (
-                  <svg className="w-5 h-5 shrink-0 drop-shadow-[0_0_8px_rgba(244,63,94,0.35)]" viewBox="0 0 24 24" fill="none">
+                  <svg className="w-4 h-4 shrink-0 drop-shadow-[0_0_8px_rgba(244,63,94,0.35)]" viewBox="0 0 24 24" fill="none">
                     <motion.circle
                       cx="12"
                       cy="12"
@@ -2805,7 +3131,7 @@ export default function App() {
                     />
                   </svg>
                 ) : notification.type === 'info' ? (
-                  <svg className="w-5 h-5 shrink-0 drop-shadow-[0_0_8px_rgba(56,189,248,0.35)]" viewBox="0 0 24 24" fill="none">
+                  <svg className="w-4 h-4 shrink-0 drop-shadow-[0_0_8px_rgba(56,189,248,0.35)]" viewBox="0 0 24 24" fill="none">
                     <motion.circle
                       cx="12"
                       cy="12"
@@ -2830,7 +3156,7 @@ export default function App() {
                   </svg>
                 ) : (
                   /* Success Animated Draw From Scratch (Exact match to reference pill screenshot) */
-                  <svg className="w-5 h-5 shrink-0 drop-shadow-[0_0_8px_rgba(16,185,129,0.35)]" viewBox="0 0 24 24" fill="none">
+                  <svg className="w-4 h-4 shrink-0 drop-shadow-[0_0_8px_rgba(16,185,129,0.35)]" viewBox="0 0 24 24" fill="none">
                     <motion.circle
                       cx="12"
                       cy="12"
@@ -2855,7 +3181,7 @@ export default function App() {
                     />
                   </svg>
                 )}
-                <span className="text-xs sm:text-sm font-bold text-white tracking-wide leading-tight select-none">
+                <span className="text-[13px] font-medium text-white tracking-tight leading-snug select-none">
                   {notification.message}
                 </span>
               </div>
@@ -2877,7 +3203,7 @@ export default function App() {
           {activeTab === 'sheets' && (
             <SheetManagerView
               onBack={() => setActiveTab(sheetsSourceTab || 'settings')}
-              totalCashBalance={overallSummary.currentCashBalance}
+              totalCashBalance={summary.currentCashBalance}
               currency={currency}
               accessToken={accessToken}
               activeSheet={activeSheet}
@@ -2899,7 +3225,7 @@ export default function App() {
           {activeTab === 'settings' && (
             <SettingsView
               user={user}
-              totalCashBalance={overallSummary.currentCashBalance}
+              totalCashBalance={summary.currentCashBalance}
               storageEmail={currentUserEmail}
               onBack={() => setActiveTab('dashboard')}
               currency={currency}
@@ -3047,8 +3373,13 @@ export default function App() {
                 }}
                 onAdjustBalance={() => setIsAdjustModalOpen(true)}
                 onOpenSms={() => setIsSmsModalOpen(true)}
-                alertPhone={alertPhone}
-                onUpdateAlertPhone={handleUpdateAlertPhone}
+                telegramConnected={Boolean(telegramLinkStatus?.connected)}
+                telegramPending={
+                  isConnectingTelegramCard ||
+                  Boolean(telegramLinkStatus?.pending && !telegramLinkStatus?.connected)
+                }
+                telegramChecking={isTelegramStatusLoading && !telegramLinkStatus}
+                onConnectTelegram={() => void handleConnectTelegramCard()}
               />
 
               {/* 2. End Money & Runway Tracker */}
@@ -3223,7 +3554,7 @@ export default function App() {
             showNotification('No yesterday balance to continue.', 'error');
             return false;
           }
-          return persistCarryForward(carryForModal, carryDay);
+          return persistCarryForward(carryForModal, txModalDate);
         }}
         currency={currency}
         onOpenSmsReader={() => setIsSmsModalOpen(true)}
@@ -3250,6 +3581,13 @@ export default function App() {
         userEmailAttempt={user?.email || 'your account'}
       />
 
+      {/* Password-reset link opened from the inbox (recovery session) */}
+      <SetNewPasswordModal
+        isOpen={isRecoveryOpen}
+        onClose={() => setIsRecoveryOpen(false)}
+        onSave={handleSetNewPassword}
+      />
+
       {/* Sign Out Confirmation Modal */}
       <ConfirmModal
         isOpen={isSignOutConfirmOpen}
@@ -3258,6 +3596,7 @@ export default function App() {
         confirmLabel="Sign Out"
         cancelLabel="Stay Signed In"
         isDestructive={true}
+        icon="logout"
         onConfirm={async () => {
           setIsSignOutConfirmOpen(false);
           await handleSignOut();
@@ -3269,7 +3608,7 @@ export default function App() {
       <ConfirmModal
         isOpen={Boolean(deleteCandidate)}
         title="Delete Transaction"
-        message={`Delete this ${deleteCandidate?.category} transaction of Rs ${deleteCandidate?.amount.toLocaleString()}?`}
+        message={`Delete this ${deleteCandidate?.category} transaction of Rs ${deleteCandidate?.amount.toLocaleString()}? This action cannot be undone.`}
         confirmLabel="Delete"
         cancelLabel="Keep"
         isDestructive={true}
@@ -3309,6 +3648,9 @@ export default function App() {
 
       {/* Google sign-in phase overlay: redirecting → exchanging → connected / error */}
       <AuthProgressOverlay onRetry={() => { void handleSignIn('Sign-in button'); }} />
+
+      {/* Branded splash — first paint of the session, above everything else */}
+      {splashVisible && <SplashScreen />}
     </div>
   );
 }

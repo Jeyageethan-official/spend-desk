@@ -20,6 +20,17 @@ export interface CloudWorkspace {
    *  device: without them another device's stale push resurrects the record. */
   deletedTxIds?: string[];
   deletedLendIds?: string[];
+  /**
+   * The account scope this snapshot was built from. The local BroadcastChannel
+   * and the realtime channel are shared with whatever is signed in RIGHT NOW,
+   * so a save from account A that lands after account B took over would
+   * otherwise overwrite B's ledger and B's profile with A's - the exact
+   * "previous Gmail's cash / name" leak. Receivers ignore any workspace whose
+   * owner is not their own scope. Workspaces written by older builds have no
+   * owner and are accepted unchanged (the Supabase row itself is already
+   * per-user, so only broadcasts ever carried foreign data).
+   */
+  owner?: string;
 }
 
 let activeWorkspaceChannel: RealtimeChannel | null = null;

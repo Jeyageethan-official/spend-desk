@@ -257,6 +257,403 @@
   }
 }
 
+/* ─────────────────────────────────────────────────────────────────────────
+   SpendDesk Signature — surface + type tokens
+   Warm white surfaces, charcoal ink, signature emerald accent.
+   Unlayered on purpose: these beat Tailwind's layered utilities without
+   !important, so every existing `bg-white` / `text-slate-900` in the app
+   picks up the new palette with no per-component edits.
+   ───────────────────────────────────────────────────────────────────────── */
+:root {
+  --sd-surface: #ffffff;
+  --sd-surface-sunken: #f8fafc;
+  --sd-ink: #1b1c1e;
+  --sd-emerald: #047857;
+}
+
+body {
+  background: #f8fafc;
+  color: var(--sd-ink);
+  font-feature-settings: 'cv05', 'ss01';
+}
+
+.bg-white {
+  background-color: var(--sd-surface);
+}
+
+.bg-slate-50 {
+  background-color: var(--sd-surface-sunken);
+}
+
+.bg-slate-100 {
+  background-color: #f1f5f9;
+}
+
+.text-slate-900 {
+  color: var(--sd-ink);
+}
+
+.text-slate-800 {
+  color: #2a2b2e;
+}
+
+/* ── Micro-motion ───────────────────────────────────────────────────────── */
+.sd-sheet-in {
+  animation: sd-sheet-in 320ms cubic-bezier(0.23, 1, 0.32, 1) both;
+  transform-origin: bottom center;
+}
+
+.sd-check-draw {
+  stroke-dasharray: 24;
+  stroke-dashoffset: 24;
+  animation: sd-check-draw 420ms 120ms cubic-bezier(0.23, 1, 0.32, 1) forwards;
+}
+
+/* Subtle lift for interactive cards. */
+.sd-lift {
+  transition:
+    transform 220ms cubic-bezier(0.23, 1, 0.32, 1),
+    box-shadow 220ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .sd-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 28px -18px rgba(15, 23, 42, 0.5);
+  }
+}
+
+@keyframes sd-sheet-in {
+  from {
+    opacity: 0.6;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes sd-check-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* ── `animate-in` family ──────────────────────────────────────────────────
+   The project uses tailwindcss-animate's class names but ships no plugin, so
+   every `animate-in fade-in`, `zoom-in-95` … in the app was silently doing
+   nothing (animation-name unset, duration 0s). These definitions give the
+   whole UI its intended subtle entrance motion — one shared `sd-enter`
+   keyframe driven by the modifier utilities, exactly like the plugin.
+   ───────────────────────────────────────────────────────────────────────── */
+.animate-in {
+  animation-name: sd-enter;
+  animation-duration: 150ms;
+  animation-timing-function: cubic-bezier(0.23, 1, 0.32, 1);
+  animation-fill-mode: both;
+}
+
+@keyframes sd-enter {
+  from {
+    opacity: var(--tw-enter-opacity, 1);
+    transform: translate3d(
+        var(--tw-enter-translate-x, 0),
+        var(--tw-enter-translate-y, 0),
+        0
+      )
+      scale(var(--tw-enter-scale, 1));
+  }
+}
+
+.fade-in {
+  --tw-enter-opacity: 0;
+}
+
+.zoom-in-95 {
+  --tw-enter-scale: 0.95;
+}
+
+.slide-in-from-top-1 {
+  --tw-enter-translate-y: -0.25rem;
+}
+
+/* Animation durations sit after `.animate-in` so they win the cascade for
+   `animation-duration` while leaving Tailwind's transition-duration intact. */
+.duration-100 {
+  animation-duration: 100ms;
+}
+.duration-150 {
+  animation-duration: 150ms;
+}
+.duration-200 {
+  animation-duration: 200ms;
+}
+.duration-300 {
+  animation-duration: 300ms;
+}
+.duration-500 {
+  animation-duration: 500ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-in,
+  .fade-in,
+  .zoom-in-95,
+  .slide-in-from-top-1 {
+    animation: none;
+    --tw-enter-opacity: 1;
+    --tw-enter-scale: 1;
+    --tw-enter-translate-y: 0;
+  }
+}
+
+@keyframes sd-splash-line {
+  0% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(220%);
+  }
+}
+
+.sd-splash-line {
+  animation: sd-splash-line 1.15s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+/* ── New splash: dark emerald night with a breathing aura, pulse rings,
+   a popped-in logo tile, a letter-by-letter wordmark and a tracking tagline.
+   Transform/opacity only (plus one letter-spacing reveal), all keyframed to
+   park in their final state, and all neutralised under reduced motion. ─── */
+@keyframes sd-splash-breathe {
+  0%,
+  100% {
+    opacity: 0.8;
+    scale: 1;
+  }
+  50% {
+    opacity: 1;
+    scale: 1.07;
+  }
+}
+
+.sd-splash-breathe {
+  animation: sd-splash-breathe 3.2s ease-in-out infinite;
+}
+
+@keyframes sd-ping-ring {
+  0% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.55);
+  }
+}
+
+.sd-ping-ring {
+  animation: sd-ping-ring 1.6s cubic-bezier(0.16, 0.85, 0.32, 1) infinite;
+}
+
+@keyframes sd-logo-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  70% {
+    opacity: 1;
+    transform: scale(1.03);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.sd-logo-pop {
+  animation: sd-logo-pop 620ms cubic-bezier(0.16, 0.85, 0.32, 1) both;
+}
+
+@keyframes sd-letter {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.sd-letter {
+  animation: sd-letter 480ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+@keyframes sd-tagline {
+  from {
+    opacity: 0;
+    letter-spacing: 0.9em;
+  }
+  to {
+    opacity: 1;
+    letter-spacing: 0.5em;
+  }
+}
+
+.sd-tagline {
+  animation: sd-tagline 700ms 460ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+/* Splash waves: a slow lateral drift so the layered gradients read as
+   moving water instead of flat shapes. Horizontal-only, transform-only. */
+@keyframes sd-wave-drift {
+  from {
+    transform: translateX(-1.5%);
+  }
+  to {
+    transform: translateX(1.5%);
+  }
+}
+
+.sd-wave {
+  animation: sd-wave-drift 7s ease-in-out infinite alternate;
+}
+
+.sd-wave-slow {
+  animation-duration: 10s;
+}
+
+.sd-wave-fast {
+  animation-duration: 5.5s;
+}
+
+/* Onboarding "All set" celebration: PARTY CONFETTI bursting out of the check,
+   the way a payment-success screen does - each piece flies outward on its own
+   vector, spins, and fades. Transform + opacity only, so it stays on the
+   compositor and costs nothing while it runs. */
+@keyframes sd-burst {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 0, 0) rotate(0deg) scale(0.3);
+  }
+  12% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(var(--sd-bx, 0px), var(--sd-by, 0px), 0)
+      rotate(var(--sd-brot, 180deg)) scale(1);
+  }
+}
+
+.sd-burst {
+  animation: sd-burst var(--sd-bdur, 1050ms) cubic-bezier(0.16, 0.85, 0.32, 1) both;
+}
+
+/* Soft ring expanding away from the check mark as it lands. */
+@keyframes sd-check-ring {
+  0% {
+    opacity: 0.65;
+    transform: scale(0.8);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.4);
+  }
+}
+
+.sd-check-ring {
+  animation: sd-check-ring 950ms cubic-bezier(0.16, 0.85, 0.32, 1) both;
+}
+
+@keyframes sd-confetti-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.sd-confetti-pop {
+  animation: sd-confetti-pop 320ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sd-wave,
+  .sd-confetti-pop {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+  /* Confetti that cannot move must not clutter the success screen. */
+  .sd-burst,
+  .sd-check-ring {
+    animation: none;
+    opacity: 0;
+  }
+}
+
+@keyframes sd-progress {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
+}
+
+@keyframes sd-count-pop {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.sd-count-pop {
+  animation: sd-count-pop 380ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sd-sheet-in,
+  .sd-check-draw,
+  .sd-count-pop,
+  .sd-lift,
+  .sd-splash-line {
+    animation: none;
+    transition: none;
+    stroke-dashoffset: 0;
+  }
+  /* Splash: everything visible in its resting state, no looping motion. */
+  .sd-splash-breathe {
+    animation: none;
+    opacity: 0.9;
+    scale: 1;
+  }
+  .sd-ping-ring {
+    animation: none;
+    opacity: 0;
+  }
+  .sd-logo-pop,
+  .sd-letter {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+  .sd-tagline {
+    animation: none;
+    opacity: 1;
+    letter-spacing: 0.5em;
+  }
+}
+
 /* Google Identity / FedCM "Signed in as" chip injected at the bottom of the page. */
 #credential_picker_container,
 #credential_picker_iframe,

@@ -13,7 +13,7 @@ import {
   Zap, 
   Film, 
   GraduationCap, 
-  MoreHorizontal, 
+  MoreHorizontal,
   Tag,
   Camera,
   Paperclip,
@@ -22,7 +22,7 @@ import {
   Settings as SettingsIcon
 } from 'lucide-react';
 import { Transaction, TransactionType, Category, PaymentMethod } from '../types/finance';
-import { formatCurrency, getLocalDateString } from '../lib/calculations';
+import { formatCurrency, getLocalDateString, isCarryForwardTransaction } from '../lib/calculations';
 import { CarryForwardOffer } from '../lib/dailyCarryForward';
 import { 
   loadStoredCategoryDefs, 
@@ -34,7 +34,9 @@ import { triggerFeedback } from '../lib/haptics';
 interface TransactionModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (tx: Omit<Transaction, 'id' | 'createdAt'> & { id?: string; sendSmsTo?: string; receiptImage?: string }) => void;
+  /** Returns false when the save was refused (e.g. Google Sheet setup is
+   *  required) — the form must then stay open with everything the user typed. */
+  onSave: (tx: Omit<Transaction, 'id' | 'createdAt'> & { id?: string; sendSmsTo?: string; receiptImage?: string }) => boolean | void;
   editingTransaction?: Transaction | null;
   defaultType?: TransactionType;
   defaultAlertPhone?: string;
@@ -289,7 +291,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
 
     triggerFeedback('success');
 
-    onSave({
+    const saved = onSave({
       id: editingTransaction ? editingTransaction.id : undefined,
       type,
       amount: parsed,
@@ -300,8 +302,22 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       notes: notes.trim(),
       receiptImage: receiptImage || undefined,
       sendSmsTo: defaultAlertPhone ? defaultAlertPhone : undefined,
-      isCarryForward: isCarryForwardTx && type === 'cash_added' ? true : undefined,
+      // A carry row that is edited keeps its identity: the flag is preserved
+      // (flag OR the "Yesterday balance continued…" note — the sheet round
+      // trip strips the flag) unless the user switches the type away from
+      // Cash In. Losing it here made the row count as brand-new income in
+      // every later balance walk — the root cause of yesterday's balance
+      // being re-added on top of today's.
+      isCarryForward:
+        type === 'cash_added' &&
+        (isCarryForwardTx || isCarryForwardTransaction(editingTransaction))
+          ? true
+          : undefined,
     });
+
+    // Refused (sheet setup required / write failed): keep the modal open so
+    // nothing the user entered is lost.
+    if (saved === false) return;
 
     onClose();
   };
@@ -327,7 +343,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   }));
 
   return (
-    <div ref={overlayRef} className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/70 backdrop-blur-xs overscroll-none animate-in fade-in duration-150">
+    <div ref={overlayRef} className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/70 backdrop-blur-[5px] overscroll-none animate-in fade-in duration-150">
       <motion.div
         initial={{ opacity: 0, y: 48 }}
         animate={{ opacity: 1, y: 0 }}
@@ -384,20 +400,25 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
           {/* Carry-forward shortcut: only meaningful on a fresh Cash In, never
               while editing an existing row (which may already be one). */}
           {type === 'cash_added' && carryForward && !editingTransaction && (
-            <div className="rounded-2xl border px-3.5 py-2.5 flex items-center justify-between gap-3 bg-slate-50 border-slate-200/90">
-              <div className="min-w-0">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  From {carryForward.fromLabel}
-                </p>
-                <p className="text-xs text-slate-600 truncate mt-0.5">
-                  Continue saves {formatCurrency(carryForward.amount, currency)} as today&apos;s opening balance.
+            <div className="rounded-2xl border px-3.5 py-3 bg-slate-50 border-slate-200/90 space-y-2.5">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                    Yesterday&apos;s Balance
+                  </p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    from {carryForward.fromLabel}
+                  </p>
+                </div>
+                <p className="text-sm font-extrabold text-slate-900 tabular-nums shrink-0">
+                  {formatCurrency(carryForward.amount, currency)}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={applyCarryForward}
                 disabled={isApplyingCarry}
-                className="shrink-0 px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all cursor-pointer bg-slate-900 text-white hover:bg-slate-800 active:scale-95 disabled:opacity-60 disabled:pointer-events-none inline-flex items-center gap-1.5"
+                className="w-full py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer bg-slate-900 text-white hover:bg-slate-800 active:scale-[0.98] disabled:opacity-60 disabled:pointer-events-none inline-flex items-center justify-center gap-1.5"
               >
                 {isApplyingCarry ? (
                   <>
@@ -405,7 +426,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                     Saving…
                   </>
                 ) : (
-                  'Continue'
+                  "Continue Yesterday's Balance"
                 )}
               </button>
             </div>
@@ -534,26 +555,77 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
             </div>
           )}
 
-          {/* 4. Date & Payment Mode — one full-width row per control on mobile:
+          {/* 4. Notes — first in the record flow (Notes → Payment Mode → Date).
+              In Cash In, the quick "Out of Wallet" marker is a wallet-minus
+              icon on the right edge of the field: one tap drops the phrase
+              into the note, where it tells the ledger that this cash-in is
+              paying down the outstanding out-of-wallet amount. */}
+          <div>
+            <label className="text-[10px] font-bold uppercase text-slate-400 block mb-1 md:text-xs">
+              Notes (Optional)
+            </label>
+            <div className="relative">
+              <FileText className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+              <input
+                type="text"
+                placeholder={
+                  type === 'cash_added'
+                    ? 'e.g. Salary, Out of Wallet…'
+                    : 'e.g. Dinner with friends, Keells grocery…'
+                }
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                className={`w-full py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-hidden focus:bg-white md:text-sm ${
+                  type === 'cash_added' ? 'pl-8 pr-11' : 'pl-8 pr-3'
+                }`}
+              />
+              {type === 'cash_added' && (() => {
+                const isMarked = /out\s+of\s+wallet/i.test(notes);
+                return (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setNotes((prev) => {
+                        const marker = 'Out of Wallet';
+                        const rest = prev.trim();
+                        if (!rest) return marker;
+                        if (rest.toLowerCase().includes(marker.toLowerCase())) return prev;
+                        return `${rest}, ${marker}`;
+                      })
+                    }
+                    className={`absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg transition-colors cursor-pointer ${
+                      isMarked
+                        ? 'bg-emerald-100 text-emerald-700'
+                        : 'text-slate-400 hover:text-slate-700 hover:bg-slate-200/70'
+                    }`}
+                    aria-label="Add Out of Wallet note"
+                    title={isMarked ? 'Marked as Out of Wallet' : 'Mark this cash-in as Out of Wallet'}
+                  >
+                    {/* Wallet with a minus: this cash-in reduces the out-of-wallet shortfall. */}
+                    <svg
+                      className="w-4 h-4"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <rect x="2.75" y="5.75" width="18.5" height="13.5" rx="3" />
+                      <path d="M8.75 12.5h6.5" />
+                    </svg>
+                  </button>
+                );
+              })()}
+            </div>
+          </div>
+
+          {/* 5. Payment Mode & Date — one full-width row per control on mobile:
               iOS Safari's native date input keeps a wide intrinsic size even with
               min-w-0, so any shared row lets it cover the Cash/Card toggle.
               Side by side again from the sm breakpoint, where there is room. */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-2">
-            <div className="min-w-0">
-              <label className="text-[10px] font-bold uppercase text-slate-400 block mb-1 md:text-xs">
-                Date
-              </label>
-              <div className="relative min-w-0 overflow-hidden">
-                <Calendar className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <input
-                  type="date"
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  className="w-full min-w-0 max-w-full pl-8 pr-2 py-2 text-xs text-left font-medium bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-hidden focus:bg-white md:text-sm md:pr-2.5"
-                />
-              </div>
-            </div>
-
             <div className="min-w-0">
               <label className="text-[10px] font-bold uppercase text-slate-400 block mb-1 md:text-xs">
                 Payment Mode
@@ -575,22 +647,20 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                 </button>
               </div>
             </div>
-          </div>
 
-          {/* 5. Notes */}
-          <div>
-            <label className="text-[10px] font-bold uppercase text-slate-400 block mb-1 md:text-xs">
-              Notes (Optional)
-            </label>
-            <div className="relative">
-              <FileText className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
-              <input
-                type="text"
-                placeholder="e.g. Dinner with friends, Keells grocery..."
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                className="w-full pl-8 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-hidden focus:bg-white md:text-sm"
-              />
+            <div className="min-w-0">
+              <label className="text-[10px] font-bold uppercase text-slate-400 block mb-1 md:text-xs">
+                Date
+              </label>
+              <div className="relative min-w-0 overflow-hidden">
+                <Calendar className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="date"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  className="w-full min-w-0 max-w-full pl-8 pr-2 py-2 text-xs text-left font-medium bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-hidden focus:bg-white md:text-sm md:pr-2.5"
+                />
+              </div>
             </div>
           </div>
 
@@ -674,7 +744,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
 
         {/* Discard Confirmation Popup */}
         {showDiscardConfirm && (
-          <div className="absolute inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="absolute inset-0 z-50 bg-white/70 backdrop-blur-[3px] flex items-center justify-center p-4 animate-in fade-in duration-150">
             <div className="bg-white rounded-3xl p-5 max-w-xs w-full shadow-2xl space-y-3 border border-slate-200 animate-in fade-in zoom-in-95 duration-100">
               <h4 className="font-bold text-slate-900 text-sm">Discard Transaction?</h4>
               <p className="text-xs text-slate-600 leading-relaxed md:text-sm">

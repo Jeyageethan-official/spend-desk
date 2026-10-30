@@ -32,7 +32,8 @@ import {
   Sparkles,
   FileText,
   Pencil,
-  Wallet
+  Wallet,
+  Volume2
 } from 'lucide-react';
 import { ICON_CATALOG, getCategoryIcon } from '../lib/icons';
 import { 
@@ -41,7 +42,9 @@ import {
   resetToDefaultCategoryDefs,
   CategoryDef,
   exportFullBackupJson,
-  importFullBackupJson
+  importFullBackupJson,
+  loadStoredProfile,
+  saveStoredProfile
 } from '../lib/storage';
 import { GoogleSheetMeta, BudgetConfig, Transaction, LendItem } from '../types/finance';
 import { formatCurrency } from '../lib/calculations';
@@ -57,7 +60,7 @@ import {
   disconnectTelegram,
 } from '../lib/telegramConnect';
 import { generateBankStatementPdf } from '../lib/statementPdf';
-import { triggerFeedback } from '../lib/haptics';
+import { triggerFeedback, isSoundFeedbackEnabled, setSoundFeedbackEnabled } from '../lib/haptics';
 
 interface IosSwitchProps {
   checked: boolean;
@@ -229,20 +232,27 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
   }, [initialSection]);
 
-  // Custom Profile Avatar state (synced with user, userProfile or localStorage)
+  // THE PROFILE IS ACCOUNT-SCOPED. These used to fall back to the raw global
+  // keys (money_tracker_profile_name / _custom_avatar / _email), which every
+  // Google account on the device shares - that is exactly how the previous
+  // Gmail's name, avatar and email leaked onto every other account's profile
+  // page. The scoped helper is the only reader now: each Gmail sees its own.
+  const scopedProfile = useMemo(() => loadStoredProfile(workspaceEmail), [workspaceEmail]);
+
+  // Custom Profile Avatar state (synced with user, userProfile or the scoped profile)
   const [customAvatar, setCustomAvatar] = useState<string | null>(() => {
-    return userProfile?.avatar || localStorage.getItem('money_tracker_custom_avatar') || user?.photoURL || null;
+    return userProfile?.avatar || scopedProfile.avatar || user?.photoURL || null;
   });
 
   // Custom User Profile Name state
   const [profileName, setProfileName] = useState<string>(() => {
-    const stored = userProfile?.name || localStorage.getItem('money_tracker_profile_name') || user?.displayName;
+    const stored = userProfile?.name || scopedProfile.name || user?.displayName;
     return stored && stored.trim() !== '' ? stored : 'My Wallet';
   });
 
   // Profile Email state
   const [profileEmail, setProfileEmail] = useState<string>(() => {
-    const stored = userProfile?.email || localStorage.getItem('money_tracker_profile_email') || user?.email;
+    const stored = userProfile?.email || scopedProfile.email || user?.email;
     return stored || '';
   });
 
@@ -255,11 +265,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [showUnsavedConfirm, setShowUnsavedConfirm] = useState(false);
   const [pendingLeaveAction, setPendingLeaveAction] = useState<(() => void) | null>(null);
 
-  // Keep in sync with user & userProfile prop changes
+  // Keep in sync with user & userProfile prop changes — including a switch to
+  // a different Google account, which changes workspaceEmail and therefore
+  // scopedProfile, so the page re-reads THAT account's own profile.
   useEffect(() => {
-    const nextName = userProfile?.name || localStorage.getItem('money_tracker_profile_name') || user?.displayName || 'My Wallet';
-    const nextAvatar = userProfile?.avatar || localStorage.getItem('money_tracker_custom_avatar') || user?.photoURL || null;
-    const nextEmail = userProfile?.email || localStorage.getItem('money_tracker_profile_email') || user?.email || '';
+    const nextName = userProfile?.name || scopedProfile.name || user?.displayName || 'My Wallet';
+    const nextAvatar = userProfile?.avatar || scopedProfile.avatar || user?.photoURL || null;
+    const nextEmail = userProfile?.email || scopedProfile.email || user?.email || '';
 
     setProfileName(nextName);
     setEditModalName(nextName);
@@ -267,7 +279,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     setEditModalAvatar(nextAvatar);
     setProfileEmail(nextEmail);
     setEditModalEmail(nextEmail);
-  }, [user, userProfile]);
+  }, [user, userProfile, scopedProfile]);
 
   // Profile avatar file input ref
   const modalAvatarInputRef = useRef<HTMLInputElement>(null);
@@ -293,13 +305,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     });
 
     try {
-      localStorage.setItem('money_tracker_profile_name', trimmedName);
-      localStorage.setItem('money_tracker_profile_email', trimmedEmail);
-      if (editModalAvatar) {
-        localStorage.setItem('money_tracker_custom_avatar', editModalAvatar);
-      } else {
-        localStorage.removeItem('money_tracker_custom_avatar');
-      }
+      // Scoped write only — never the shared global keys, so the name/email/
+      // avatar saved here belongs to THIS account and no other Gmail on this
+      // device can read it back.
+      saveStoredProfile(
+        { name: trimmedName, email: trimmedEmail, avatar: editModalAvatar },
+        workspaceEmail
+      );
       onNotification?.('Profile updated successfully.', 'success');
     } catch (e) {
       console.error(e);
@@ -351,6 +363,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   // Budget State
   const [budgetForm, setBudgetForm] = useState<BudgetConfig>(budgetConfig);
+  // Optional sound feedback — off by default, persisted in localStorage.
+  const [soundFeedbackOn, setSoundFeedbackState] = useState<boolean>(() => isSoundFeedbackEnabled());
 
   // Alert Phone State
   const [phoneInput, setPhoneInput] = useState(alertPhone);
@@ -952,6 +966,29 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         <ChevronRight className="w-4 h-4 text-slate-400" />
                       </button>
 
+                      {/* Sound feedback — quiet by default, opt-in */}
+                      <div className="w-full px-4 py-3.5 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-2xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                            <Volume2 className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h4 className="font-bold text-xs text-slate-900 dark:text-white md:text-sm">Sound feedback</h4>
+                            <p className="text-[11px] text-slate-400 md:text-xs">
+                              {soundFeedbackOn ? 'Subtle tone on taps & saves' : 'Off — the app stays silent'}
+                            </p>
+                          </div>
+                        </div>
+                        <IosSwitch
+                          checked={soundFeedbackOn}
+                          onChange={(checked) => {
+                            setSoundFeedbackEnabled(checked);
+                            setSoundFeedbackState(checked);
+                            triggerFeedback(checked ? 'toggle' : 'tap');
+                          }}
+                        />
+                      </div>
+
                     </div>
                   </div>
 
@@ -976,9 +1013,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                             <BellRing className="w-4 h-4" />
                           </div>
                           <div>
-                            <h4 className="font-bold text-xs text-slate-900 dark:text-white md:text-sm">Automatic Alerts</h4>
+                            <h4 className="font-bold text-xs text-slate-900 dark:text-white md:text-sm">Telegram Alerts</h4>
                             <p className="text-[11px] text-slate-400 md:text-xs">
-                              {telegramConnected ? 'Telegram connected — alerts on' : 'Connect Telegram for free alerts'}
+                              {telegramConnected ? 'Connected · alerts on' : 'Connect for alerts'}
                             </p>
                           </div>
                         </div>
@@ -1539,9 +1576,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       <BellRing className="w-5 h-5" />
                     </div>
                     <div>
-                      <h3 className="text-sm font-bold text-slate-900 dark:text-white">Automatic Alerts</h3>
+                      <h3 className="text-sm font-bold text-slate-900 dark:text-white">Telegram Alerts</h3>
                       <p className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-400 mt-1 md:text-xs">
-                        Get instant Telegram notifications whenever you save or delete a transaction.
+                        Private to your account.
                       </p>
                     </div>
                   </div>
@@ -1576,11 +1613,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-xs font-bold text-slate-900 dark:text-white md:text-sm">
                           {telegramConnected
-                            ? 'Telegram connected successfully'
+                            ? 'Connected'
                             : telegramPending
-                            ? 'Waiting for Telegram connection'
+                            ? 'Waiting for Telegram'
                             : telegramUnknown
-                            ? 'Checking connection…'
+                            ? 'Checking…'
                             : 'Not connected'}
                         </span>
                         <span
@@ -1603,12 +1640,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       </div>
                       <p className="text-[10px] leading-relaxed text-slate-500 dark:text-slate-400 mt-1 md:text-xs">
                         {telegramConnected
-                          ? 'Your chat is linked only to your account. No chat IDs to manage.'
+                          ? 'Private to your chat. Nothing stored here.'
                           : telegramPending
-                          ? 'Press Start in the Telegram chat we just opened — this page updates automatically.'
+                          ? 'Press Start in the Telegram chat we opened.'
                           : telegramUnknown
-                          ? 'Confirming your Telegram link with the server.'
-                          : 'One tap connects the bot to your account securely — nothing to copy or paste.'}
+                          ? 'Checking your link…'
+                          : 'One tap. Nothing to copy or paste.'}
                       </p>
                     </div>
                   </div>
@@ -1881,7 +1918,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
       {/* Clear All Data Confirm */}
       {showResetDataConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-[5px]">
           <div className="w-full max-w-sm bg-white dark:bg-slate-900 rounded-3xl p-5 shadow-2xl border border-rose-200 dark:border-rose-900 space-y-3">
             <div className="flex items-center gap-2 text-rose-600 dark:text-rose-400">
               <AlertTriangle className="w-5 h-5" />
@@ -1923,7 +1960,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
       {/* Unsaved Changes Confirmation Modal */}
       {showUnsavedConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-100">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-[5px] animate-in fade-in duration-100">
           <div className="w-full max-w-sm bg-white dark:bg-slate-900 rounded-3xl p-5 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-3">
             <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
               <AlertTriangle className="w-5 h-5 text-amber-500" />

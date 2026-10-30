@@ -7,7 +7,9 @@ import {
 } from '../lib/authPhase';
 import { SpendDeskLogo } from './SpendDeskLogo';
 
-const EXCHANGE_TIMEOUT_MS = 25000;
+// A cancelled Google chooser returns to the app without a session.  Keep this
+// short so the person sees the retry action instead of a long frozen loader.
+const EXCHANGE_TIMEOUT_MS = 7000;
 const SUCCESS_DISMISS_MS = 1600;
 
 const friendlyAuthMessage = (raw?: string): string => {

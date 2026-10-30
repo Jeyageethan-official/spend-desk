@@ -177,7 +177,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const EditPreviewIcon = getCategoryIcon(editIconName);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-150">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-[5px] animate-in fade-in duration-150">
       <div 
         className="w-full max-w-lg sm:max-w-xl bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden max-h-[92vh] flex flex-col"
         role="dialog"
@@ -839,7 +839,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
       {/* Delete Category Confirmation Dialog */}
       {deleteCandidate && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-100">
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-[5px] animate-in fade-in duration-100">
           <div className="w-full max-w-xs bg-white rounded-3xl shadow-2xl border border-slate-200 p-5 space-y-3">
             <h4 className="font-bold text-sm text-slate-900">Delete Category</h4>
             <p className="text-xs text-slate-500 md:text-sm">

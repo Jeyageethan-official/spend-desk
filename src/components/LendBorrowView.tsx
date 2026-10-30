@@ -431,7 +431,7 @@ export const LendBorrowView: React.FC<LendBorrowViewProps> = ({
 
       {/* 5. Add Record Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-150">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/70 backdrop-blur-[5px] animate-in fade-in duration-150">
           <div className="w-full sm:max-w-md bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh]">
             <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50/60">
               <h3 className="font-bold text-xs uppercase tracking-wider text-slate-700 md:text-sm">

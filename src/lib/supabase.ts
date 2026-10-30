@@ -64,6 +64,19 @@ export const readAuthStatus = (): AuthStatus => {
   return 'signed_out';
 };
 
+/**
+ * Same lookup, but null when this device has NEVER recorded a status.
+ * A first-time visitor was not "signed out" — only this distinction keeps the
+ * sign-in page from greeting a brand-new user with a sign-out notice.
+ */
+export const peekAuthStatus = (): AuthStatus | null => {
+  try {
+    const raw = localStorage.getItem(AUTH_STATUS_KEY);
+    if (raw === 'signed_in' || raw === 'signed_out' || raw === 'expired') return raw;
+  } catch {}
+  return null;
+};
+
 export const writeAuthStatus = (status: AuthStatus): void => {
   try {
     localStorage.setItem(AUTH_STATUS_KEY, status);
@@ -157,6 +170,140 @@ export const signInWithGoogleSupabase = async (caller = 'Sign-in button'): Promi
       success: false,
       errorMessage,
     };
+  }
+};
+
+/* ---------------------------------------------------------------------------
+ * EMAIL + PASSWORD AUTH
+ *
+ * Google remains the front door; email/password is the second door that makes
+ * two things possible that OAuth alone cannot do: creating an account without
+ * Google, and recovering a forgotten password (Supabase emails a reset link
+ * straight to the inbox).
+ * ------------------------------------------------------------------------ */
+
+export interface PasswordAuthResult {
+  success: boolean;
+  /** Human-readable, already suitable for showing under the form. */
+  message?: string;
+  /** Sign-up only: the account exists but the inbox still has to confirm it. */
+  needsConfirmation?: boolean;
+  email?: string;
+}
+
+/** Turns Supabase's terse auth errors into copy the user can act on. */
+const friendlyAuthMessage = (raw: string): string => {
+  const m = (raw || '').toLowerCase();
+  if (m.includes('is invalid') && m.includes('email'))
+    return "That email address doesn't look right — check it and try again.";
+  if (m.includes('invalid login credentials'))
+    return 'Email or password is incorrect. If you usually sign in with Google, use Continue with Google instead.';
+  if (m.includes('already registered') || m.includes('already been registered'))
+    return 'This email already has an account — tap Sign In instead.';
+  if (m.includes('at least 6')) return 'Password must be at least 6 characters.';
+  if (m.includes('email not confirmed'))
+    return 'Confirm your email first — open the link we sent you, then sign in.';
+  if (m.includes('signups not allowed') || m.includes('sign up is disabled'))
+    return 'Creating new accounts is turned off for this project.';
+  if (m.includes('only request this after') || m.includes('rate limit'))
+    return 'Too many attempts. Wait a minute, then try again.';
+  if (m.includes('failed to fetch') || m.includes('network'))
+    return 'You are offline. Reconnect and try again.';
+  return raw || 'Something went wrong. Please try again.';
+};
+
+/** The same return URL Google OAuth uses, so every flow lands back on the app. */
+const appRedirectUrl = (): string => {
+  const currentOrigin = window.location.origin;
+  const cleanPath = window.location.pathname.replace(/\/?[^/]*\.[^/]+$/, '');
+  return `${currentOrigin}${cleanPath}`.replace(/\/+$/, '') + '/';
+};
+
+export const signInWithPasswordSupabase = async (
+  email: string,
+  password: string,
+): Promise<PasswordAuthResult> => {
+  try {
+    const supabase = getSupabase();
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    });
+    if (error) {
+      pushAuthTrace('password_signin_failed', { reason: error.message });
+      return { success: false, message: friendlyAuthMessage(error.message) };
+    }
+    pushAuthTrace('password_signin_ok', { account: data.user?.email });
+    return { success: true, email: data.user?.email };
+  } catch (e: any) {
+    return { success: false, message: friendlyAuthMessage(e?.message || 'Failed to fetch') };
+  }
+};
+
+export const signUpWithPasswordSupabase = async (
+  email: string,
+  password: string,
+  fullName?: string,
+): Promise<PasswordAuthResult> => {
+  try {
+    const supabase = getSupabase();
+    const { data, error } = await supabase.auth.signUp({
+      email: email.trim(),
+      password,
+      options: fullName ? { data: { full_name: fullName } } : undefined,
+    });
+    if (error) {
+      pushAuthTrace('password_signup_failed', { reason: error.message });
+      return { success: false, message: friendlyAuthMessage(error.message) };
+    }
+    // Email confirmation on -> no session yet, the inbox has to confirm first.
+    // Confirmation off -> the session is live and the app can go straight in.
+    const needsConfirmation = !data.session;
+    pushAuthTrace('password_signup_ok', { account: email, needsConfirmation });
+    return {
+      success: true,
+      needsConfirmation,
+      email: email.trim(),
+      message: needsConfirmation
+        ? `Check your inbox — we sent a confirmation link to ${email.trim()}.`
+        : undefined,
+    };
+  } catch (e: any) {
+    return { success: false, message: friendlyAuthMessage(e?.message || 'Failed to fetch') };
+  }
+};
+
+/** Sends Supabase's password-reset email (the template lives in the dashboard). */
+export const sendPasswordResetSupabase = async (email: string): Promise<PasswordAuthResult> => {
+  try {
+    const supabase = getSupabase();
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: appRedirectUrl(),
+    });
+    if (error) {
+      pushAuthTrace('password_reset_failed', { reason: error.message });
+      return { success: false, message: friendlyAuthMessage(error.message) };
+    }
+    pushAuthTrace('password_reset_sent', {});
+    return { success: true, email: email.trim() };
+  } catch (e: any) {
+    return { success: false, message: friendlyAuthMessage(e?.message || 'Failed to fetch') };
+  }
+};
+
+/** Sets the new password for the recovery session the emailed link opens. */
+export const setNewPasswordSupabase = async (password: string): Promise<PasswordAuthResult> => {
+  try {
+    const supabase = getSupabase();
+    const { error } = await supabase.auth.updateUser({ password });
+    if (error) {
+      pushAuthTrace('password_update_failed', { reason: error.message });
+      return { success: false, message: friendlyAuthMessage(error.message) };
+    }
+    pushAuthTrace('password_updated', {});
+    return { success: true };
+  } catch (e: any) {
+    return { success: false, message: friendlyAuthMessage(e?.message || 'Failed to fetch') };
   }
 };
 

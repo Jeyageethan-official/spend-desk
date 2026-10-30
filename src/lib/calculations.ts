@@ -119,8 +119,25 @@ export const filterTransactions = (
 
 export interface RunningBalanceItem {
   balance: number;       // Running cash balance (minimum 0)
-  outOfWallet: number;   // Excess spent when wallet had 0 cash
+  /**
+   * This row's CONTRIBUTION to the outstanding out-of-wallet amount:
+   *   +excess  - a cash expense that spent beyond the wallet
+   *   -paid    - a Cash In whose note says "Out of Wallet" (it pays the
+   *              shortfall down, clamped so the total can never go below 0)
+   *   0        - nothing
+   * The badge is the SUM of these across history, so a repayment genuinely
+   * subtracts: spend 4,000 on a 3,000 wallet (+1,000), then Cash In 500
+   * marked "Out of Wallet" (-500) => the app shows Rs 500 outstanding.
+   */
+  outOfWallet: number;
 }
+
+/** Does this Cash In say it is paying down the out-of-wallet shortfall? */
+export const isOutOfWalletRepayment = (tx?: Transaction | null): boolean => {
+  if (!tx || tx.type !== 'cash_added') return false;
+  if (isCarryForwardTransaction(tx)) return false;
+  return /out\s+of\s*wallet/i.test(tx.notes || '');
+};
 
 /**
  * Sorts transactions chronologically (earliest to latest)
@@ -150,18 +167,65 @@ export const calculateRunningBalances = (
   const result = new Map<string, RunningBalanceItem>();
 
   let runningCash = 0;
+  // Outstanding shortfall carried across the walk, so a Cash In marked
+  // "Out of Wallet" can pay it down (and never below zero).
+  let oowDebt = 0;
   const isCashPayment = (method?: string) => !method || method.toLowerCase() === 'cash';
+
+  // CARRY-FORWARD ROWS ARE AN OPENING BALANCE, NOT NEW MONEY.
+  //
+  // Each date that starts with a carried row is seeded ONCE, before its first
+  // row, with the largest amount carried into it. When the earlier days are
+  // still in the ledger the walk already holds exactly that figure, so the
+  // seed is a no-op and nothing is counted twice. When the ledger holds ONLY
+  // the carried row (a fresh device, a restored sheet, a pruned history) the
+  // day still opens with yesterday's close instead of Rs 0 - which is what
+  // made a Rs 870 wallet book a Rs 1,000 shortfall on a Rs 1,000 spend.
+  //
+  // Seeding at the first row of the date (rather than when the carry row
+  // happens to sort) keeps the opening ahead of every expense that day, and
+  // seeding only once stops a later row from restoring money already spent.
+  const carriedOpening = new Map<string, number>();
+  for (const tx of sorted) {
+    if (!tx || !isCarryForwardTransaction(tx)) continue;
+    const date = tx.date || '';
+    const amt = Math.abs(tx.amount || 0);
+    const known = carriedOpening.get(date);
+    if (known === undefined || known < amt) carriedOpening.set(date, amt);
+  }
+  const seededDates = new Set<string>();
 
   for (const tx of sorted) {
     if (!tx || !tx.id) continue;
+    const txDate = tx.date || '';
+    if (!seededDates.has(txDate)) {
+      seededDates.add(txDate);
+      const opening = carriedOpening.get(txDate);
+      if (opening !== undefined && runningCash < opening) runningCash = opening;
+    }
+    // The carry row writes no money of its own - its amount was applied as the
+    // opening above - so it only records where the walk stands that day.
+    if (isCarryForwardTransaction(tx)) {
+      result.set(tx.id, { balance: runningCash, outOfWallet: 0 });
+      continue;
+    }
     const amt = Math.abs(tx.amount || 0);
 
     if (tx.type === 'cash_added') {
       runningCash += amt;
-      result.set(tx.id, {
-        balance: runningCash,
-        outOfWallet: 0,
-      });
+      if (isOutOfWalletRepayment(tx)) {
+        const paid = Math.min(amt, oowDebt);
+        oowDebt -= paid;
+        result.set(tx.id, {
+          balance: runningCash,
+          outOfWallet: -paid,
+        });
+      } else {
+        result.set(tx.id, {
+          balance: runningCash,
+          outOfWallet: 0,
+        });
+      }
     } else if (tx.type === 'cash_expense' && isCashPayment(tx.paymentMethod)) {
       if (runningCash >= amt) {
         runningCash -= amt;
@@ -172,6 +236,7 @@ export const calculateRunningBalances = (
       } else {
         const excessSpent = amt - runningCash;
         runningCash = 0; // Balance never goes below 0!
+        oowDebt += excessSpent;
         result.set(tx.id, {
           balance: 0,
           outOfWallet: excessSpent,
@@ -216,13 +281,14 @@ export const calculateSummary = (
   // history accurate (an expense earlier in the month still counts even when the
   // date filter only shows today).
   //
-  // A carry-forward row is EXCLUDED from that history pass: it re-opens a day
-  // with money the ledger already counted on the day it first arrived. Counting
-  // it again would double every all-time balance and would also make the wallet
-  // look richer than it is (hiding real out-of-wallet overspending). Inside a
-  // single day the very same row IS the opening balance and must be counted -
-  // that is the filtered pass further down.
-  const historyTxs = allTxs.filter((tx) => !isCarryForwardTransaction(tx));
+  // The history pass walks EVERY row, carry-forwards included: the walk seeds
+  // each carried day with its opening balance instead of adding it, so the
+  // money can never be counted twice - and, just as importantly, can never
+  // vanish. Excluding the carry rows outright is what let a ledger whose only
+  // history was the carried row book a Rs 1,000 shortfall out of a Rs 130 one:
+  // the balance pass counted the carried money, the out-of-wallet pass did not.
+  // Both now read the same walk, so the badge and the balance always agree.
+  const historyTxs = allTxs;
   const runningBalances = calculateRunningBalances(historyTxs);
   const sortedAll = sortTransactionsChronological(historyTxs);
 
@@ -333,51 +399,64 @@ export const calculateCategoryBreakdown = (
   });
 };
 
+/**
+ * The seven days of the Monday–Sunday week that CONTAINS `anchorDate` — one
+ * bucket per real calendar day.
+ *
+ * The old version grouped by weekday NAME, so every Monday inside the filter
+ * pooled into the single "Mon" bar and the chart quietly mixed up to five
+ * different weeks together. This version pins the chart to one week: pick a
+ * date in the filter and you see THAT date's week, day by day, with the
+ * weekday and the date number both available for the axis label (Mon / 23).
+ */
 export const calculateWeeklyDailyTrend = (
-  transactions: Transaction[] = []
+  transactions: Transaction[] = [],
+  anchorDate: string = getLocalDateString()
 ): { trendItems: DailyTrendItem[]; dayTotals: { [key: string]: number } } => {
   const txs = Array.isArray(transactions) ? transactions : [];
   const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const templateDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-  const dayTotals: { [key: string]: { cash: number; card: number; total: number } } = {
-    Mon: { cash: 0, card: 0, total: 0 },
-    Tue: { cash: 0, card: 0, total: 0 },
-    Wed: { cash: 0, card: 0, total: 0 },
-    Thu: { cash: 0, card: 0, total: 0 },
-    Fri: { cash: 0, card: 0, total: 0 },
-    Sat: { cash: 0, card: 0, total: 0 },
-    Sun: { cash: 0, card: 0, total: 0 },
-  };
+  // Anchor at noon so DST edges cannot shift the day, then walk back to Monday.
+  let anchor = new Date(`${anchorDate || getLocalDateString()}T12:00:00`);
+  if (isNaN(anchor.getTime())) anchor = new Date();
+  const monday = new Date(anchor);
+  const dow = monday.getDay(); // 0 = Sunday
+  monday.setDate(monday.getDate() - (dow === 0 ? 6 : dow - 1));
+
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    return {
+      dateStr: getLocalDateString(d),
+      dayLabel: dayNames[d.getDay()],
+      cash: 0,
+      card: 0,
+      total: 0,
+    };
+  });
+  const byDate = new Map(days.map((d) => [d.dateStr, d]));
 
   txs.forEach((tx) => {
-    if (tx && (tx.type === 'cash_expense' || tx.type === 'card_expense')) {
-      const amt = tx.amount || 0;
-      const dateStr = tx.date || new Date().toISOString().split('T')[0];
-      const d = new Date(dateStr + 'T12:00:00');
-      const dayLabel = dayNames[d.getDay()];
-      if (dayTotals[dayLabel]) {
-        if (tx.type === 'cash_expense') {
-          dayTotals[dayLabel].cash += amt;
-        } else {
-          dayTotals[dayLabel].card += amt;
-        }
-        dayTotals[dayLabel].total += amt;
-      }
-    }
+    if (!tx || (tx.type !== 'cash_expense' && tx.type !== 'card_expense')) return;
+    const bucket = byDate.get(tx.date || getLocalDateString());
+    if (!bucket) return; // outside the shown week
+    const amt = tx.amount || 0;
+    if (tx.type === 'cash_expense') bucket.cash += amt;
+    else bucket.card += amt;
+    bucket.total += amt;
   });
 
-  const trendItems: DailyTrendItem[] = templateDays.map((day) => ({
-    dayLabel: day,
-    dateStr: '',
-    cashAmount: dayTotals[day].cash,
-    cardAmount: dayTotals[day].card,
-    totalAmount: dayTotals[day].total,
+  const trendItems: DailyTrendItem[] = days.map((d) => ({
+    dayLabel: d.dayLabel,
+    dateStr: d.dateStr,
+    cashAmount: d.cash,
+    cardAmount: d.card,
+    totalAmount: d.total,
   }));
 
   const flatTotals: { [key: string]: number } = {};
-  templateDays.forEach((d) => {
-    flatTotals[d] = dayTotals[d].total;
+  days.forEach((d) => {
+    flatTotals[d.dateStr] = d.total;
   });
 
   return { trendItems, dayTotals: flatTotals };

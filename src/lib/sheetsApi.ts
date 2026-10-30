@@ -1363,7 +1363,11 @@ export const overwriteTransactionsInSheet = async (
         tx.paymentMethod || 'Cash', // Col G (6)
         bal, // Col H (7)
         '', // Col I: thin spacer gap (22px) (8)
-        oow > 0 ? oow : '', // Col J: Out of Wallet (9)
+        // A Cash In marked "Out of Wallet" pays the shortfall down, so its
+        // contribution is NEGATIVE and must still be written (the Dashboard's
+        // Out-of-wallet KPI is SUM(J) - only a sum can show Rs 500 after a
+        // Rs 500 repayment). Blank stays blank so untouched rows read clean.
+        oow ? oow : '', // Col J: Out of Wallet (9)
         isCard ? tx.amount : '', // Col K: Card Payment (10) - immediately next to J!
         '', // Col L: spacer before Lend (28px) (11)
         ...nextLendCols, // Col M: Date, Col N: Person, Col O: Reason, Col P: Amount (12-15)

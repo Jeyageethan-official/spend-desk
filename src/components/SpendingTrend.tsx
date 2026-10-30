@@ -23,7 +23,7 @@ export const SpendingTrend: React.FC<SpendingTrendProps> = ({
           </div>
           <div>
             <h2 className="text-sm font-bold uppercase tracking-wider text-slate-900">
-              SPENDING TREND (DAILY)
+              SPENDING TREND
             </h2>
             <p className="text-xs text-slate-500 md:text-sm">Day-by-day cash vs card expenditure</p>
           </div>

@@ -15,7 +15,7 @@ import {
   Category, 
   FilterState 
 } from '../types/finance';
-import { formatCurrency } from '../lib/calculations';
+import { formatCurrency, formatDateToDisplayHeader } from '../lib/calculations';
 import { getCategoryIcon as getRegisteredCategoryIcon, resolveCategoryIcon } from '../lib/icons';
 import { FilterBar } from './FilterBar';
 
@@ -170,9 +170,13 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
             </div>
             <div>
               <h3 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-slate-900">
-                SPENDING TREND (DAILY)
+                SPENDING TREND
               </h3>
-              <p className="text-[11px] text-slate-400 md:text-xs">Daily Cash vs Card outflow</p>
+              <p className="text-[11px] text-slate-400 md:text-xs">
+                Cash vs Card outflow · {trendItems.length > 0 && trendItems[0].dateStr
+                  ? `week of ${formatDateToDisplayHeader(trendItems[0].dateStr)}`
+                  : 'this week'}
+              </p>
             </div>
           </div>
 
@@ -194,7 +198,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
             const cashHeightRatio = item.totalAmount > 0 ? (item.cashAmount / item.totalAmount) : 0;
 
             return (
-              <div key={item.dayLabel} className="flex-1 flex flex-col items-center gap-1">
+              <div key={item.dateStr || item.dayLabel} className="flex-1 flex flex-col items-center gap-1">
                 {/* Clear readable amount directly above bar */}
                 <span className="text-[9px] sm:text-[10px] font-bold text-slate-700 truncate max-w-full">
                   {item.totalAmount > 0 ? Math.round(item.totalAmount).toLocaleString() : ''}
@@ -225,9 +229,12 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                   )}
                 </div>
 
-                {/* Day Name */}
+                {/* Day Name + date number, e.g. Mon / 23 */}
                 <span className="text-[11px] font-bold text-slate-700 mt-1 md:text-xs">
                   {item.dayLabel}
+                </span>
+                <span className="-mt-1 text-[10px] font-semibold text-slate-400 md:text-[11px]">
+                  {item.dateStr ? parseInt(item.dateStr.split('-')[2], 10) : ''}
                 </span>
               </div>
             );
