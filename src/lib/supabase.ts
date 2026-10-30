@@ -250,7 +250,13 @@ export const signUpWithPasswordSupabase = async (
     const { data, error } = await supabase.auth.signUp({
       email: email.trim(),
       password,
-      options: fullName ? { data: { full_name: fullName } } : undefined,
+      // GitHub Pages serves SpendDesk below /spend-desk/. Without this,
+      // confirmation links fall back to Supabase's Site URL and can land on
+      // the github.io root (a 404) instead of returning to the app.
+      options: {
+        emailRedirectTo: appRedirectUrl(),
+        ...(fullName ? { data: { full_name: fullName } } : {}),
+      },
     });
     if (error) {
       pushAuthTrace('password_signup_failed', { reason: error.message });
