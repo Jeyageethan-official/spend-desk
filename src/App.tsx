@@ -108,8 +108,8 @@ import { CloudWorkspace, fetchCloudWorkspace, saveCloudWorkspace, subscribeToClo
 import { AuthProgressOverlay } from './components/AuthProgressOverlay';
 import {
   beginOAuthExchange,
+  clearAuthPhase,
   failAuthPhase,
-  finishOAuthConnected,
   getAuthPhase,
   isAuthPhaseActive,
   isAuthPhaseInFlight,
@@ -213,11 +213,6 @@ export default function App() {
   // popup hostage (never shown, never added, balance Rs 0 all day).
   const [authPhaseState, setAuthPhaseState] = useState(() => getAuthPhase());
   useEffect(() => subscribeAuthPhase(setAuthPhaseState), []);
-  // Keep the verified sign-in state visible briefly before revealing the
-  // dashboard. This makes the final handoff feel deliberate rather than a
-  // flash from the login form straight into data.
-  const [isSignInProcessing, setIsSignInProcessing] = useState(false);
-  const signInProcessingTimerRef = useRef<number | null>(null);
   const lastConnectionNoticeAtRef = useRef(0);
   const noTokenPushStreakRef = useRef(0);
   // Daily balance carry-forward. Offered once per day per account: yesterday's
@@ -562,16 +557,10 @@ export default function App() {
         // be picked up again.
         setCurrentWorkspaceAccount(key);
 
-        // Session landed while the overlay was showing a phase → show "Signed in".
-        finishOAuthConnected(account.email);
-        if (signInProcessingTimerRef.current !== null) {
-          window.clearTimeout(signInProcessingTimerRef.current);
-        }
-        setIsSignInProcessing(true);
-        signInProcessingTimerRef.current = window.setTimeout(() => {
-          setIsSignInProcessing(false);
-          signInProcessingTimerRef.current = null;
-        }, 1800);
+        // The session is confirmed. End the single sign-in progress surface
+        // and go straight to the dashboard—no redundant success screen or
+        // artificial pause after "Signing you in".
+        clearAuthPhase();
         setUser({
           id: account.id,
           displayName: account.name,
@@ -653,11 +642,6 @@ export default function App() {
         }
         // The session is gone (signed out on purpose, or revoked/expired).
         setUser(null);
-        if (signInProcessingTimerRef.current !== null) {
-          window.clearTimeout(signInProcessingTimerRef.current);
-          signInProcessingTimerRef.current = null;
-        }
-        setIsSignInProcessing(false);
         setAccessToken(null);
         // The Google credentials die with the session: a token without a
         // session is exactly the "looks connected, syncs nothing" state.
@@ -679,12 +663,7 @@ export default function App() {
       },
     });
 
-    return () => {
-      unsubAuth();
-      if (signInProcessingTimerRef.current !== null) {
-        window.clearTimeout(signInProcessingTimerRef.current);
-      }
-    };
+    return unsubAuth;
   }, []);
 
   // Stale-version self-heal: GitHub Pages caches index.html for ~10 minutes,
@@ -2930,15 +2909,14 @@ export default function App() {
   // the sign-in page rather than pretending to be connected.
   const offlineResume =
     !isOnline && authStatus !== 'signed_out' && Boolean(loadLastOfflineWorkspace());
-  const showSignInGate = (!user && !offlineResume) || isSignInProcessing;
+  const showSignInGate = !user && !offlineResume;
 
   if (showSignInGate) {
     return (
       <div className="min-h-screen bg-white text-slate-900 font-sans antialiased">
         <SignInScreen
           onSignIn={() => void handleSignIn('Sign-in page')}
-          isBusy={isAuthPhaseInFlight(authPhaseState.phase) || isSignInProcessing}
-          isFinalizing={isSignInProcessing}
+          isBusy={isAuthPhaseInFlight(authPhaseState.phase)}
           isOffline={!isOnline}
           notice={
             authStatus === 'expired'

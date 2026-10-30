@@ -30,8 +30,6 @@ interface SignInScreenProps {
   onSignIn: () => void;
   /** A sign-in is already running (overlay carries the detail). */
   isBusy?: boolean;
-  /** A verified account is being prepared before the dashboard is revealed. */
-  isFinalizing?: boolean;
   /** Device is offline — sign-in cannot start until the network returns. */
   isOffline?: boolean;
   /** Why the user is here: a session that ended, or an intentional sign-out. */
@@ -297,7 +295,6 @@ const DesktopBrandTexture: React.FC = () => (
 export const SignInScreen: React.FC<SignInScreenProps> = ({
   onSignIn,
   isBusy = false,
-  isFinalizing = false,
   isOffline = false,
   notice = null,
   onPasswordSignIn,
@@ -518,12 +515,6 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({
               {headline}
             </h2>
             <p className="mt-1 text-center text-[13px] text-slate-500 sm:text-sm">{subline}</p>
-            {isFinalizing && (
-              <p className="mt-3 flex items-center justify-center gap-2 text-[12px] font-semibold text-emerald-600" role="status">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Processing your sign-in…
-              </p>
-            )}
 
             {noticeText && (
               <div
