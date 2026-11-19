@@ -10,6 +10,7 @@ import {
 import { sortTransactionsChronological, calculateRunningBalances } from './calculations';
 import { loadDeletedTxIds } from './storage';
 import { pushAuthTrace } from './authPhase';
+import { getSecureGoogleSheetsStatus, isSecureGoogleSheetsEnabled, SECURE_GOOGLE_SHEETS_HANDLE, secureGoogleSheetsFetch, startSecureGoogleSheetsConnection } from './secureGoogleSheets';
 import {
   buildDashboardLayout,
   DashboardFilterState,
@@ -29,13 +30,17 @@ export const getGoogleClientId = (): string => {
 };
 
 export const getStoredAccessToken = (): string | null => {
-  try {
-    const cached = getCachedWorkspaceToken();
-    if (cached) return cached;
-    return localStorage.getItem('money_tracker_access_token');
-  } catch {
-    return null;
+  if (isSecureGoogleSheetsEnabled()) return null;
+  return getCachedWorkspaceToken();
+};
+
+const nativeFetch = globalThis.fetch.bind(globalThis);
+const fetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const rawUrl = typeof input === 'string' ? input : input.toString();
+  if (isSecureGoogleSheetsEnabled() && /^https:\/\/(sheets\.googleapis\.com|www\.googleapis\.com)\//.test(rawUrl)) {
+    return secureGoogleSheetsFetch(rawUrl, init);
   }
+  return nativeFetch(input, init);
 };
 
 /**
@@ -90,6 +95,12 @@ export const requestGoogleAccessToken = async (
   promptUser = true,
   caller = 'token_request'
 ): Promise<string> => {
+  if (isSecureGoogleSheetsEnabled()) {
+    const status = await getSecureGoogleSheetsStatus().catch(() => null);
+    if (status?.connected) return SECURE_GOOGLE_SHEETS_HANDLE;
+    if (promptUser) await startSecureGoogleSheetsConnection();
+    return '';
+  }
   pushAuthTrace('token_request', { promptUser, caller });
   const existing = getStoredAccessToken();
   if (existing && existing !== 'local_token' && !existing.startsWith('eyJ') && existing.length > 20) {

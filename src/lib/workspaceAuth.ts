@@ -1,6 +1,7 @@
 import { getSupabase, signInWithGoogleSupabase, signOutSupabase } from './supabase';
 import { pushAuthTrace } from './authPhase';
 import { fetchSheetsTokenFromServer, clearServerSheetsToken } from './sheetsToken';
+import { getSecureGoogleSheetsStatus, isSecureGoogleSheetsEnabled, SECURE_GOOGLE_SHEETS_HANDLE } from './secureGoogleSheets';
 
 // OAuth web client that Supabase uses for Google sign-in (project 377806164433).
 // It already holds the user's grant for the Sheets/Drive scopes from the login
@@ -21,15 +22,13 @@ export const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/userinfo.email',
 ].join(' ');
 
-const GOOGLE_TOKEN_KEY = 'spenddesk_google_token';
-const TOKEN_EXPIRY_KEY = 'spenddesk_token_expires_at';
-/** Which Google account the cached token belongs to. */
-const GOOGLE_TOKEN_EMAIL_KEY = 'spenddesk_google_token_email';
 /** Legacy duplicates that older builds wrote. Never read, always cleaned. */
 const LEGACY_TOKEN_KEY = 'money_tracker_access_token';
 const LEGACY_LOGIN_HINT_KEY = 'spenddesk_google_login_hint';
 
 let cachedAccessToken: string | null = null;
+let cachedAccessTokenExpiresAt = 0;
+let cachedAccessTokenOwner: string | null = null;
 let silentRefreshPromise: Promise<string | null> | null = null;
 let interactiveAuthPromise: Promise<{ user: WorkspaceUser; accessToken: string }> | null = null;
 
@@ -66,16 +65,8 @@ export interface WorkspaceUser {
  * months-old access token was happily used until Google answered 401).
  */
 export const isGoogleTokenExpired = (): boolean => {
-  try {
-    const expiresAtStr = localStorage.getItem(TOKEN_EXPIRY_KEY);
-    if (!expiresAtStr) return true;
-    const expiresAt = parseInt(expiresAtStr, 10);
-    if (!Number.isFinite(expiresAt)) return true;
-    // Buffer of 60 seconds before actual expiry
-    return Date.now() >= expiresAt - 60000;
-  } catch {
-    return true;
-  }
+  if (isSecureGoogleSheetsEnabled()) return false;
+  return !cachedAccessTokenExpiresAt || Date.now() >= cachedAccessTokenExpiresAt - 60_000;
 };
 
 /**
@@ -86,23 +77,14 @@ export const isGoogleTokenExpired = (): boolean => {
  * while nothing synced). The token is re-minted from the server instead.
  */
 export const getCachedWorkspaceToken = (): string | null => {
-  const owner = (() => {
-    try { return (localStorage.getItem(GOOGLE_TOKEN_EMAIL_KEY) || '').trim().toLowerCase(); } catch { return ''; }
-  })();
-  if (!owner || !currentAccountEmail || owner !== currentAccountEmail) {
+  if (isSecureGoogleSheetsEnabled()) return null;
+  if (!cachedAccessTokenOwner || !currentAccountEmail || cachedAccessTokenOwner !== currentAccountEmail) {
     cachedAccessToken = null;
     return null;
   }
   if (cachedAccessToken && !cachedAccessToken.startsWith('eyJ') && cachedAccessToken.length > 20) {
     return cachedAccessToken;
   }
-  try {
-    const stored = localStorage.getItem(GOOGLE_TOKEN_KEY);
-    if (stored && !stored.startsWith('eyJ') && stored.length > 20) {
-      cachedAccessToken = stored;
-      return stored;
-    }
-  } catch {}
   return null;
 };
 
@@ -111,23 +93,18 @@ export const setCachedWorkspaceToken = (
   expiresInSeconds?: number,
   email?: string | null
 ) => {
+  if (isSecureGoogleSheetsEnabled()) return;
   const owner = (email || currentAccountEmail || '').trim().toLowerCase();
   if (token && !token.startsWith('eyJ') && token.length > 20) {
     cachedAccessToken = token;
+    cachedAccessTokenOwner = owner || null;
     const duration = expiresInSeconds && expiresInSeconds > 60 ? expiresInSeconds : 3540;
     const expiresAt = Date.now() + duration * 1000;
-    try {
-      localStorage.setItem(GOOGLE_TOKEN_KEY, token);
-      localStorage.setItem(TOKEN_EXPIRY_KEY, String(expiresAt));
-      if (owner) localStorage.setItem(GOOGLE_TOKEN_EMAIL_KEY, owner);
-    } catch {}
+    cachedAccessTokenExpiresAt = expiresAt;
   } else if (!token) {
     cachedAccessToken = null;
-    try {
-      localStorage.removeItem(GOOGLE_TOKEN_KEY);
-      localStorage.removeItem(TOKEN_EXPIRY_KEY);
-      localStorage.removeItem(GOOGLE_TOKEN_EMAIL_KEY);
-    } catch {}
+    cachedAccessTokenExpiresAt = 0;
+    cachedAccessTokenOwner = null;
   }
 };
 
@@ -141,12 +118,11 @@ export const setCachedWorkspaceToken = (
  */
 export const clearWorkspaceTokenState = (): void => {
   cachedAccessToken = null;
+  cachedAccessTokenExpiresAt = 0;
+  cachedAccessTokenOwner = null;
   clearServerSheetsToken();
   currentAccountEmail = null;
   try {
-    localStorage.removeItem(GOOGLE_TOKEN_KEY);
-    localStorage.removeItem(TOKEN_EXPIRY_KEY);
-    localStorage.removeItem(GOOGLE_TOKEN_EMAIL_KEY);
     localStorage.removeItem(LEGACY_TOKEN_KEY);
     localStorage.removeItem(LEGACY_LOGIN_HINT_KEY);
   } catch {}
@@ -174,6 +150,14 @@ export const refreshGoogleTokenSilently = async (
   if (userEmail && currentAccountEmail && account !== currentAccountEmail) {
     pushAuthTrace('silent_refresh_wrong_account', { caller, account });
     return null;
+  }
+  if (isSecureGoogleSheetsEnabled()) {
+    try {
+      const status = await getSecureGoogleSheetsStatus();
+      return status.connected ? SECURE_GOOGLE_SHEETS_HANDLE : null;
+    } catch {
+      return null;
+    }
   }
   if (silentRefreshPromise) return silentRefreshPromise;
 

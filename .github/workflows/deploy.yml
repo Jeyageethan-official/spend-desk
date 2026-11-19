@@ -6,11 +6,44 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  build-and-deploy:
+  quality:
     runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+          cache: npm
+
+      - name: Install dependencies from lockfile
+        run: npm ci
+
+      - name: Type-check
+        run: npm run lint
+
+      - name: Run financial and sync regression tests
+        run: npm test
+
+      - name: Build production application
+        run: npm run build
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Audit full dependency tree
+        run: npm audit --audit-level=high
+
+  build-and-deploy:
+    needs: quality
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -18,12 +51,18 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22.12.0
 
-      - name: Install Dependencies
-        run: npm install --legacy-peer-deps
+      - name: Install dependencies from lockfile
+        run: npm ci
 
       - name: Build Web Application
+        env:
+          # Defaults safe. An approved production cutover sets this GitHub
+          # repository variable to the literal string `true` before the
+          # dedicated secure-Sheets release, and resets it to `false` for
+          # rollback. It is intentionally not a client-side runtime switch.
+          VITE_ENABLE_SECURE_GOOGLE_SHEETS: ${{ vars.VITE_ENABLE_SECURE_GOOGLE_SHEETS || 'false' }}
         run: npm run build
 
       - name: Deploy to gh-pages Branch

@@ -105,6 +105,7 @@ import {
 } from './lib/telegramAlert';
 import { createTelegramLink, getTelegramLinkStatus, TelegramLinkStatus } from './lib/telegramConnect';
 import { CloudWorkspace, fetchCloudWorkspace, saveCloudWorkspace, subscribeToCloudWorkspace, unsubscribeFromCloudWorkspace } from './lib/cloudWorkspace';
+import { isSecureGoogleSheetsEnabled } from './lib/secureGoogleSheets';
 import { AuthProgressOverlay } from './components/AuthProgressOverlay';
 import {
   beginOAuthExchange,
@@ -570,7 +571,7 @@ export default function App() {
         writeAuthStatus('signed_in');
         setAuthStatus('signed_in');
 
-        if (ctx.providerToken) {
+        if (!isSecureGoogleSheetsEnabled() && ctx.providerToken) {
           // Fresh Google token straight from the sign-in exchange (~1h life).
           setCachedWorkspaceToken(ctx.providerToken, undefined, key);
           setAccessToken(ctx.providerToken);
@@ -751,7 +752,7 @@ export default function App() {
 
       const providerToken = params.get('provider_token');
       const grantedScope = params.get('scope') || '';
-      if (providerToken) {
+      if (providerToken && !isSecureGoogleSheetsEnabled()) {
         // Legacy return path (older Google redirect). The token is kept in
         // memory only: it is not bound to an account yet, and a token without
         // an owner is never cached (that is how a dead session used to look
