@@ -125,22 +125,12 @@ export const signInWithGoogleSupabase = async (caller = 'Sign-in button'): Promi
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        scopes: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email',
+        // Sheets authorization is a separate server-side OAuth flow. Identity
+        // sign-in must not request browser-delivered offline Google grants.
+        scopes: 'openid email profile',
         redirectTo: redirectUrl,
         queryParams: {
-          access_type: 'offline',
-          // `consent` is REQUIRED for this app to stay signed in. Google only
-          // issues an offline refresh token when it shows the consent screen;
-          // with select_account alone, an already-granted account silently
-          // approves WITHOUT one, so nothing could be stored in
-          // google_refresh_tokens and the server mint ran dry ~1h later -
-          // every sign-in bought only an hour before "Reconnect Google"
-          // reappeared. The space-delimited list keeps the account chooser and
-          // forces the consent that produces the refresh token, which is what
-          // makes "sign in once, stay connected for months" possible.
-          prompt: 'consent select_account',
-          enable_granular_consent: 'false',
-          include_granted_scopes: 'true',
+          prompt: 'select_account',
         },
       },
     });
@@ -314,44 +304,11 @@ export const setNewPasswordSupabase = async (password: string): Promise<Password
 };
 
 /**
- * Store Google's offline refresh token server-side (RLS-scoped, one row per
- * user) so the `sheets-token` edge function can mint fresh Sheets/Drive access
- * tokens with ZERO Google UI - no popup, no redirect, ever. This is what makes
- * "sign in once, stay signed in for months" possible: the browser never needs
- * to talk to Google again after the initial consent.
- */
-export const persistProviderRefreshToken = (userId: string, refreshToken?: string | null): void => {
-  if (!userId || !refreshToken || refreshToken.length < 10) return;
-  try {
-    const supabase = getSupabase();
-    void supabase
-      .from('google_refresh_tokens')
-      .upsert(
-        { user_id: userId, refresh_token: refreshToken, updated_at: new Date().toISOString() },
-        { onConflict: 'user_id' }
-      )
-      .then(
-        ({ error }) => {
-          if (error) {
-            // Table not migrated yet (or offline) - the token mint simply
-            // falls back to the interactive path.
-            pushAuthTrace('google_refresh_token_store_failed', { reason: error.message });
-          } else {
-            pushAuthTrace('google_refresh_token_stored', {});
-          }
-        },
-        () => {}
-      );
-  } catch {}
-};
-
-/**
  * Sign out user - COMPLETE sign-out.
  *
- * Drops every credential this device holds for the account:
- *   1. the Google offline refresh token row (server side, RLS-scoped),
- *   2. the Supabase session (this device only),
- *   3. the cached Google access token + the legacy token/profile keys.
+ * Browser sign-out only drops this device's session and in-memory state. A
+ * Google Sheets connection is server-managed and can only be disconnected by
+ * its dedicated authenticated Edge Function.
  *
  * The account's own DATA (transactions, settings, sheet link) is NOT touched:
  * it stays under the account-scoped localStorage keys and becomes the
@@ -361,16 +318,6 @@ export const signOutSupabase = async (): Promise<void> => {
   markExplicitSignOut();
   try {
     const supabase = getSupabase();
-    // Drop the stored Google refresh token FIRST (while our session JWT is
-    // still valid, so RLS lets us delete our own row): signing out must fully
-    // disconnect Google, not leave a live credential behind on the server.
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user?.id) {
-        await supabase.from('google_refresh_tokens').delete().eq('user_id', session.user.id);
-        pushAuthTrace('google_refresh_token_deleted', {});
-      }
-    } catch {}
     // Default Supabase sign-out revokes every session for this account. SpendDesk
     // deliberately signs out this browser/device only; other signed-in devices
     // keep their own active session and continue receiving realtime updates.
@@ -481,15 +428,6 @@ export const initAuthListener = (handlers: AuthListenerHandlers): (() => void) =
           'Google User',
         picture: user.user_metadata?.avatar_url || user.user_metadata?.picture || undefined,
       };
-
-      // Hand Google's offline refresh token to our backend once, so all future
-      // token needs are answered server-side with no Google UI. Deferred by a
-      // tick: this runs inside the auth callback and must not touch the client
-      // synchronously.
-      if (session?.provider_refresh_token) {
-        const refreshToken = session.provider_refresh_token;
-        setTimeout(() => persistProviderRefreshToken(user.id, refreshToken), 0);
-      }
 
       writeAuthStatus('signed_in');
       pushAuthTrace('auth_signed_in', { account: account.email, event });
