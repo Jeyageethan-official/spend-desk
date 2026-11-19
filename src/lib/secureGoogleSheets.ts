@@ -1,4 +1,5 @@
 import { getStoredSupabaseConfig, getSupabase } from './supabase';
+import { googleProxyResponse } from './googleSheetsResponse';
 
 /**
  * Disabled until the database migrations, Edge Function secrets, OAuth callback
@@ -52,5 +53,5 @@ export const secureGoogleSheetsFetch = async (url: string, init: RequestInit = {
     // Content type is fixed server-side; browser cannot forward authorization.
     contentType: headers.get('Content-Type') || undefined,
   });
-  return new Response(result.body || '', { status: result.googleStatus, headers: { 'Content-Type': result.contentType || 'application/json' } });
+  return googleProxyResponse(result.body || '', result.googleStatus, result.contentType);
 };

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   ArrowLeft,
   FileSpreadsheet, 
@@ -39,6 +39,15 @@ import {
   saveKnownSpreadsheet,
   removeKnownSpreadsheet
 } from '../lib/storage';
+import {
+  disconnectSecureGoogleSheets,
+  getSecureGoogleSheetsStatus,
+  isSecureGoogleSheetsEnabled,
+  SECURE_GOOGLE_SHEETS_HANDLE,
+  SecureGoogleSheetsStatus,
+  startSecureGoogleSheetsConnection,
+} from '../lib/secureGoogleSheets';
+import { dedupeGoogleSpreadsheets } from '../lib/googleSheetsCollections';
 
 interface SheetManagerViewProps {
   onBack: () => void;
@@ -92,6 +101,28 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
   const [copiedScript, setCopiedScript] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  const [secureConnection, setSecureConnection] = useState<SecureGoogleSheetsStatus | null>(null);
+  const [connectionBusy, setConnectionBusy] = useState(false);
+  const creationInFlight = useRef(false);
+  const secureSheetsEnabled = isSecureGoogleSheetsEnabled();
+  const secureConnected = secureConnection?.connected === true;
+
+  const refreshSecureConnection = async () => {
+    if (!secureSheetsEnabled) return;
+    try {
+      setSecureConnection(await getSecureGoogleSheetsStatus());
+    } catch {
+      setSecureConnection({ connected: false, status: 'disconnected', connectedAt: null, updatedAt: null, grantedScopes: [] });
+    }
+  };
+
+  useEffect(() => {
+    void refreshSecureConnection();
+    // A Spend Desk account switch must never reuse the previous user's state.
+    setSpreadsheets([]);
+    setErrorMsg('');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storageEmail]);
 
   // Auto load Drive sheets when switching to 'drive' tab or on account change
   useEffect(() => {
@@ -106,33 +137,15 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
     }
     setErrorMsg('');
 
-    // If logged in with Google token, query the live Google Drive for THIS account
-    if (accessToken && accessToken !== 'local_token' && !accessToken.startsWith('eyJ')) {
+    // The secure proxy is always scoped to the verified Spend Desk user. It
+    // never receives a browser Google token.
+    const token = secureSheetsEnabled
+      ? (secureConnected ? SECURE_GOOGLE_SHEETS_HANDLE : null)
+      : accessToken;
+    if (token && token !== 'local_token' && !token.startsWith('eyJ')) {
       try {
-        const driveItems = await listUserSpreadsheets(accessToken);
-        // Strictly deduplicate by id
-        const uniqueDriveMap = new Map<string, DriveSpreadsheetItem>();
-        driveItems.forEach((item) => {
-          if (item?.id) uniqueDriveMap.set(item.id.trim(), item);
-        });
-
-        const list = Array.from(uniqueDriveMap.values());
+        const list = dedupeGoogleSpreadsheets(await listUserSpreadsheets(token));
         setSpreadsheets(list);
-
-        // If no sheet is currently connected, auto-connect the best matching Drive sheet!
-        if (!activeSheet && list.length > 0) {
-          const autoMatch = list.find((s) => /spenddesk|cash|wallet|money/i.test(s.name)) || list[0];
-          if (autoMatch) {
-            const autoMeta: GoogleSheetMeta = {
-              id: autoMatch.id,
-              name: autoMatch.name,
-              url: autoMatch.webViewLink || `https://docs.google.com/spreadsheets/d/${autoMatch.id}/edit`,
-              lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            };
-            onSetActiveSheet(autoMeta);
-            saveKnownSpreadsheet(autoMeta, storageEmail);
-          }
-        }
 
         // Cache exclusively for this user email
         if (storageEmail) {
@@ -180,13 +193,19 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
   };
 
   const handleCreateNewSheet = async () => {
+    if (creationInFlight.current) return;
+    creationInFlight.current = true;
     setIsCreating(true);
     setErrorMsg('');
     setSuccessMsg('');
     const title = newTitle.trim() || 'SpendDesk - Cash & Card';
 
     try {
-      let token = accessToken;
+      if (secureSheetsEnabled && !secureConnected) {
+        await startSecureGoogleSheetsConnection();
+        return;
+      }
+      let token = secureSheetsEnabled ? SECURE_GOOGLE_SHEETS_HANDLE : accessToken;
 
       if (!token || token === 'local_token' || token.length < 30 || token.startsWith('eyJ')) {
         token = await requestGoogleAccessToken(true, 'sheet_manager_create');
@@ -256,11 +275,16 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
         setErrorMsg(friendlySheetErrorMessage(err));
       }
     } finally {
+      creationInFlight.current = false;
       setIsCreating(false);
     }
   };
 
   const handleSelectExisting = async (item: DriveSpreadsheetItem) => {
+    if (secureSheetsEnabled && !secureConnected) {
+      await startSecureGoogleSheetsConnection();
+      return;
+    }
     const meta: GoogleSheetMeta = {
       id: item.id,
       name: item.name,
@@ -298,6 +322,37 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
     onSetActiveSheet(null);
     setSuccessMsg('Google Sheet disconnected.');
     onNotification?.('Google Sheet disconnected.', 'info');
+  };
+
+  const handleSwitchGoogleAccount = async () => {
+    setConnectionBusy(true);
+    setErrorMsg('');
+    try {
+      // Do not delete the working connection first. The callback atomically
+      // replaces it only after Google authorization, PKCE, and state checks pass.
+      await startSecureGoogleSheetsConnection();
+    } catch {
+      setErrorMsg('Could not start Google account selection. Your current connection was left unchanged.');
+    } finally {
+      setConnectionBusy(false);
+    }
+  };
+
+  const handleDisconnectGoogleAccount = async () => {
+    if (!window.confirm('Disconnect this Google Sheets account? Your SpendDesk data and saved sheet list stay intact.')) return;
+    setConnectionBusy(true);
+    setErrorMsg('');
+    try {
+      await disconnectSecureGoogleSheets();
+      setSecureConnection({ connected: false, status: 'disconnected', connectedAt: null, updatedAt: null, grantedScopes: [] });
+      setSpreadsheets([]);
+      onSetActiveSheet(null);
+      setSuccessMsg('Google Sheets account disconnected. You can reconnect or choose another account.');
+    } catch {
+      setErrorMsg('Could not disconnect the Google Sheets account. Your existing connection may still be active.');
+    } finally {
+      setConnectionBusy(false);
+    }
   };
 
   const handleDeleteDriveSheet = async (item: DriveSpreadsheetItem) => {
@@ -367,6 +422,30 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
       <div className="max-w-2xl md:max-w-4xl lg:max-w-5xl mx-auto px-4 pt-6 space-y-6">
         {/* Main Card */}
         <div className="bg-white rounded-3xl border border-slate-200/90 shadow-xs flex flex-col min-h-[580px] overflow-hidden">
+          {secureSheetsEnabled && (
+            <div className="mx-5 mt-5 p-3 rounded-2xl border border-emerald-100 bg-emerald-50/60 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-xs font-bold text-emerald-950">
+                  {secureConnected ? 'Google Sheets account connected' : 'Google Sheets account not connected'}
+                </p>
+                <p className="mt-0.5 text-[11px] text-emerald-800/80">
+                  {secureConnected
+                    ? 'Credentials stay server-side. Use Switch account to choose another Google account without removing this connection first.'
+                    : 'Connect a Google account before creating, selecting, or syncing a spreadsheet.'}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2 shrink-0">
+                <button type="button" onClick={() => void handleSwitchGoogleAccount()} disabled={connectionBusy} className="px-3 py-2 rounded-xl bg-emerald-700 text-white text-xs font-bold disabled:opacity-50">
+                  {secureConnected ? 'Switch account' : 'Connect account'}
+                </button>
+                {secureConnected && (
+                  <button type="button" onClick={() => void handleDisconnectGoogleAccount()} disabled={connectionBusy} className="px-3 py-2 rounded-xl border border-rose-200 text-rose-700 text-xs font-bold disabled:opacity-50">
+                    Disconnect account
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
           {/* Connected spreadsheet header */}
           <div className="p-5 border-b border-slate-100 bg-slate-50/80 flex items-center justify-between gap-2">
             <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -439,7 +518,7 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                 type="button"
                 onClick={() => {
                   setActiveTab('drive');
-                  if (accessToken && spreadsheets.length === 0) {
+                  if ((secureSheetsEnabled ? secureConnected : accessToken) && spreadsheets.length === 0) {
                     loadDriveSheets();
                   }
                 }}
@@ -612,20 +691,20 @@ export const SheetManagerView: React.FC<SheetManagerViewProps> = ({
                     </div>
 
                     {/* If not signed in to Google, show quick connection banner */}
-                    {(!accessToken || accessToken === 'local_token' || accessToken.startsWith('eyJ')) && (
+                    {((secureSheetsEnabled && !secureConnected) || (!secureSheetsEnabled && (!accessToken || accessToken === 'local_token' || accessToken.startsWith('eyJ')))) && (
                       <div className="p-3.5 bg-emerald-50/80 border border-emerald-200/90 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
                         <div className="flex items-center gap-2">
                           <FileSpreadsheet className="w-4 h-4 text-emerald-700 shrink-0" />
                           <p className="text-xs text-emerald-950 font-medium md:text-sm">
-                            Sign in with your Google account to auto-load all your Drive spreadsheets.
+                            Connect your Google account to list the spreadsheets it can access.
                           </p>
                         </div>
                         <button
                           type="button"
-                          onClick={onSignInDirect}
+                          onClick={() => void (secureSheetsEnabled ? handleSwitchGoogleAccount() : onSignInDirect())}
                           className="px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold shadow-2xs cursor-pointer shrink-0 transition-colors md:text-sm"
                         >
-                          Sign in with Google
+                          Connect Google account
                         </button>
                       </div>
                     )}

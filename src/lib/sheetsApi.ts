@@ -11,6 +11,7 @@ import { sortTransactionsChronological, calculateRunningBalances } from './calcu
 import { loadDeletedTxIds } from './storage';
 import { pushAuthTrace } from './authPhase';
 import { getSecureGoogleSheetsStatus, isSecureGoogleSheetsEnabled, SECURE_GOOGLE_SHEETS_HANDLE, secureGoogleSheetsFetch, startSecureGoogleSheetsConnection } from './secureGoogleSheets';
+import { dedupeGoogleSpreadsheets } from './googleSheetsCollections';
 import {
   buildDashboardLayout,
   DashboardFilterState,
@@ -282,7 +283,7 @@ export const listUserSpreadsheets = async (accessToken: string): Promise<DriveSp
   }
 
   const data = await res.json();
-  return data.files || [];
+  return dedupeGoogleSpreadsheets(Array.isArray(data.files) ? data.files : []);
 };
 
 /** Permanently deletes a spreadsheet from this user's Google Drive. */
